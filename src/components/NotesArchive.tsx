@@ -1,15 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  NOTES,
-  auditNote,
-  fmtDate,
-  ils,
-  noteTotal,
-  fetchNotes,
-  type DeliveryNote,
-} from "@/lib/data";
+import { auditNote, fmtDate, ils, noteTotal, type DeliveryNote } from "@/lib/data";
+import { fetchLiveNotes } from "@/lib/api";
 import { approvals, useApprovals } from "@/lib/store";
 import { playDispatchChime, playUrgentSignatureAlarm } from "@/lib/audio-alerts";
 import { PageHeader, StatusPill } from "@/components/AppShell";
@@ -22,22 +15,27 @@ import {
   CheckCircle2,
   Crown,
   PenTool,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export function NotesArchive() {
   const [q, setQ] = useState("");
   const apState = useApprovals();
 
   const {
-    data: notes = NOTES,
+    data: notes,
+    isLoading,
     isFetching,
+    error,
     refetch,
   } = useQuery<DeliveryNote[]>({
-    queryKey: ["delivery-notes"],
-    queryFn: fetchNotes,
-    initialData: NOTES,
+    queryKey: ["live-notes-archive"],
+    queryFn: fetchLiveNotes,
     staleTime: 30000,
+    retry: 1,
   });
 
   const handleRefresh = async () => {
@@ -64,6 +62,45 @@ export function NotesArchive() {
       `ת.מ. ${noteId} אושרה סופית לחיוב ע״י הראל אידלסון 👑 הודעות וואטסאפ שוגרו ללינה ולוורד!`,
     );
   };
+
+  if (isLoading) {
+    return (
+      <>
+        <PageHeader
+          title="ארכיון תעודות משלוח"
+          subtitle="סנכרון חי מול גיליון 📑_ארכיון_תעודות_משלוח וחתימות דו-כיווניות"
+        />
+        <div className="mx-auto max-w-4xl p-12 text-center text-sm text-muted-foreground" dir="rtl">
+          טוען תעודות משלוח מהגיליון...
+        </div>
+      </>
+    );
+  }
+
+  if (error || !notes) {
+    return (
+      <>
+        <PageHeader
+          title="ארכיון תעודות משלוח"
+          subtitle="סנכרון חי מול גיליון 📑_ארכיון_תעודות_משלוח וחתימות דו-כיווניות"
+        />
+        <div className="mx-auto max-w-xl p-6" dir="rtl">
+          <Card className="p-6 space-y-3 border-red-500/40 bg-red-500/5 text-center">
+            <div className="flex items-center justify-center gap-2 font-bold text-red-700">
+              <AlertTriangle className="h-5 w-5" /> כשל בטעינת תעודות מהגיליון
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {error instanceof Error ? error.message : "שגיאת שרת"}. לא מוצגים נתוני דוגמה.
+            </p>
+            <Button size="sm" onClick={() => refetch()} disabled={isFetching} className="mt-2">
+              <RefreshCw className={`h-3.5 w-3.5 ml-1 ${isFetching ? "animate-spin" : ""}`} />
+              נסה שוב
+            </Button>
+          </Card>
+        </div>
+      </>
+    );
+  }
 
   const list = notes.filter((n) =>
     [n.customer, n.id, n.comaxOrder, n.yard, n.date, n.customerNo]

@@ -8,12 +8,7 @@ import {
 } from "./data";
 import { CUSTOMERS as DEFAULT_CUSTOMERS, type CustomerProfile } from "./customers-data";
 import { SAMPLE_STOPS as DEFAULT_GPS_STOPS, type GpsStop } from "./ituran";
-import {
-  listNotesFn,
-  approvalFn,
-  saveSignedNoteFn,
-  type SheetNote,
-} from "./notes-api.functions";
+import { listNotesFn, approvalFn, saveSignedNoteFn, type SheetNote } from "./notes-api.functions";
 
 export const API_BASE =
   "https://script.google.com/macros/s/AKfycbzcXKwUH_Dcrxl90InG_a9CItCewDWyv_IKH6-UudNPQaWMYEcCwZ1xDP4sZiZZXuCb/exec";
@@ -125,27 +120,24 @@ function parseItemsSummary(raw: unknown): DeliveryItem[] {
  * נרמול שורה גולמית מ-Google Sheets (עמודות בעברית) למבנה DeliveryNote מלא
  */
 export function normalizeDeliveryNote(r: Record<string, unknown>): DeliveryNote {
-  const id = String(r["מספר ת.מ"] || r["מספר תעודה"] || r.noteId || r.id || "6714850").trim();
-
+  const id = String(r["מספר ת.מ"] || r["מספר תעודה"] || r.noteId || r.id || "").trim();
   const comaxOrder = String(r["בגין הזמנה"] || r.orderId || r.comaxOrder || "").trim();
-
-  const customer = String(r["שם לקוח"] || r.customerName || r.customer || "לקוח ח. סבן").trim();
-
+  const customer = String(r["שם לקוח"] || r.customerName || r.customer || "").trim();
   const customerNo = String(r["מספר לקוח"] || r.customerNo || "").trim();
-
-  const date = String(r["תאריך אספקה"] || r.deliveryDate || r.date || "13/10/2026").trim();
-
+  const date = String(r["תאריך אספקה"] || r.deliveryDate || r.date || "").trim();
   const siteAddress = String(
     r["כתובת אתר"] || r["כתובת יעד"] || r.siteAddress || r.address || "",
   ).trim();
 
-  const yardRaw = String(r["מחסן מוצא"] || r.yard || "מחסן 4 החרש 10").trim();
+  const yardRaw = String(r["מחסן מוצא"] || r.yard || "").trim();
   const yard: Yard =
-    yardRaw.includes("התלמיד") || yardRaw.includes("1") ? "מחסן 1 התלמיד 6" : "מחסן 4 החרש 10";
+    yardRaw.includes("התלמיד") || yardRaw.includes("1")
+      ? "מחסן 1 התלמיד 6"
+      : yardRaw.includes("החרש") || yardRaw.includes("4")
+        ? "מחסן 4 החרש 10"
+        : (yardRaw as Yard);
 
-  const driver = String(
-    r["נהג ורכב"] || r["נהג משוייך"] || r.driver || "חכמת (מרצדס 615-41-002)",
-  ).trim();
+  const driver = String(r["נהג ורכב"] || r["נהג משוייך"] || r.driver || "").trim();
 
   const rawItems = r["פירוט מוצרים ומק״טים"] || r["סחורה מפורטת"] || r.itemsSummary || r.items;
   const items = parseItemsSummary(rawItems);
@@ -155,6 +147,10 @@ export function normalizeDeliveryNote(r: Record<string, unknown>): DeliveryNote 
     r["בלות פקדון (60002)"] ?? r.bales60002 ?? r.deposits?.bales60002?.delivered ?? 0;
   const rawPallets =
     r["משטחי סבן (60060)"] ?? r.pallets60060 ?? r.deposits?.pallets60060?.delivered ?? 0;
+  const rawBalesBilled = r["חיוב בלות (60002)"] ?? r["חיוב בלות"] ?? r.deposits?.bales60002?.billed;
+  const rawPalletsBilled =
+    r["חיוב משטחים (60060)"] ?? r["חיוב משטחים"] ?? r.deposits?.pallets60060?.billed;
+
   const balesQty =
     typeof rawBales === "number"
       ? rawBales
@@ -164,12 +160,24 @@ export function normalizeDeliveryNote(r: Record<string, unknown>): DeliveryNote 
       ? rawPallets
       : parseInt(String(rawPallets).replace(/[^\d]/g, "") || "0", 10);
 
+  const balesBilledQty =
+    typeof rawBalesBilled === "number"
+      ? rawBalesBilled
+      : rawBalesBilled
+        ? parseInt(String(rawBalesBilled).replace(/[^\d]/g, "") || "0", 10)
+        : 0;
+  const palletsBilledQty =
+    typeof rawPalletsBilled === "number"
+      ? rawPalletsBilled
+      : rawPalletsBilled
+        ? parseInt(String(rawPalletsBilled).replace(/[^\d]/g, "") || "0", 10)
+        : 0;
+
   const driveUrl = String(
     r["קישור קובץ Drive"] || r["קישור דרייב"] || r.driveUrl || r.fileUrl || "",
   ).trim();
 
   const signedBy = String(r["אימות חתימת שטח"] || r["חתימת לקוח"] || r.signedBy || "").trim();
-
   const craneTime = String(r["זמני מנוף/פריקה"] || r["זמן פריקה/מנוף"] || r.craneTime || "").trim();
 
   // יצירת קישור תמונה ישיר מ-Google Drive אם קיים קישור קובץ
@@ -187,18 +195,18 @@ export function normalizeDeliveryNote(r: Record<string, unknown>): DeliveryNote 
     driver,
     items,
     deposits: {
-      bales60002: { delivered: balesQty, billed: balesQty },
-      pallets60060: { delivered: palletsQty, billed: palletsQty },
+      bales60002: { delivered: balesQty, billed: balesBilledQty },
+      pallets60060: { delivered: palletsQty, billed: palletsBilledQty },
     },
-    gps: {
-      status: "ok",
-      note: craneTime ? `${craneTime} — אומת באיתוראן` : "אומת באיתוראן 100%",
-    },
+    gps: craneTime
+      ? { status: "ok", note: `${craneTime} — אומת באיתוראן` }
+      : { status: "warn", note: "טרם הוצלב מול איתוראן" },
     signedBy,
     craneTime,
     driveUrl: driveUrl || undefined,
     scans: thumbnail ? [thumbnail] : [],
     scanImage: thumbnail || undefined,
+    live: true,
   };
 }
 
@@ -547,7 +555,6 @@ export async function saveSignedNoteToSheet(params: {
 
   return { success: true, updatedDriveUrl: params.driveUrl };
 }
-
 
 /* ------------------------------------------------------------------ */
 /* נתונים חיים בלבד (ללא נפילה לדמה): משמשים את מסך הקנבס               */

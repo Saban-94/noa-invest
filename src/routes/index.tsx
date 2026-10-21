@@ -1,18 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  NOTES,
-  auditNote,
-  noteWeightTons,
-  driverOf,
-  fetchNotes,
-  type DeliveryNote,
-} from "@/lib/data";
+import { auditNote, noteWeightTons, driverOf, type DeliveryNote } from "@/lib/data";
+import { fetchLiveNotes, approveStrict } from "@/lib/api";
 import { approvals, useApprovals } from "@/lib/store";
 import { playUrgentSignatureAlarm } from "@/lib/audio-alerts";
 import { PageHeader, StatusPill } from "@/components/AppShell";
-import { Crown, ChevronLeft, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Crown, ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -31,36 +28,121 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const ap = useApprovals();
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [isApprovingAll, setIsApprovingAll] = useState(false);
 
+  // תעודות חיות מהגיליון ללא נפילה לנתוני דמה
   const {
-    data: notes = NOTES,
+    data: notes,
+    isLoading,
     isFetching,
+    error,
     refetch,
   } = useQuery<DeliveryNote[]>({
-    queryKey: ["delivery-notes"],
-    queryFn: fetchNotes,
-    initialData: NOTES,
+    queryKey: ["live-notes-dashboard"],
+    queryFn: fetchLiveNotes,
     staleTime: 30000,
+    retry: 1,
   });
 
-  const ready = notes.filter((n) => ap[n.id]?.rami && !ap[n.id]?.harel);
-  const pendingRami = notes.filter((n) => !ap[n.id]?.rami);
-  const done = notes.filter((n) => ap[n.id]?.harel);
+  const notesList = notes || [];
+
+  // כרטיסי אישור מסוננים לפי billingStatus === "ממתין לאישור מנכ״ל" (וגם אישור מקומי של ראמי שטרם אושר ע״י הראל)
+  const ready = notesList.filter(
+    (n) =>
+      !ap[n.id]?.harel &&
+      (n.billingStatus === "ממתין לאישור מנכ״ל" || (ap[n.id]?.rami && !ap[n.id]?.harel)),
+  );
+
+  const pendingRami = notesList.filter(
+    (n) => !ap[n.id]?.harel && n.billingStatus !== "ממתין לאישור מנכ״ל" && !ap[n.id]?.rami,
+  );
+
+  const done = notesList.filter(
+    (n) => ap[n.id]?.harel || n.billingStatus === "מאושר לחיוב" || n.billingStatus === "מאושר",
+  );
+
   const sumTons = ready.reduce((s, n) => s + noteWeightTons(n), 0);
 
-  const handleApproveAll = () => {
-    ready.forEach((n) => approvals.harel(n.id));
-    playUrgentSignatureAlarm();
-    toast.success(
-      `${ready.length} תעודות אושרו לחיוב 👑 הודעות סגירת מעגל שוגרו ללינה ולוורד אידלסון!`,
-    );
+  const handleApproveSingle = async (noteId: string) => {
+    setApprovingId(noteId);
+    try {
+      await approveStrict(noteId, "harel");
+      approvals.harel(noteId);
+      playUrgentSignatureAlarm();
+      toast.success(`ת.מ. ${noteId} אושרה סופית לחיוב 👑 נשלחה הודעה ללינה`);
+      void refetch();
+    } catch (err) {
+      toast.error("אישור מנכ״ל נדחה ע״י השרת", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setApprovingId(null);
+    }
   };
 
-  const handleApproveSingle = (noteId: string) => {
-    approvals.harel(noteId);
-    playUrgentSignatureAlarm();
-    toast.success(`ת.מ. ${noteId} אושרה סופית לחיוב 👑 נשלחה הודעה ללינה`);
+  const handleApproveAll = async () => {
+    if (ready.length === 0) return;
+    setIsApprovingAll(true);
+    let successCount = 0;
+    try {
+      for (const n of ready) {
+        try {
+          await approveStrict(n.id, "harel");
+          approvals.harel(n.id);
+          successCount++;
+        } catch (err) {
+          toast.error(`אישור ת.מ. ${n.id} נדחה`, {
+            description: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      if (successCount > 0) {
+        playUrgentSignatureAlarm();
+        toast.success(
+          `${successCount} תעודות אושרו לחיוב 👑 הודעות סגירת מעגל שוגרו ללינה ולוורד אידלסון!`,
+        );
+      }
+      void refetch();
+    } finally {
+      setIsApprovingAll(false);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <>
+        <PageHeader title="בוקר טוב, הראל" subtitle="סנכרון חי מול Apps Script" />
+        <div className="mx-auto max-w-3xl p-12 text-center text-sm text-muted-foreground" dir="rtl">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
+          טוען תעודות חיות מהגיליון...
+        </div>
+      </>
+    );
+  }
+
+  if (error || !notes) {
+    return (
+      <>
+        <PageHeader title="בוקר טוב, הראל" subtitle="סנכרון חי מול Apps Script" />
+        <div className="mx-auto max-w-xl p-6" dir="rtl">
+          <Card className="p-6 space-y-3 border-red-500/40 bg-red-500/5 text-center">
+            <div className="flex items-center justify-center gap-2 font-bold text-red-700">
+              <AlertTriangle className="h-5 w-5" /> כשל בחיבור לשרת Apps Script
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {error instanceof Error ? error.message : "לא ניתן למשוך תעודות מהשרת"}. אין הצגת
+              נתוני דמה.
+            </p>
+            <Button size="sm" onClick={() => refetch()} disabled={isFetching} className="mt-2">
+              <RefreshCw className={`h-3.5 w-3.5 ml-1 ${isFetching ? "animate-spin" : ""}`} />
+              נסה שוב
+            </Button>
+          </Card>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -96,9 +178,11 @@ function Index() {
           {ready.length > 1 && (
             <button
               onClick={handleApproveAll}
-              className="mt-5 w-full rounded-2xl bg-card py-4 font-display text-lg font-bold text-ceo shadow-md hover:bg-card/95 transition active:scale-98"
+              disabled={isApprovingAll}
+              className="mt-5 w-full rounded-2xl bg-card py-4 font-display text-lg font-bold text-ceo shadow-md hover:bg-card/95 transition active:scale-98 disabled:opacity-60 flex items-center justify-center gap-2"
             >
-              אשר הכל בלחיצה אחת 👑
+              {isApprovingAll && <Loader2 className="h-5 w-5 animate-spin" />}
+              <span>אשר הכל בלחיצה אחת 👑</span>
             </button>
           )}
         </section>
@@ -116,6 +200,7 @@ function Index() {
         {/* Ready Delivery Notes Cards for Harel */}
         {ready.map((n) => {
           const a = auditNote(n);
+          const isApproving = approvingId === n.id;
           return (
             <article
               key={n.id}
@@ -125,15 +210,17 @@ function Index() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-muted-foreground">
                     ת.מ. #{n.id} · {n.driver || driverOf(n.driverId)?.name || "חכמת מנוף"} · קומקס #
-                    {n.comaxOrder}
+                    {n.comaxOrder || n.id}
                   </span>
                   <StatusPill s={a.status} />
                 </div>
                 <h2 className="mt-2 text-xl font-bold">{n.customer}</h2>
                 <p className="mt-1 text-[15px] font-medium leading-relaxed">
-                  {a.status === "ok"
-                    ? "הכל תואם — קומקס, פקדונות 1:1 ואיתוראן 🟢"
-                    : a.findings.find((f) => f.status !== "ok")?.text}
+                  {n.live
+                    ? "נבדק ונחתם ע״י ראמי — ממתין לאישור מנכ״ל סופי 👑"
+                    : a.status === "ok"
+                      ? "הכל תואם — קומקס, פקדונות 1:1 ואיתוראן 🟢"
+                      : a.findings.find((f) => f.status !== "ok")?.text}
                 </p>
                 <div className="mt-3 flex items-end justify-between">
                   <div className="text-left">
@@ -151,9 +238,11 @@ function Index() {
               </Link>
               <button
                 onClick={() => handleApproveSingle(n.id)}
-                className="w-full border-t border-ceo/30 bg-ceo py-4 font-display text-lg font-bold text-ceo-foreground shadow-sm hover:opacity-95 transition active:scale-98"
+                disabled={isApproving}
+                className="w-full border-t border-ceo/30 bg-ceo py-4 font-display text-lg font-bold text-ceo-foreground shadow-sm hover:opacity-95 transition active:scale-98 disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                אושר סופית לחיוב 👑 הראל אידלסון
+                {isApproving && <Loader2 className="h-5 w-5 animate-spin" />}
+                <span>אושר סופית לחיוב 👑 הראל אידלסון</span>
               </button>
             </article>
           );
@@ -163,7 +252,7 @@ function Index() {
         {done.length > 0 && (
           <section>
             <h3 className="mb-2 text-sm font-bold text-muted-foreground flex items-center justify-between">
-              <span>אושרו היום ע״י מנכ״ל ({done.length})</span>
+              <span>אושרו ע״י מנכ״ל ({done.length})</span>
               <span className="text-xs font-medium text-emerald-600 flex items-center gap-1">
                 <CheckCircle2 className="h-3.5 w-3.5" /> שוגר להנה״ח
               </span>

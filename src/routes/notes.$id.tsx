@@ -2,13 +2,21 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { NOTES, auditNote, ils, noteTotal } from "@/lib/data";
+import { fetchLiveNotes } from "@/lib/api";
 import { approvals, useApprovals } from "@/lib/store";
 import { playUrgentSignatureAlarm, playDispatchChime } from "@/lib/audio-alerts";
 import { PageHeader, StatusPill } from "@/components/AppShell";
 import { CheckCircle2, ShieldCheck, Crown, Layers, Sparkles, Send } from "lucide-react";
 
 export const Route = createFileRoute("/notes/$id")({
-  loader: ({ params }) => {
+  loader: async ({ params }) => {
+    try {
+      const live = await fetchLiveNotes();
+      const n = live.find((x) => x.id === params.id);
+      if (n) return n;
+    } catch {
+      // fallback
+    }
     const n = NOTES.find((x) => x.id === params.id);
     if (!n) throw notFound();
     return n;

@@ -23,7 +23,8 @@ import { useQuery } from "@tanstack/react-query";
 import { playDispatchChime, playUrgentSignatureAlarm } from "@/lib/audio-alerts";
 import { toast } from "sonner";
 import { useApprovals } from "@/lib/store";
-import { NOTES, fetchNotes, type DeliveryNote } from "@/lib/data";
+import { fetchLiveNotes } from "@/lib/api";
+import { type DeliveryNote } from "@/lib/data";
 
 const DESKTOP_NAV = [
   { to: "/", label: "דשבורד מנכ״ל", icon: Crown },
@@ -94,15 +95,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     }, 600);
   };
 
-  const { data: notes = NOTES } = useQuery<DeliveryNote[]>({
-    queryKey: ["delivery-notes"],
-    queryFn: fetchNotes,
-    initialData: NOTES,
+  const { data: notes } = useQuery<DeliveryNote[]>({
+    queryKey: ["live-notes-appshell"],
+    queryFn: fetchLiveNotes,
     staleTime: 30000,
   });
 
-  const readyNotesCount = notes.filter(
-    (n) => approvalsState[n.id]?.rami && !approvalsState[n.id]?.harel,
+  const notesList = notes || [];
+
+  const readyNotesCount = notesList.filter(
+    (n) =>
+      n.billingStatus === "ממתין לאישור מנכ״ל" ||
+      (approvalsState[n.id]?.rami && !approvalsState[n.id]?.harel),
   ).length;
 
   return (

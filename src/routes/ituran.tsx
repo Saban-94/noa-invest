@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { NOTES, DRIVERS, type DeliveryNote, fetchNotes } from "@/lib/data";
+import { DRIVERS, type DeliveryNote } from "@/lib/data";
+import { fetchLiveNotes } from "@/lib/api";
 import { crossMatch, rowsToStops, SAMPLE_STOPS, type GpsStop } from "@/lib/ituran";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,13 +53,13 @@ function IturanPage() {
   const [customStops, setCustomStops] = useState<GpsStop[] | null>(null);
 
   const {
-    data: notes = NOTES,
+    data: notes = [],
     isFetching,
     refetch,
   } = useQuery<DeliveryNote[]>({
-    queryKey: ["delivery-notes"],
-    queryFn: fetchNotes,
-    initialData: NOTES,
+    queryKey: ["live-notes-ituran"],
+    queryFn: fetchLiveNotes,
+    staleTime: 30000,
   });
 
   const activeStops = customStops || SAMPLE_STOPS;

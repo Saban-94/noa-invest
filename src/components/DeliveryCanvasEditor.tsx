@@ -229,6 +229,20 @@ export default function DeliveryCanvasEditor({
 
   // בדיקת התאמות 1:1
   const auditSummary = useMemo(() => {
+    if (note?.live) {
+      return {
+        isAllOk: false,
+        issues: [
+          {
+            field: "הצלבה",
+            message: "טרם הוצלב מול קומקס/איתוראן",
+            severity: "warn" as const,
+          },
+        ],
+        statusLabel: "טרם הוצלב מול קומקס/איתוראן",
+      };
+    }
+
     const issues: { field: string; message: string; severity: "warn" | "fail" }[] = [];
 
     items.forEach((item, idx) => {
@@ -263,7 +277,7 @@ export default function DeliveryCanvasEditor({
       issues,
       statusLabel: isAllOk ? "מאוזן 1:1 ומאומת ✅" : "קיימות אי-התאמות לבדיקה ⚠️",
     };
-  }, [items, balesDelivered, balesBilled, palletsDelivered, palletsBilled]);
+  }, [note?.live, items, balesDelivered, balesBilled, palletsDelivered, palletsBilled]);
 
   // -------------------------------------------------------------
   // 3. ציור שטר המשלוח האמיתי + שכבות עריכה וחתימה על הקנבס
@@ -750,12 +764,15 @@ ${itemsListText}
 • סה״כ כמות פריטים: ${totalItemsUnits} יחידות
 • משקל מוערך לתעודה: ${totalEstimatedWeightTons} טון (${totalEstimatedWeightKg.toLocaleString()} ק״ג)
 
-⚖️ *בקרת חוק הפקדונות 1:1:*
-• בלות 60002: סופק ${balesDelivered} | נרשם ${balesBilled} (${balesDelivered === balesBilled ? "מאוזן ✅" : "חריגה ⚠️"})
-• משטחי עץ 60060: סופק ${palletsDelivered} | נרשם ${palletsBilled} (${palletsDelivered === palletsBilled ? "מאוזן ✅" : "חריגה ⚠️"})
+⚖️ *בקרת חוק הפקדונות:*
+${
+  note?.live
+    ? `• בלות 60002: סופק ${balesDelivered} (טרם הוצלב מול חיוב)\n• משטחי עץ 60060: סופק ${palletsDelivered} (טרם הוצלב מול חיוב)`
+    : `• בלות 60002: סופק ${balesDelivered} | נרשם ${balesBilled} (${balesDelivered === balesBilled ? "מאוזן ✅" : "חריגה ⚠️"})\n• משטחי עץ 60060: סופק ${palletsDelivered} | נרשם ${palletsBilled} (${palletsDelivered === palletsBilled ? "מאוזן ✅" : "חריגה ⚠️"})`
+}
 
 ✍️ *אישור וחתימת שטח:* ${signedBy}
-🛰️ *בקרת איתוראן:* שהייה מאומתת בכתובת האתר
+🛰️ *בקרת איתוראן:* ${note?.live ? "טרם הוצלב מול קומקס/איתוראן" : "שהייה מאומתת בכתובת האתר"}
 📁 *תיקיית לקוח ב-Drive:* תיקיות לקוחות / [${customerNo}] - ${customerName} / 2. תעודות משלוח
 
 *התעודה נבדקה ונחתמה ע״י ראמי מסארווה.* מחכה לאישורך הסופי בדשבורד! 👑`;

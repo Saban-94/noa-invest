@@ -1,13 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/AppShell";
-import {
-  getCustomerById,
-  getDeliveryNotesForCustomer,
-  type CustomerOrder,
-  type CustomerInvoice,
-} from "@/lib/customers-data";
+import { getCustomerById, type CustomerOrder, type CustomerInvoice } from "@/lib/customers-data";
+import { fetchLiveNotes } from "@/lib/api";
 import { auditNote, noteTotal, ils } from "@/lib/data";
 import { useApprovals, playAlert, playDispatchChime } from "@/lib/store";
 import {
@@ -64,6 +61,19 @@ function CustomerDetailView() {
   const [creditPallets, setCreditPallets] = useState(1);
   const [creditNotes, setCreditNotes] = useState("");
 
+  const { data: liveNotes } = useQuery({
+    queryKey: ["live-notes-customer", id],
+    queryFn: fetchLiveNotes,
+    staleTime: 30000,
+    enabled: !!customer,
+  });
+
+  const deliveryNotes = (liveNotes || []).filter(
+    (n) =>
+      (customer && n.customerNo === customer.id) ||
+      (customer && n.customer.includes(customer.name)),
+  );
+
   if (!customer) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 text-center">
@@ -78,8 +88,6 @@ function CustomerDetailView() {
       </div>
     );
   }
-
-  const deliveryNotes = getDeliveryNotesForCustomer(customer.id);
 
   const handleIssueDepositCredit = () => {
     playAlert();

@@ -3,7 +3,8 @@ import { useState, useRef, useEffect } from "react";
 import { PageHeader } from "@/components/AppShell";
 import noa from "@/assets/noa.jpg";
 import { playDispatchChime } from "@/lib/audio-alerts";
-import { fetchNotes, fetchLiveOrders, type DeliveryNote, type Order } from "@/lib/data";
+import { fetchLiveOrders, type DeliveryNote, type Order } from "@/lib/data";
+import { fetchLiveNotes } from "@/lib/api";
 import { useApprovals } from "@/lib/store";
 import { Send, Sparkles, RefreshCw, Truck, Crown, Layers, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -93,7 +94,7 @@ function NoaChatPage() {
 
     try {
       // Fetch live context from Apps Script / local store
-      const [liveNotes, liveOrders] = await Promise.all([fetchNotes(), fetchLiveOrders()]);
+      const [liveNotes, liveOrders] = await Promise.all([fetchLiveNotes(), fetchLiveOrders()]);
       const readyHarel = liveNotes.filter(
         (n) => approvalsState[n.id]?.rami && !approvalsState[n.id]?.harel,
       );

@@ -7,7 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
  */
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbw3lykYo9zKERBm6BlYU25_9SE97IAeG5UzaP7N2E_BBzLU9eTazcdZH62joq-1lNmS/exec";
+  "https://script.google.com/macros/s/AKfycbzcXKwUH_Dcrxl90InG_a9CItCewDWyv_IKH6-UudNPQaWMYEcCwZ1xDP4sZiZZXuCb/exec";
 
 function gasUrl(): string {
   return process.env["GAS_URL"] || DEFAULT_GAS_URL;
@@ -92,7 +92,13 @@ export const getScanFn = createServerFn({ method: "POST" })
 
 export const saveSignedNoteFn = createServerFn({ method: "POST" })
   .inputValidator(
-    (d: { noteId: string; customer?: string; signedBy?: string; statusNote?: string; dataUrl: string }) => {
+    (d: {
+      noteId: string;
+      customer?: string;
+      signedBy?: string;
+      statusNote?: string;
+      dataUrl: string;
+    }) => {
       if (!String(d?.noteId || "")) throw new Error("חסר מספר תעודה");
       if (!/^data:image\/png;base64,/.test(String(d?.dataUrl || ""))) {
         throw new Error("נדרשת תמונת PNG של הקנבס");
@@ -123,7 +129,11 @@ export const approvalFn = createServerFn({ method: "POST" })
   .inputValidator((d: { noteId: string; approver: "rami" | "harel"; note?: string }) => {
     if (!String(d?.noteId || "")) throw new Error("חסר מספר תעודה");
     if (d.approver !== "rami" && d.approver !== "harel") throw new Error("approver לא תקין");
-    return { noteId: String(d.noteId), approver: d.approver, note: String(d.note || "").slice(0, 500) };
+    return {
+      noteId: String(d.noteId),
+      approver: d.approver,
+      note: String(d.note || "").slice(0, 500),
+    };
   })
   .handler(async ({ data }) => {
     await gasPost({ action: "submitApproval", ...data });
