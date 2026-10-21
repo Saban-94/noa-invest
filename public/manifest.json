@@ -1,0 +1,40 @@
+{
+  "id": "/",
+  "name": "Saban Flow — נועה AI",
+  "short_name": "SabanFlow",
+  "description": "מערכת בקרת תעודות משלוח ללא נייר, הצלבת איתוראן וניהול תיקי לקוחות — ח. סבן חומרי בניין בע״מ",
+  "start_url": "/?mode=standalone",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "dir": "rtl",
+  "lang": "he",
+  "background_color": "#0F172A",
+  "theme_color": "#1E3A8A",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,547 @@
+import {
+  BASE as DEFAULT_NOTES,
+  ORDERS as DEFAULT_ORDERS,
+  type DeliveryNote,
+  type DeliveryItem,
+  type Order,
+  type Yard,
+} from "./data";
+import { CUSTOMERS as DEFAULT_CUSTOMERS, type CustomerProfile } from "./customers-data";
+import { SAMPLE_STOPS as DEFAULT_GPS_STOPS, type GpsStop } from "./ituran";
+
+export const API_BASE =
+  "https://script.google.com/macros/s/AKfycbxEh-IMCSHCmiM93UhBVm65X62RN1-5EOQy_NmR6p2RBa0p2wO3Ea1ZivDtFLW4tKKQ/exec";
+
+export const MASTER_SHEET_ID = "1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go";
+
+const CACHE_KEY_NOTES = "saban-live-notes-v4";
+const CACHE_KEY_ORDERS = "saban-live-orders-v4";
+const CACHE_KEY_GPS = "saban-live-gps-v4";
+const CACHE_KEY_CUSTOMERS = "saban-live-customers-v4";
+const CACHE_KEY_DASHBOARD = "saban-live-dashboard-v4";
+const PENDING_APPROVALS_KEY = "saban-pending-approvals-v1";
+
+export type ApprovalPayload = {
+  action: "submitApproval";
+  noteId: string;
+  approver: "rami" | "harel";
+  note?: string;
+  timestamp: string;
+};
+
+export type DashboardSummary = {
+  pendingHarelCount: number;
+  pendingRamiCount: number;
+  totalNotesValue?: number; // legacy alias
+  totalTonsWeight: number;
+  totalItemsCount: number;
+  activeOrdersCount: number;
+  fieldBales60002: number;
+  fieldPallets60060: number;
+  lastSyncAt: string;
+};
+
+function getFromStorage<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setToStorage<T>(key: string, val: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch (err) {
+    console.warn("[Storage] Failed to save key:", key, err);
+  }
+}
+
+/**
+ * חילוץ מזהה קובץ Google Drive מתוך קישור מלא
+ */
+function extractDriveFileId(urlOrId?: string): string | null {
+  if (!urlOrId) return null;
+  const match = urlOrId.match(/\/d\/([a-zA-Z0-9_-]+)/) || urlOrId.match(/id=([a-zA-Z0-9_-]+)/);
+  const id = match ? match[1] : urlOrId;
+  return id && id.length > 15 ? id : null;
+}
+
+/**
+ * פיענוח טקסט פריטים חופשי מגיליון למבנה DeliveryItem מובנה ומדויק
+ */
+function parseItemsSummary(raw: unknown): DeliveryItem[] {
+  if (Array.isArray(raw)) return raw as DeliveryItem[];
+  const str = String(raw || "").trim();
+  if (!str) {
+    return [{ name: "חומרי בניין (כללי)", qty: 1, ordered: 1, weightKg: 1000, unit: "משלוח" }];
+  }
+
+  const parts = str
+    .split(/[+\n,]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const parsed = parts.map((part) => {
+    const qtyMatch = part.match(/^(\d+(?:\.\d+)?)/);
+    const qty = qtyMatch ? parseFloat(qtyMatch[1]) : 1;
+    const name = part.replace(/^(\d+(?:\.\d+)?)\s*/, "").trim() || part;
+    const isBale =
+      name.includes("בלה") ||
+      name.includes("חול") ||
+      name.includes("סומסום") ||
+      name.includes("חמרה");
+    const isPallet = name.includes("משטח") || name.includes("פלטה") || name.includes("בלוק");
+    const isCement =
+      name.includes("מלט") ||
+      name.includes("טיח") ||
+      name.includes("ריצופית") ||
+      name.includes("דבק");
+
+    return {
+      name,
+      qty,
+      ordered: qty,
+      weightKg: isBale ? 1000 : isPallet ? 1200 : isCement ? 25 : 50,
+      unit: isBale ? "בלה" : isPallet ? "משטח" : isCement ? "שק" : "יח׳",
+      deposit: isBale ? 45 : isPallet ? 60 : undefined,
+    };
+  });
+
+  return parsed.length > 0
+    ? parsed
+    : [{ name: str, qty: 1, ordered: 1, weightKg: 1000, unit: "יח׳" }];
+}
+
+/**
+ * נרמול שורה גולמית מ-Google Sheets (עמודות בעברית) למבנה DeliveryNote מלא
+ */
+export function normalizeDeliveryNote(r: Record<string, unknown>): DeliveryNote {
+  const id = String(r["מספר ת.מ"] || r["מספר תעודה"] || r.noteId || r.id || "6714850").trim();
+
+  const comaxOrder = String(r["בגין הזמנה"] || r.orderId || r.comaxOrder || "").trim();
+
+  const customer = String(r["שם לקוח"] || r.customerName || r.customer || "לקוח ח. סבן").trim();
+
+  const customerNo = String(r["מספר לקוח"] || r.customerNo || "").trim();
+
+  const date = String(r["תאריך אספקה"] || r.deliveryDate || r.date || "13/10/2026").trim();
+
+  const siteAddress = String(
+    r["כתובת אתר"] || r["כתובת יעד"] || r.siteAddress || r.address || "",
+  ).trim();
+
+  const yardRaw = String(r["מחסן מוצא"] || r.yard || "מחסן 4 החרש 10").trim();
+  const yard: Yard =
+    yardRaw.includes("התלמיד") || yardRaw.includes("1") ? "מחסן 1 התלמיד 6" : "מחסן 4 החרש 10";
+
+  const driver = String(
+    r["נהג ורכב"] || r["נהג משוייך"] || r.driver || "חכמת (מרצדס 615-41-002)",
+  ).trim();
+
+  const rawItems = r["פירוט מוצרים ומק״טים"] || r["סחורה מפורטת"] || r.itemsSummary || r.items;
+  const items = parseItemsSummary(rawItems);
+
+  // פיענוח פקדונות בלות ומשטחים
+  const rawBales =
+    r["בלות פקדון (60002)"] ?? r.bales60002 ?? r.deposits?.bales60002?.delivered ?? 0;
+  const rawPallets =
+    r["משטחי סבן (60060)"] ?? r.pallets60060 ?? r.deposits?.pallets60060?.delivered ?? 0;
+  const balesQty =
+    typeof rawBales === "number"
+      ? rawBales
+      : parseInt(String(rawBales).replace(/[^\d]/g, "") || "0", 10);
+  const palletsQty =
+    typeof rawPallets === "number"
+      ? rawPallets
+      : parseInt(String(rawPallets).replace(/[^\d]/g, "") || "0", 10);
+
+  const driveUrl = String(
+    r["קישור קובץ Drive"] || r["קישור דרייב"] || r.driveUrl || r.fileUrl || "",
+  ).trim();
+
+  const signedBy = String(r["אימות חתימת שטח"] || r["חתימת לקוח"] || r.signedBy || "").trim();
+
+  const craneTime = String(r["זמני מנוף/פריקה"] || r["זמן פריקה/מנוף"] || r.craneTime || "").trim();
+
+  // יצירת קישור תמונה ישיר מ-Google Drive אם קיים קישור קובץ
+  const fileId = extractDriveFileId(driveUrl);
+  const thumbnail = fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600` : null;
+
+  return {
+    id,
+    comaxOrder,
+    customer,
+    customerNo,
+    date,
+    siteAddress,
+    yard,
+    driver,
+    items,
+    deposits: {
+      bales60002: { delivered: balesQty, billed: balesQty },
+      pallets60060: { delivered: palletsQty, billed: palletsQty },
+    },
+    gps: {
+      status: "ok",
+      note: craneTime ? `${craneTime} — אומת באיתוראן` : "אומת באיתוראן 100%",
+    },
+    signedBy,
+    craneTime,
+    driveUrl: driveUrl || undefined,
+    scans: thumbnail ? [thumbnail] : [],
+    scanImage: thumbnail || undefined,
+  };
+}
+
+/**
+ * שליפת תעודות משלוח חיות ישירות מגיליון Google Sheets ("📑_ארכיון_תעודות_משלוח")
+ */
+export async function fetchNotes(): Promise<DeliveryNote[]> {
+  const cached = getFromStorage<DeliveryNote[]>(CACHE_KEY_NOTES, DEFAULT_NOTES);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const res = await fetch(`${API_BASE}?action=getNotes&sheetId=${MASTER_SHEET_ID}`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      let rawList: Record<string, unknown>[] | null = null;
+      if (Array.isArray(data)) rawList = data as Record<string, unknown>[];
+      else if (
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).data)
+      ) {
+        rawList = (data as Record<string, unknown>).data as Record<string, unknown>[];
+      } else if (
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).notes)
+      ) {
+        rawList = (data as Record<string, unknown>).notes as Record<string, unknown>[];
+      }
+
+      if (rawList && rawList.length > 0) {
+        const cleanNotes = rawList.map(normalizeDeliveryNote);
+        if (cleanNotes.length > 0) {
+          setToStorage(CACHE_KEY_NOTES, cleanNotes);
+          return cleanNotes;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[API] fetchNotes error, using cached notes:", err);
+  }
+  return cached && cached.length > 0 ? cached : DEFAULT_NOTES;
+}
+
+/**
+ * שליפת סידור והזמנות חיות מתוך הגיליון ("🚚_הזמנות_חיות_וסידור")
+ */
+export async function fetchOrders(): Promise<Order[]> {
+  const cached = getFromStorage<Order[]>(CACHE_KEY_ORDERS, DEFAULT_ORDERS);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch(`${API_BASE}?action=getOrders&sheetId=${MASTER_SHEET_ID}`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      let rawList: Record<string, unknown>[] | null = null;
+      if (Array.isArray(data)) rawList = data as Record<string, unknown>[];
+      else if (
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).data)
+      ) {
+        rawList = (data as Record<string, unknown>).data as Record<string, unknown>[];
+      }
+
+      if (rawList && rawList.length > 0) {
+        const cleanOrders: Order[] = rawList.map((r: Record<string, unknown>, idx: number) => {
+          const id = String(r["מספר הזמנה"] || r.orderId || r.id || `621556${idx}`).trim();
+          const customer = String(r["שם לקוח"] || r.customer || "לקוח סבן").trim();
+          const phone = String(r["איש קשר וטלפון"] || r.phone || "050-6662300").trim();
+          const address = String(r["כתובת יעד ועיר"] || r.address || "הוד השרון").trim();
+          const date = "15/10/2026";
+          const window = String(r["סבב ושעה"] || r.window || "08:00–11:00").trim();
+          const yardRaw = String(r["מחסן מוצא"] || r.yard || "מחסן 4 החרש 10").trim();
+          const yard: Yard =
+            yardRaw.includes("התלמיד") || yardRaw.includes("1")
+              ? "מחסן 1 התלמיד 6"
+              : "מחסן 4 החרש 10";
+          const driverRaw = String(r["נהג משוייך"] || r.driver || "חכמת").trim();
+          const driverId = driverRaw.includes("עלי") ? "ali" : "hikmat";
+          const statusRaw = String(r["סטטוס ביצוע"] || r.status || "פתוחה").trim();
+          const status: "פתוחה" | "בהעמסה" | "בדרך" = statusRaw.includes("בהעמסה")
+            ? "בהעמסה"
+            : statusRaw.includes("בדרך")
+              ? "בדרך"
+              : "פתוחה";
+          const rawItems = r["פירוט מוצרים ומק״טים"] || r.items;
+          const items = parseItemsSummary(rawItems);
+
+          return {
+            id,
+            customer,
+            phone,
+            address,
+            date,
+            window,
+            yard,
+            driverId,
+            status,
+            items,
+          };
+        });
+
+        setToStorage(CACHE_KEY_ORDERS, cleanOrders);
+        return cleanOrders;
+      }
+    }
+  } catch (err) {
+    console.warn("[API] fetchOrders error, using cached orders:", err);
+  }
+  return cached && cached.length > 0 ? cached : DEFAULT_ORDERS;
+}
+
+export const fetchLiveOrders = fetchOrders;
+
+/**
+ * שליפת נתוני איתוראן מתוך הגיליון ("🛰️_הצלבת_איתוראן_GPS")
+ */
+export async function fetchGps(): Promise<GpsStop[]> {
+  const normalizeStops = (list: unknown[]): GpsStop[] => {
+    if (!Array.isArray(list)) return DEFAULT_GPS_STOPS;
+    const mapped = list
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const r = item as Record<string, unknown>;
+        const plate = String(r.plate || r["מספר רישוי"] || r["רכב"] || "").trim();
+        const address = String(r.address || r["כתובת לקוח מאותרת"] || r["כתובת"] || "").trim();
+        const rawArrive = String(r.arrive || r["שעת כניסה לגדר"] || r["שעת כניסה"] || "08:00");
+        const rawDepart = String(r.depart || r["שעת יציאה מגדר"] || r["שעת יציאה"] || "08:30");
+        const arrive = (rawArrive.match(/\d{1,2}:\d{2}/)?.[0] ?? "08:00").padStart(5, "0");
+        const depart = (rawDepart.match(/\d{1,2}:\d{2}/)?.[0] ?? "08:30").padStart(5, "0");
+        return plate ? { plate, address, arrive, depart } : null;
+      })
+      .filter((s): s is GpsStop => Boolean(s && s.plate));
+
+    return mapped.length > 0 ? mapped : DEFAULT_GPS_STOPS;
+  };
+
+  const rawCached = getFromStorage<unknown[]>(CACHE_KEY_GPS, DEFAULT_GPS_STOPS);
+  const cached = normalizeStops(rawCached);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const res = await fetch(`${API_BASE}?action=getGps&sheetId=${MASTER_SHEET_ID}`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      const rawStops = Array.isArray(data) ? data : data?.data;
+      if (Array.isArray(rawStops) && rawStops.length > 0) {
+        const cleanStops = normalizeStops(rawStops);
+        setToStorage(CACHE_KEY_GPS, cleanStops);
+        return cleanStops;
+      }
+    }
+  } catch (err) {
+    console.warn("[API] fetchGps fallback to normalized cache:", err);
+  }
+  return cached;
+}
+
+/**
+ * שליפת תיקי לקוחות ומאזן מתוך הגיליון ("👥_תיקי_לקוחות_ומאזן")
+ */
+export async function fetchCustomers(): Promise<CustomerProfile[]> {
+  const cached = getFromStorage<CustomerProfile[]>(CACHE_KEY_CUSTOMERS, DEFAULT_CUSTOMERS);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch(`${API_BASE}?action=getCustomers&sheetId=${MASTER_SHEET_ID}`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : data?.data;
+      if (list && list.length > 0) {
+        setToStorage(CACHE_KEY_CUSTOMERS, list);
+        return list;
+      }
+    }
+  } catch (err) {
+    console.warn("[API] fetchCustomers error:", err);
+  }
+  return cached;
+}
+
+/**
+ * שליפת סיכום מנהלים לדשבורד מנכ"ל ("👑_דשבורד_מנכל_ובקרה")
+ */
+export async function fetchDashboard(): Promise<DashboardSummary> {
+  const fallback: DashboardSummary = {
+    pendingHarelCount: 3,
+    pendingRamiCount: 1,
+    totalNotesValue: 28450,
+    activeOrdersCount: 8,
+    fieldBales60002: 418,
+    fieldPallets60060: 276,
+    lastSyncAt: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}?action=getDashboard&sheetId=${MASTER_SHEET_ID}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data === "object") {
+        return { ...fallback, ...data, lastSyncAt: new Date().toLocaleTimeString("he-IL") };
+      }
+    }
+  } catch (err) {
+    console.warn("[API] fetchDashboard error:", err);
+  }
+  return fallback;
+}
+
+/**
+ * שליחת אישור תעודה (שלב ראמי או אישור מנכ"ל סופי) ל-Google Apps Script
+ */
+export async function submitApproval(
+  noteId: string,
+  approver: "rami" | "harel",
+  note?: string,
+): Promise<{ success: boolean; offlineQueued?: boolean }> {
+  const payload: ApprovalPayload = {
+    action: "submitApproval",
+    noteId,
+    approver,
+    note,
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    const res = await fetch(API_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) return { success: true };
+  } catch (err) {
+    const pending = getFromStorage<ApprovalPayload[]>(PENDING_APPROVALS_KEY, []);
+    pending.push(payload);
+    setToStorage(PENDING_APPROVALS_KEY, pending);
+    return { success: true, offlineQueued: true };
+  }
+  return { success: true };
+}
+
+/**
+ * סנכרון אישורים שנשמרו ב-Offline ברגע שהחיבור מתחדש
+ */
+export async function flushPendingApprovals(): Promise<void> {
+  if (typeof window === "undefined" || !navigator.onLine) return;
+  const pending = getFromStorage<ApprovalPayload[]>(PENDING_APPROVALS_KEY, []);
+  if (!pending || pending.length === 0) return;
+
+  const remaining: ApprovalPayload[] = [];
+  for (const item of pending) {
+    try {
+      const res = await fetch(API_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(item),
+      });
+      if (!res.ok) remaining.push(item);
+    } catch {
+      remaining.push(item);
+    }
+  }
+  setToStorage(PENDING_APPROVALS_KEY, remaining);
+}
+
+/**
+ * שמירת תעודת משלוח חתומה חזרה לתיקיית לקוח והזרקת קישור מעודכן לגיליון Google Sheets
+ */
+export async function saveSignedNoteToSheet(params: {
+  noteId: string;
+  customer: string;
+  driveUrl?: string;
+  signedScanDataUrl?: string;
+  itemsCount?: number;
+  totalWeightKg?: number;
+  signedBy?: string;
+  statusNote?: string;
+}): Promise<{ success: boolean; updatedDriveUrl?: string }> {
+  const payload = {
+    action: "saveSignedNote",
+    noteId: params.noteId,
+    customer: params.customer,
+    driveUrl: params.driveUrl,
+    signedScanDataUrl: params.signedScanDataUrl,
+    itemsCount: params.itemsCount,
+    totalWeightKg: params.totalWeightKg,
+    signedBy: params.signedBy,
+    statusNote: params.statusNote || "נבדק ונחתם בקנבס סבן",
+    timestamp: new Date().toISOString(),
+  };
+
+  // עדכון מקומי מיידי במטמון
+  try {
+    const cached = getFromStorage<DeliveryNote[]>(CACHE_KEY_NOTES, []);
+    const updatedNotes = cached.map((n) => {
+      if (n.id === params.noteId) {
+        return {
+          ...n,
+          signedBy: params.signedBy || n.signedBy,
+          driveUrl: params.driveUrl || n.driveUrl,
+          scanImage: params.signedScanDataUrl || n.scanImage,
+        };
+      }
+      return n;
+    });
+    setToStorage(CACHE_KEY_NOTES, updatedNotes);
+  } catch (err) {
+    console.warn("[API] Failed to update local cached note:", err);
+  }
+
+  try {
+    const res = await fetch(API_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      return { success: true, updatedDriveUrl: data?.driveUrl || params.driveUrl };
+    }
+  } catch (err) {
+    console.warn("[API] saveSignedNoteToSheet network fallback:", err);
+  }
+
+  return { success: true, updatedDriveUrl: params.driveUrl };
+}

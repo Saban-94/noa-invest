@@ -1,0 +1,6 @@
+{
+  "name": "Saban Flow",
+  "description": "Logistics & paperless delivery note audit engine with Ituran GPS verification and Noa AI for H. Saban Building Materials Ltd.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
