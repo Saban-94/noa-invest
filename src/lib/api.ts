@@ -16,7 +16,7 @@ import {
 } from "./notes-api.functions";
 
 export const API_BASE =
-  "https://script.google.com/macros/s/AKfycbw3lykYo9zKERBm6BlYU25_9SE97IAeG5UzaP7N2E_BBzLU9eTazcdZH62joq-1lNmS/exec";
+  "https://script.google.com/macros/s/AKfycbxEh-IMCSHCmiM93UhBVm65X62RN1-5EOQy_NmR6p2RBa0p2wO3Ea1ZivDtFLW4tKKQ/exec";
 
 export const MASTER_SHEET_ID = "1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go";
 
