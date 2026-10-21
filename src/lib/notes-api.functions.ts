@@ -9,8 +9,20 @@ import { createServerFn } from "@tanstack/react-start";
 const DEFAULT_GAS_URL =
   "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec";
 
+let activeGasUrl: string | null = null;
+
 function gasUrl(): string {
-  return process.env["GAS_URL"] || DEFAULT_GAS_URL;
+  if (activeGasUrl) return activeGasUrl;
+  const envUrl = process.env["GAS_URL"];
+  // אם הכתובת בסביבה מכילה את הפריסה השבורה הידועה שאין בה doGet/doPost, השתמש ישירות ב-DEFAULT_GAS_URL
+  if (
+    envUrl &&
+    (envUrl.includes("TwXhw") ||
+      envUrl.includes("AKfycbw1zK4jGU8R9joEIyiCDhngHpI-0GIAyERmXE-hjqwGCAUaGVbUMVNbkHR6WbCVmTwXhw"))
+  ) {
+    return DEFAULT_GAS_URL;
+  }
+  return envUrl || DEFAULT_GAS_URL;
 }
 
 function apiToken(): string {
@@ -24,9 +36,17 @@ function extractDiagnosticFromText(text: string, host: string, status: number): 
   if (text.includes("nicht gefunden: doGet") || text.includes("not found: doGet")) {
     issue = "פונקציית doGet לא נמצאה בקובץ הפריסה ב-Apps Script (Script function not found: doGet)";
   } else if (text.includes("nicht gefunden: doPost") || text.includes("not found: doPost")) {
-    issue = "פונקציית doPost לא נמצאה בקובץ הפריסה ב-Apps Script (Script function not found: doPost)";
-  } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Sign in")) {
+    issue =
+      "פונקציית doPost לא נמצאה בקובץ הפריסה ב-Apps Script (Script function not found: doPost)";
+  } else if (
+    text.includes("accounts.google.com") ||
+    text.includes("ServiceLogin") ||
+    text.includes("Sign in")
+  ) {
     issue = "דף התחברות של Google — הרשאת הגישה אינה מוגדרת ל-Anyone (כל אחד)";
+  } else if (text.includes("DocumentApp.create") || text.includes("documents")) {
+    issue =
+      "שגיאת הרשאה DocumentApp ב-Apps Script. יש לעדכן את קובץ Code.gs לשמירה ישירה דרך DriveApp";
   } else {
     issue = `התקבל תוכן HTML באורך ${text.length} תווים במקום JSON`;
   }
@@ -58,16 +78,27 @@ async function gasGet(params: Record<string, string>) {
   };
 
   try {
-    const res = await fetch(buildUrl(primaryUrl), { redirect: "follow", signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(buildUrl(primaryUrl), {
+      redirect: "follow",
+      signal: AbortSignal.timeout(30_000),
+    });
     return await parseGas(res, primaryUrl);
   } catch (err) {
     if (primaryUrl !== DEFAULT_GAS_URL) {
-      console.warn(`[AppsScript] primary GAS_URL failed: ${err instanceof Error ? err.message : String(err)}. Falling back to DEFAULT_GAS_URL...`);
+      console.warn(
+        `[AppsScript] primary GAS_URL failed: ${err instanceof Error ? err.message : String(err)}. Falling back to DEFAULT_GAS_URL...`,
+      );
       try {
-        const fallbackRes = await fetch(buildUrl(DEFAULT_GAS_URL), { redirect: "follow", signal: AbortSignal.timeout(30_000) });
-        return await parseGas(fallbackRes, DEFAULT_GAS_URL);
+        const fallbackRes = await fetch(buildUrl(DEFAULT_GAS_URL), {
+          redirect: "follow",
+          signal: AbortSignal.timeout(30_000),
+        });
+        const result = await parseGas(fallbackRes, DEFAULT_GAS_URL);
+        activeGasUrl = DEFAULT_GAS_URL;
+        return result;
       } catch (fallbackErr) {
         console.error("[AppsScript] Fallback DEFAULT_GAS_URL also failed:", fallbackErr);
+        throw fallbackErr;
       }
     }
     throw err;
@@ -91,11 +122,16 @@ async function gasPost(body: Record<string, unknown>) {
     return await executePost(primaryUrl);
   } catch (err) {
     if (primaryUrl !== DEFAULT_GAS_URL) {
-      console.warn(`[AppsScript] primary POST failed: ${err instanceof Error ? err.message : String(err)}. Falling back to DEFAULT_GAS_URL...`);
+      console.warn(
+        `[AppsScript] primary POST failed: ${err instanceof Error ? err.message : String(err)}. Falling back to DEFAULT_GAS_URL...`,
+      );
       try {
-        return await executePost(DEFAULT_GAS_URL);
+        const result = await executePost(DEFAULT_GAS_URL);
+        activeGasUrl = DEFAULT_GAS_URL;
+        return result;
       } catch (fallbackErr) {
         console.error("[AppsScript] Fallback POST also failed:", fallbackErr);
+        throw fallbackErr;
       }
     }
     throw err;
