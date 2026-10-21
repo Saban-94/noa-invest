@@ -5,8 +5,13 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Assistant", system-ui, -apple-system, "SF Pro Text", sans-serif;
-  --font-display: "Rubik", "Assistant", system-ui, sans-serif;
+  --font-sans: "Heebo", "Assistant", system-ui, -apple-system, sans-serif;
+  --font-display: "Heebo", "Rubik", "Assistant", system-ui, sans-serif;
+  --color-saban: #14532d;
+  --color-pto: #d97706;
+  --color-travel: #0e7490;
+  --color-site: #7c3aed;
+  --color-warm-bg: #f4f1ea;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

@@ -69,10 +69,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
       { name: "apple-mobile-web-app-title", content: "SabanFlow" },
-      { title: "Saban Flow — נועה ח. סבן לוגיסטיקה" },
+      { title: "סידור חכם – ח. סבן חומרי בנין" },
       {
         name: "description",
-        content: "מערכת PWA לבקרת תעודות משלוח, ניהול פקדונות והצלבת איתוראן — ח. סבן חומרי בניין.",
+        content:
+          "מערכת סידור חכם, פענוח אקסל מאיתוראן, הצלבת PTO לדיסקיות טכוגרף ותכנון זמני פריקה באתרים — ח. סבן חומרי בניין.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -85,7 +86,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Rubik:wght@500;700;800&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Heebo:wght@400;500;700;800;900&family=Rubik:wght@500;700;800&display=swap",
       },
       { rel: "icon", href: "/icon.svg", type: "image/svg+xml" },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
