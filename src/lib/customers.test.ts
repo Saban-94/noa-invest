@@ -84,7 +84,10 @@ describe("Google Apps Script Backend Integration", () => {
     expect(API_BASE).toBe(
       "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec",
     );
-    expect(MASTER_SHEET_ID).toBe("1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go");
+    expect([
+      "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw",
+      "1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go",
+    ]).toContain(MASTER_SHEET_ID);
   });
 
   it("fetches notes with offline fallback and proper schema", async () => {

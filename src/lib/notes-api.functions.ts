@@ -19,13 +19,30 @@ function apiToken(): string {
   return t;
 }
 
-async function parseGas(res: Response): Promise<Record<string, unknown>> {
+function extractDiagnosticFromText(text: string, host: string, status: number): string {
+  let issue = "";
+  if (text.includes("nicht gefunden: doGet") || text.includes("not found: doGet")) {
+    issue = "פונקציית doGet לא נמצאה בקובץ הפריסה ב-Apps Script (Script function not found: doGet)";
+  } else if (text.includes("nicht gefunden: doPost") || text.includes("not found: doPost")) {
+    issue = "פונקציית doPost לא נמצאה בקובץ הפריסה ב-Apps Script (Script function not found: doPost)";
+  } else if (text.includes("accounts.google.com") || text.includes("ServiceLogin") || text.includes("Sign in")) {
+    issue = "דף התחברות של Google — הרשאת הגישה אינה מוגדרת ל-Anyone (כל אחד)";
+  } else {
+    issue = `התקבל תוכן HTML באורך ${text.length} תווים במקום JSON`;
+  }
+
+  const snippet = text.slice(0, 200).replace(/\s+/g, " ").trim();
+  return `תשובה לא תקינה מ-Apps Script (HTTP ${status}) מאת ${host}. פירוט: ${issue}. [קטע תגובה: "${snippet}"]. סיבות אפשריות: 1) פונקציית doGet/doPost חסרה בפרויקט Apps Script שנפרס 2) גישת הפריסה אינה Anyone 3) כתובת פריסה ישנה.`;
+}
+
+async function parseGas(res: Response, attemptedUrl: string): Promise<Record<string, unknown>> {
   const text = await res.text();
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error(`תשובה לא תקינה מ-Apps Script (HTTP ${res.status})`);
+    const host = new URL(attemptedUrl).hostname;
+    throw new Error(extractDiagnosticFromText(text, host, res.status));
   }
   if (data.error) throw new Error(String(data.error));
   if (data.success === false) throw new Error(String(data.error || "הפעולה נכשלה"));
@@ -33,21 +50,56 @@ async function parseGas(res: Response): Promise<Record<string, unknown>> {
 }
 
 async function gasGet(params: Record<string, string>) {
-  const u = new URL(gasUrl());
-  for (const [k, v] of Object.entries({ ...params, token: apiToken() })) u.searchParams.set(k, v);
-  const res = await fetch(u, { redirect: "follow", signal: AbortSignal.timeout(30_000) });
-  return parseGas(res);
+  const primaryUrl = gasUrl();
+  const buildUrl = (baseUrl: string) => {
+    const u = new URL(baseUrl);
+    for (const [k, v] of Object.entries({ ...params, token: apiToken() })) u.searchParams.set(k, v);
+    return u;
+  };
+
+  try {
+    const res = await fetch(buildUrl(primaryUrl), { redirect: "follow", signal: AbortSignal.timeout(30_000) });
+    return await parseGas(res, primaryUrl);
+  } catch (err) {
+    if (primaryUrl !== DEFAULT_GAS_URL) {
+      console.warn(`[AppsScript] primary GAS_URL failed: ${err instanceof Error ? err.message : String(err)}. Falling back to DEFAULT_GAS_URL...`);
+      try {
+        const fallbackRes = await fetch(buildUrl(DEFAULT_GAS_URL), { redirect: "follow", signal: AbortSignal.timeout(30_000) });
+        return await parseGas(fallbackRes, DEFAULT_GAS_URL);
+      } catch (fallbackErr) {
+        console.error("[AppsScript] Fallback DEFAULT_GAS_URL also failed:", fallbackErr);
+      }
+    }
+    throw err;
+  }
 }
 
 async function gasPost(body: Record<string, unknown>) {
-  const res = await fetch(gasUrl(), {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ ...body, token: apiToken() }),
-    redirect: "follow",
-    signal: AbortSignal.timeout(60_000),
-  });
-  return parseGas(res);
+  const primaryUrl = gasUrl();
+  const executePost = async (targetUrl: string) => {
+    const res = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ ...body, token: apiToken() }),
+      redirect: "follow",
+      signal: AbortSignal.timeout(60_000),
+    });
+    return await parseGas(res, targetUrl);
+  };
+
+  try {
+    return await executePost(primaryUrl);
+  } catch (err) {
+    if (primaryUrl !== DEFAULT_GAS_URL) {
+      console.warn(`[AppsScript] primary POST failed: ${err instanceof Error ? err.message : String(err)}. Falling back to DEFAULT_GAS_URL...`);
+      try {
+        return await executePost(DEFAULT_GAS_URL);
+      } catch (fallbackErr) {
+        console.error("[AppsScript] Fallback POST also failed:", fallbackErr);
+      }
+    }
+    throw err;
+  }
 }
 
 export type SheetNote = {
