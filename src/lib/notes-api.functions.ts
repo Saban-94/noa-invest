@@ -7,7 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
  */
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbwYQ0OszRXl_X6o3KFmFhScuR1rWVwfcEJ0CSBloCcCgRoWR6SOnLzVgB7ZVFMfzSY5/exec";
+  "https://script.google.com/macros/s/AKfycbw3lykYo9zKERBm6BlYU25_9SE97IAeG5UzaP7N2E_BBzLU9eTazcdZH62joq-1lNmS/exec";
 
 function gasUrl(): string {
   return process.env["GAS_URL"] || DEFAULT_GAS_URL;
