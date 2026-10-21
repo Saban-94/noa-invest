@@ -64,3 +64,4 @@ export function playAlert() {
 }
 
 export { playDispatchChime, playUrgentSignatureAlarm };
+export { flushPendingApprovals } from "./api";

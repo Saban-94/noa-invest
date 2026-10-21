@@ -66,7 +66,8 @@ let latestIngestionStatus: IngestionStatus = {
       id: "iss-3",
       type: "unmatched_ituran_stop",
       title: "עצירת איתוראן ללא התאמה לתעודה",
-      description: "משאית 651-51-701 שהתה 25 דקות ב'דרך רבין 10, פתח תקווה' אך לא נמצאה תעודת משלוח תואמת.",
+      description:
+        "משאית 651-51-701 שהתה 25 דקות ב'דרך רבין 10, פתח תקווה' אך לא נמצאה תעודת משלוח תואמת.",
       severity: "warning",
       entityId: "stop-651-51-701-1410",
       details: { truck: "651-51-701", duration: 25 },
@@ -77,7 +78,8 @@ let latestIngestionStatus: IngestionStatus = {
       id: "iss-4",
       type: "orphan_pto",
       title: "אירוע PTO יתום (סגירה ללא פתיחה)",
-      description: "משאית 615-41-002: סגירת מנוף בשעה 07:40 ללא פתיחה מתועדת (חצתה את גבול הדוח הקודם).",
+      description:
+        "משאית 615-41-002: סגירת מנוף בשעה 07:40 ללא פתיחה מתועדת (חצתה את גבול הדוח הקודם).",
       severity: "info",
       entityId: "pto-615-41-002-0740",
       details: { truck: "615-41-002" },

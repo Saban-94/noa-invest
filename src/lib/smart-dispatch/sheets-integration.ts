@@ -8,6 +8,7 @@ import type {
   CustomerSiteRecord,
   CitySummaryRecord,
   ErrorLogRecord,
+  MeasurementSource,
 } from "./types";
 import { describeError } from "../describe-error";
 import { SAMPLE_GALYA_NOTES, SAMPLE_VISITS } from "./fixtures";
@@ -27,7 +28,7 @@ export const TAB_NAMES = {
 export const INJECTED_COLUMNS = [
   "משך באתר",
   "נסיעה",
-  "ק\"מ נסיעה",
+  'ק"מ נסיעה',
   "הגעה",
   "יציאה",
   "PTO פתיחה",
@@ -57,7 +58,7 @@ export const VISITS_COLUMNS = [
   "PTO פתיחה",
   "PTO סגירה",
   "PTO משך",
-  "ק\"מ מהעצירה הקודמת",
+  'ק"מ מהעצירה הקודמת',
   "נסיעה",
   "משך באתר לסידור",
   "מקור המדידה",
@@ -68,12 +69,16 @@ export const VISITS_COLUMNS = [
 // זיכרון מטמון שרתי
 let inMemoryNotes: GalyaDeliveryNote[] = [...SAMPLE_GALYA_NOTES];
 let inMemoryVisits: VisitRecord[] = [...SAMPLE_VISITS];
-let inMemoryLogs: ErrorLogRecord[] = [];
+const inMemoryLogs: ErrorLogRecord[] = [];
 
 /**
  * כתיבת שגיאה ללוג שגיאות
  */
-export async function logErrorToSheet(component: string, error: unknown, context?: Record<string, unknown>): Promise<void> {
+export async function logErrorToSheet(
+  component: string,
+  error: unknown,
+  context?: Record<string, unknown>,
+): Promise<void> {
   const fullMessage = describeError(error);
   const logEntry: ErrorLogRecord = {
     timestamp: new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" }),
@@ -160,13 +165,13 @@ export async function fetchGalyaArchiveNotes(): Promise<GalyaDeliveryNote[]> {
         // שדות מוזרקים
         injectedSiteDurationMin: parseFloat(getCol("משך באתר") || "0") || undefined,
         injectedTravelMin: parseFloat(getCol("נסיעה") || "0") || undefined,
-        injectedTravelKm: parseFloat(getCol("ק\"מ נסיעה") || "0") || undefined,
+        injectedTravelKm: parseFloat(getCol('ק"מ נסיעה') || "0") || undefined,
         injectedArriveTime: getCol("הגעה") || undefined,
         injectedDepartTime: getCol("יציאה") || undefined,
         injectedPtoOpen: getCol("PTO פתיחה") || undefined,
         injectedPtoClose: getCol("PTO סגירה") || undefined,
         injectedPtoMin: parseFloat(getCol("PTO דק'") || "0") || undefined,
-        injectedMeasurementSource: (getCol("מקור מדידה") as any) || undefined,
+        injectedMeasurementSource: (getCol("מקור מדידה") as MeasurementSource) || undefined,
         injectedVisitKey: getCol("מפתח ביקור") || undefined,
       });
     }
@@ -240,7 +245,20 @@ export async function syncSmartDispatchData(
 
       // 2. כתיבת אתרי_לקוחות
       const siteRows = [
-        ["מפתח אתר", "עיר", "כתובת", "מס' לקוח", "שם לקוח", "כמות ביקורים", "P50 משך באתר", "P80 תכנון בטוח", "מקסימום דקות", "חציון נסיעה", "רמת ביטחון", "תאריך ביקור אחרון"],
+        [
+          "מפתח אתר",
+          "עיר",
+          "כתובת",
+          "מס' לקוח",
+          "שם לקוח",
+          "כמות ביקורים",
+          "P50 משך באתר",
+          "P80 תכנון בטוח",
+          "מקסימום דקות",
+          "חציון נסיעה",
+          "רמת ביטחון",
+          "תאריך ביקור אחרון",
+        ],
         ...sitesSummary.map((s) => [
           s.siteKey,
           s.city,
@@ -260,7 +278,14 @@ export async function syncSmartDispatchData(
 
       // 3. כתיבת סיכום_ערים
       const cityRows = [
-        ["עיר", "כמות ביקורים", "חציון משך באתר", "P80 משך באתר", "חציון נסיעה", "כמות אתרים פעילים"],
+        [
+          "עיר",
+          "כמות ביקורים",
+          "חציון משך באתר",
+          "P80 משך באתר",
+          "חציון נסיעה",
+          "כמות אתרים פעילים",
+        ],
         ...citiesSummary.map((c) => [
           c.city,
           c.visitsCount,
@@ -318,7 +343,11 @@ async function readGoogleSheetBatch(sheetId: string, range: string): Promise<unk
   return json.values || [];
 }
 
-async function writeGoogleSheetBatch(sheetId: string, range: string, values: unknown[][]): Promise<void> {
+async function writeGoogleSheetBatch(
+  sheetId: string,
+  range: string,
+  values: unknown[][],
+): Promise<void> {
   const token = await getGoogleAccessToken();
   if (!token) return;
 
@@ -337,7 +366,11 @@ async function writeGoogleSheetBatch(sheetId: string, range: string, values: unk
   }
 }
 
-async function appendRowToGoogleSheet(sheetId: string, tabName: string, rowValues: unknown[]): Promise<void> {
+async function appendRowToGoogleSheet(
+  sheetId: string,
+  tabName: string,
+  rowValues: unknown[],
+): Promise<void> {
   const token = await getGoogleAccessToken();
   if (!token) return;
 
@@ -367,7 +400,8 @@ async function getGoogleAccessToken(): Promise<string | null> {
     const now = Math.floor(Date.now() / 1000);
     const claim = {
       iss: creds.email,
-      scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.modify",
+      scope:
+        "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.modify",
       aud: "https://oauth2.googleapis.com/token",
       exp: now + 3600,
       iat: now,
@@ -457,8 +491,5 @@ function base64UrlEncodeBuffer(buf: Uint8Array): string {
   for (let i = 0; i < buf.length; i++) {
     bin += String.fromCharCode(buf[i]!);
   }
-  return btoa(bin)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

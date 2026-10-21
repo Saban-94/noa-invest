@@ -102,9 +102,11 @@ export const uploadIturanReportFn = createServerFn({ method: "POST" })
  * אישור / טיפול ידני בפריט מתיבת איכות הנתונים
  */
 export const resolveQualityIssueFn = createServerFn({ method: "POST" })
-  .inputValidator((data: { issueId: string; action: "approve" | "ignore" | "manual_fix"; note?: string }) => {
-    return data;
-  })
+  .inputValidator(
+    (data: { issueId: string; action: "approve" | "ignore" | "manual_fix"; note?: string }) => {
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const status = getIngestionStatus();
     const target = status.qualityIssues.find((q) => q.id === data.issueId);

@@ -96,7 +96,10 @@ export function normalizeAddressToSiteKey(rawAddress?: string): string {
  * עיר זהה: +1
  * סף: >= 4, או >= 3 כאשר הרחוב זהה
  */
-export function scoreAddressMatch(addr1?: string, addr2?: string): {
+export function scoreAddressMatch(
+  addr1?: string,
+  addr2?: string,
+): {
   score: number;
   streetMatched: boolean;
   isMatch: boolean;
@@ -109,11 +112,7 @@ export function scoreAddressMatch(addr1?: string, addr2?: string): {
 
   // השוואת רחוב
   if (p1.street && p2.street) {
-    if (
-      p1.street === p2.street ||
-      p1.street.includes(p2.street) ||
-      p2.street.includes(p1.street)
-    ) {
+    if (p1.street === p2.street || p1.street.includes(p2.street) || p2.street.includes(p1.street)) {
       score += 2;
       streetMatched = true;
     }
@@ -140,9 +139,10 @@ export function scoreAddressMatch(addr1?: string, addr2?: string): {
  * אותו מספר תעודה = תעודה אחת (השורה המלאה יותר).
  * שורות שיש בהן רק תאריך ונהג ללא מספר תעודה וכתובת = סימוני יום, להתעלם מהן.
  */
-export function deduplicateAndFilterDeliveryNotes(
-  rawNotes: GalyaDeliveryNote[],
-): { cleanNotes: GalyaDeliveryNote[]; duplicateIssuesCount: number } {
+export function deduplicateAndFilterDeliveryNotes(rawNotes: GalyaDeliveryNote[]): {
+  cleanNotes: GalyaDeliveryNote[];
+  duplicateIssuesCount: number;
+} {
   const byId = new Map<string, GalyaDeliveryNote>();
   let duplicateIssuesCount = 0;
 
@@ -166,12 +166,14 @@ export function deduplicateAndFilterDeliveryNotes(
     } else {
       duplicateIssuesCount++;
       // בחירת השורה המלאה יותר
-      const existingScore = (existing.itemsSummary ? 2 : 0) +
+      const existingScore =
+        (existing.itemsSummary ? 2 : 0) +
         (existing.craneTimeRaw ? 2 : 0) +
         (existing.signedLink ? 2 : 0) +
         (existing.orderId ? 1 : 0);
 
-      const newScore = (n.itemsSummary ? 2 : 0) +
+      const newScore =
+        (n.itemsSummary ? 2 : 0) +
         (n.craneTimeRaw ? 2 : 0) +
         (n.signedLink ? 2 : 0) +
         (n.orderId ? 1 : 0);
@@ -221,7 +223,8 @@ export function groupNotesIntoVisits(notes: GalyaDeliveryNote[]): VisitRecord[] 
   for (const { notes: vNotes, key: visitKey } of visitMap.values()) {
     const first = vNotes[0]!;
     const date = first.docDate.trim();
-    let truck = normalizeTruckPlate(first.truckRaw || "") || normalizeTruckPlate(first.driverRaw || "");
+    let truck =
+      normalizeTruckPlate(first.truckRaw || "") || normalizeTruckPlate(first.driverRaw || "");
     const qualityFlags: string[] = [];
 
     if (!truck) {
@@ -239,13 +242,15 @@ export function groupNotesIntoVisits(notes: GalyaDeliveryNote[]): VisitRecord[] 
     hwSummary.flags.forEach((f) => qualityFlags.push(f));
 
     const customers = Array.from(new Set(vNotes.map((n) => n.customerName).filter(Boolean)));
-    const customerNumbers = Array.from(new Set(vNotes.map((n) => n.customerNo || "").filter(Boolean)));
+    const customerNumbers = Array.from(
+      new Set(vNotes.map((n) => n.customerNo || "").filter(Boolean)),
+    );
     const noteIds = vNotes.map((n) => n.noteId).filter(Boolean);
     const orderIds = Array.from(new Set(vNotes.map((n) => n.orderId || "").filter(Boolean)));
 
     // ברירת מחדל זמנית למדידה לפני הצלבת איתוראן
-    let finalDuration = hwSummary.totalValidMin > 0 ? hwSummary.totalValidMin : 20;
-    let source: MeasurementSource = hwSummary.totalValidMin > 0 ? "handwritten" : "fleet_default";
+    const finalDuration = hwSummary.totalValidMin > 0 ? hwSummary.totalValidMin : 20;
+    const source: MeasurementSource = hwSummary.totalValidMin > 0 ? "handwritten" : "fleet_default";
 
     visits.push({
       visitKey,
@@ -336,7 +341,8 @@ export function matchVisitsWithIturanStops(
       }
 
       // עדיפות מדידה: איתוראן קודם לכתב יד
-      const finalDuration = bestStop.durationMin > 0 ? bestStop.durationMin : visit.finalSiteDurationMin;
+      const finalDuration =
+        bestStop.durationMin > 0 ? bestStop.durationMin : visit.finalSiteDurationMin;
 
       return {
         ...visit,
@@ -380,7 +386,10 @@ export function injectIturanDataIntoNotes(
   }
 
   return notes.map((note) => {
-    let truck = normalizeTruckPlate(note.truckRaw || "") || normalizeTruckPlate(note.driverRaw || "") || "ללא-משאית";
+    const truck =
+      normalizeTruckPlate(note.truckRaw || "") ||
+      normalizeTruckPlate(note.driverRaw || "") ||
+      "ללא-משאית";
     const siteKey = normalizeAddressToSiteKey(note.deliveryAddress);
     const visitKey = `${note.docDate.trim()}_${truck}_${siteKey}`;
 

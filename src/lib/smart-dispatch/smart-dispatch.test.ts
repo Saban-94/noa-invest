@@ -1,9 +1,6 @@
 // src/lib/smart-dispatch/smart-dispatch.test.ts
 import { describe, it, expect } from "vitest";
-import {
-  parseHandwrittenCraneWindows,
-  summarizeVisitHandwrittenTimes,
-} from "./handwritten-crane";
+import { parseHandwrittenCraneWindows, summarizeVisitHandwrittenTimes } from "./handwritten-crane";
 import {
   parseAddressComponents,
   scoreAddressMatch,
@@ -171,7 +168,8 @@ describe("3. Deduplication & Data Cleaning (דה-דופליקציה וניקוי
       },
     ];
 
-    const { cleanNotes, duplicateIssuesCount } = deduplicateAndFilterDeliveryNotes(notesWithDuplicates);
+    const { cleanNotes, duplicateIssuesCount } =
+      deduplicateAndFilterDeliveryNotes(notesWithDuplicates);
     expect(cleanNotes.length).toBe(1);
     expect(duplicateIssuesCount).toBe(1);
     expect(cleanNotes[0]?.itemsSummary).toBe("5 בלה חול");

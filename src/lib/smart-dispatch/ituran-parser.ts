@@ -35,7 +35,10 @@ export function cleanDriverName(raw?: string): string {
     .trim();
 
   // אם יש ירידת שורה
-  const lines = clean.split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean);
+  const lines = clean
+    .split(/[\r\n]+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
   if (lines.length > 1 && (lines[0]?.includes("נהג") || lines[0]?.includes("קבוע"))) {
     clean = lines[1] ?? lines[0] ?? "";
   } else if (lines.length > 0) {
@@ -103,7 +106,7 @@ function mapRowToIturanRaw(
   const driverName = getVal("שם נהג");
   const address = getVal("כתובת");
   const stateName = getVal("שם מצב");
-  const distanceStr = getVal("מרחק בק\"מ");
+  const distanceStr = getVal('מרחק בק"מ');
   const distanceKm = parseFloat(distanceStr.replace(/[^\d.]/g, "") || "0");
   const stopDurationStr = getVal("משך עצירה");
   const stopEndTimeStr = getVal("זמן סיום עצירה");
@@ -137,7 +140,8 @@ export function parseIturanExcel(buffer: ArrayBuffer | Uint8Array | Buffer): {
 } {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
   // איתור גיליון Report או הגיליון הראשון
-  const sheetName = workbook.SheetNames.find((s) => s.toLowerCase() === "report") ?? workbook.SheetNames[0];
+  const sheetName =
+    workbook.SheetNames.find((s) => s.toLowerCase() === "report") ?? workbook.SheetNames[0];
   if (!sheetName) {
     throw new Error("קובץ האקסל אינו מכיל גיליונות");
   }

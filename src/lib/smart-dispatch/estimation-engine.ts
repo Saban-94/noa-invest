@@ -49,7 +49,9 @@ export function estimateDispatchTime(
   // 1. סינון ביקורים לפי רמות ההיררכיה
   // רמה 1: אתר ספציפי
   const siteVisits = visits.filter(
-    (v) => v.siteKey === normSiteKey || (v.fullAddress && normalizeAddressToSiteKey(v.fullAddress) === normSiteKey),
+    (v) =>
+      v.siteKey === normSiteKey ||
+      (v.fullAddress && normalizeAddressToSiteKey(v.fullAddress) === normSiteKey),
   );
 
   // רמה 2: לקוח (לפי מספר לקוח או שם)
@@ -109,7 +111,11 @@ export function estimateDispatchTime(
   let confidence: "high" | "medium" | "low" = "low";
   if ((hierarchyLevel === "אתר" || hierarchyLevel === "לקוח") && sampleCount >= 4) {
     confidence = "high";
-  } else if ((hierarchyLevel === "אתר" || hierarchyLevel === "לקוח") && sampleCount >= 2 && sampleCount <= 3) {
+  } else if (
+    (hierarchyLevel === "אתר" || hierarchyLevel === "לקוח") &&
+    sampleCount >= 2 &&
+    sampleCount <= 3
+  ) {
     confidence = "medium";
   } else {
     confidence = "low";
@@ -225,7 +231,9 @@ export function buildCustomerSitesSummary(visits: VisitRecord[]): CustomerSiteRe
   for (const [siteKey, siteVisits] of bySite.entries()) {
     const first = siteVisits[0]!;
     const durations = siteVisits.map((v) => v.finalSiteDurationMin).filter((d) => d > 0);
-    const drives = siteVisits.map((v) => v.driveMin).filter((d): d is number => typeof d === "number" && d > 0);
+    const drives = siteVisits
+      .map((v) => v.driveMin)
+      .filter((d): d is number => typeof d === "number" && d > 0);
 
     const medianDurationMin = durations.length > 0 ? calculatePercentile(durations, 50) : 20;
     const p80DurationMin = durations.length > 0 ? calculatePercentile(durations, 80) : 35;
@@ -282,7 +290,9 @@ export function buildCitiesSummary(visits: VisitRecord[]): CitySummaryRecord[] {
 
   for (const [city, cityVisits] of byCity.entries()) {
     const durations = cityVisits.map((v) => v.finalSiteDurationMin).filter((d) => d > 0);
-    const drives = cityVisits.map((v) => v.driveMin).filter((d): d is number => typeof d === "number" && d > 0);
+    const drives = cityVisits
+      .map((v) => v.driveMin)
+      .filter((d): d is number => typeof d === "number" && d > 0);
     const uniqueSites = new Set(cityVisits.map((v) => v.siteKey)).size;
 
     results.push({
