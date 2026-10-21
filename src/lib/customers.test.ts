@@ -81,10 +81,9 @@ import {
 
 describe("Google Apps Script Backend Integration", () => {
   it("defines the production API_BASE and MASTER_SHEET_ID correctly", () => {
-    expect([
+    expect(API_BASE).toBe(
       "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec",
-      "https://script.google.com/macros/s/AKfycbxVFYZsqxGmZsez91TUoii1LM8PALQmtuZebmPU2RK2Ki3ZuZADLGF_8u4OQ5rr4dSigQ/exec",
-    ]).toContain(API_BASE);
+    );
     expect(MASTER_SHEET_ID).toBe("1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go");
   });
 
