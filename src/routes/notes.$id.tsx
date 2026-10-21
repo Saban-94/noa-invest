@@ -1,7 +1,7 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { NOTES, auditNote, ils, noteTotal } from "@/lib/data";
+import { NOTES, auditNote, noteItemsCount, noteWeightKg, noteWeightTons } from "@/lib/data";
 import { fetchLiveNotes } from "@/lib/api";
 import { approvals, useApprovals } from "@/lib/store";
 import { playUrgentSignatureAlarm, playDispatchChime } from "@/lib/audio-alerts";
@@ -160,7 +160,7 @@ function Viewer() {
                     בלות (60002)
                   </span>
                   <span className="font-display text-base font-extrabold text-amber-800">
-                    {n.deposits.bales60002.delivered} סופקו
+                    {n.deposits?.bales60002?.delivered ?? 0} סופקו
                   </span>
                 </div>
 
@@ -169,17 +169,27 @@ function Viewer() {
                     משטחים (60060)
                   </span>
                   <span className="font-display text-base font-extrabold text-emerald-800">
-                    {n.deposits.pallets60060.delivered} סופקו
+                    {n.deposits?.pallets60060?.delivered ?? 0} סופקו
                   </span>
                 </div>
               </div>
 
-              {/* Bottom line total */}
-              <div className="border-t pt-3 flex items-baseline justify-between">
-                <span className="text-xs text-muted-foreground font-semibold">סה״כ לתעודה</span>
-                <span className="font-display text-2xl font-extrabold text-foreground">
-                  {ils(noteTotal(n))}
-                </span>
+              {/* Items & Weight Summary */}
+              <div className="border-t pt-3 space-y-1.5">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xs text-muted-foreground font-semibold">כמות פריטים</span>
+                  <span className="font-display text-base font-extrabold text-foreground">
+                    {noteItemsCount(n)} פריטים
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xs text-muted-foreground font-semibold">
+                    משקל מוערך לתעודה
+                  </span>
+                  <span className="font-display text-lg font-extrabold text-foreground">
+                    {noteWeightTons(n).toFixed(2)} טון ({noteWeightKg(n).toLocaleString()} ק״ג)
+                  </span>
+                </div>
               </div>
             </div>
 

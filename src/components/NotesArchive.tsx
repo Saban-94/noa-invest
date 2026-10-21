@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { auditNote, fmtDate, ils, noteTotal, type DeliveryNote } from "@/lib/data";
+import { auditNote, fmtDate, noteItemsCount, noteWeightTons, type DeliveryNote } from "@/lib/data";
 import { fetchLiveNotes } from "@/lib/api";
 import { approvals, useApprovals } from "@/lib/store";
 import { playDispatchChime, playUrgentSignatureAlarm } from "@/lib/audio-alerts";
@@ -150,8 +150,8 @@ export function NotesArchive() {
         <div className="space-y-3">
           {list.map((n) => {
             const audit = auditNote(n);
-            const b = n.deposits.bales60002;
-            const p = n.deposits.pallets60060;
+            const b = n.deposits?.bales60002 || { delivered: 0, billed: 0 };
+            const p = n.deposits?.pallets60060 || { delivered: 0, billed: 0 };
             const ap = apState[n.id];
 
             return (
@@ -196,8 +196,10 @@ export function NotesArchive() {
                       <h3 className="font-display text-lg font-bold text-foreground group-hover:text-primary transition">
                         {n.customer}
                       </h3>
-                      <div className="font-display text-base font-extrabold text-foreground">
-                        {ils(noteTotal(n))}
+                      <div className="font-display text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                        <span>{noteItemsCount(n)} פריטים</span>
+                        <span>·</span>
+                        <span>{noteWeightTons(n).toFixed(1)} טון</span>
                       </div>
                     </div>
 
@@ -206,32 +208,44 @@ export function NotesArchive() {
                       {/* Bales 60002 */}
                       <span
                         className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-semibold ${
-                          b.delivered === b.billed
+                          n.live
                             ? "bg-amber-500/10 text-amber-800 border border-amber-500/20"
-                            : "bg-destructive/10 text-destructive border border-destructive/20"
+                            : b.delivered === b.billed
+                              ? "bg-amber-500/10 text-amber-800 border border-amber-500/20"
+                              : "bg-destructive/10 text-destructive border border-destructive/20"
                         }`}
                       >
                         <Package className="h-3 w-3" />
-                        <span>בלות 60002: {b.delivered}</span>
+                        <span>
+                          בלות 60002: {b.delivered}
+                          {n.live ? " (טרם הוצלב)" : ""}
+                        </span>
                       </span>
 
                       {/* Pallets 60060 */}
                       <span
                         className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-semibold ${
-                          p.delivered === p.billed
+                          n.live
                             ? "bg-emerald-500/10 text-emerald-800 border border-emerald-500/20"
-                            : "bg-destructive/10 text-destructive border border-destructive/20"
+                            : p.delivered === p.billed
+                              ? "bg-emerald-500/10 text-emerald-800 border border-emerald-500/20"
+                              : "bg-destructive/10 text-destructive border border-destructive/20"
                         }`}
                       >
                         <Layers className="h-3 w-3" />
-                        <span>משטחים 60060: {p.delivered}</span>
+                        <span>
+                          משטחים 60060: {p.delivered}
+                          {n.live ? " (טרם הוצלב)" : ""}
+                        </span>
                       </span>
 
                       {/* Ituran Status */}
                       <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-muted-foreground">
                         <Satellite className="h-3 w-3 text-blue-500" />
                         <span>
-                          איתוראן: {n.gps.arrive || "—"} - {n.gps.depart || "—"}
+                          {n.live
+                            ? "טרם הוצלב מול איתוראן"
+                            : n.gps?.note || "טרם הוצלב מול איתוראן"}
                         </span>
                       </span>
                     </div>

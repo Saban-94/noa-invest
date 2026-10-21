@@ -218,7 +218,7 @@ function CustomersList() {
                       בלות פתוחות (60002)
                     </span>
                     <span className="font-display font-extrabold text-amber-700 text-base">
-                      {c.depositLedger.bales60002.openBalance} יח׳
+                      {c.depositLedger?.bales60002?.openBalance ?? 0} יח׳
                     </span>
                   </div>
                   <div>
@@ -226,7 +226,7 @@ function CustomersList() {
                       משטחי עץ (60060)
                     </span>
                     <span className="font-display font-extrabold text-emerald-700 text-base">
-                      {c.depositLedger.pallets60060.openBalance} יח׳
+                      {c.depositLedger?.pallets60060?.openBalance ?? 0} יח׳
                     </span>
                   </div>
                 </div>

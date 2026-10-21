@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/AppShell";
 import { getCustomerById, type CustomerOrder, type CustomerInvoice } from "@/lib/customers-data";
 import { fetchLiveNotes } from "@/lib/api";
-import { auditNote, noteTotal, ils } from "@/lib/data";
+import { auditNote, noteTotal, ils, noteItemsCount, noteWeightTons } from "@/lib/data";
 import { useApprovals, playAlert, playDispatchChime } from "@/lib/store";
 import {
   Phone,
@@ -252,19 +252,19 @@ function CustomerDetailView() {
                 <div className="rounded-xl bg-card p-2 shadow-xs">
                   <span className="text-[11px] text-muted-foreground block">חויבו</span>
                   <span className="font-display text-lg font-bold">
-                    {customer.depositLedger.bales60002.billed}
+                    {customer.depositLedger?.bales60002?.billed ?? 0}
                   </span>
                 </div>
                 <div className="rounded-xl bg-card p-2 shadow-xs">
                   <span className="text-[11px] text-muted-foreground block">הוחזרו</span>
                   <span className="font-display text-lg font-bold text-emerald-600">
-                    {customer.depositLedger.bales60002.returned}
+                    {customer.depositLedger?.bales60002?.returned ?? 0}
                   </span>
                 </div>
                 <div className="rounded-xl bg-amber-500/20 p-2 shadow-xs border border-amber-500/40">
                   <span className="text-[11px] font-bold text-amber-900 block">יתרה בשטח</span>
                   <span className="font-display text-xl font-extrabold text-amber-800">
-                    {customer.depositLedger.bales60002.openBalance}
+                    {customer.depositLedger?.bales60002?.openBalance ?? 0}
                   </span>
                 </div>
               </div>
@@ -288,19 +288,19 @@ function CustomerDetailView() {
                 <div className="rounded-xl bg-card p-2 shadow-xs">
                   <span className="text-[11px] text-muted-foreground block">חויבו</span>
                   <span className="font-display text-lg font-bold">
-                    {customer.depositLedger.pallets60060.billed}
+                    {customer.depositLedger?.pallets60060?.billed ?? 0}
                   </span>
                 </div>
                 <div className="rounded-xl bg-card p-2 shadow-xs">
                   <span className="text-[11px] text-muted-foreground block">הוחזרו</span>
                   <span className="font-display text-lg font-bold text-emerald-600">
-                    {customer.depositLedger.pallets60060.returned}
+                    {customer.depositLedger?.pallets60060?.returned ?? 0}
                   </span>
                 </div>
                 <div className="rounded-xl bg-emerald-500/20 p-2 shadow-xs border border-emerald-500/40">
                   <span className="text-[11px] font-bold text-emerald-900 block">יתרה בשטח</span>
                   <span className="font-display text-xl font-extrabold text-emerald-800">
-                    {customer.depositLedger.pallets60060.openBalance}
+                    {customer.depositLedger?.pallets60060?.openBalance ?? 0}
                   </span>
                 </div>
               </div>
@@ -443,24 +443,30 @@ function CustomerDetailView() {
                             </span>
                             <span
                               className={`rounded-md px-2 py-0.5 text-xs font-bold ${
-                                audit.status === "ok"
-                                  ? "bg-emerald-500/15 text-emerald-700"
-                                  : "bg-amber-500/15 text-amber-700"
+                                n.live
+                                  ? "bg-amber-500/15 text-amber-800"
+                                  : audit.status === "ok"
+                                    ? "bg-emerald-500/15 text-emerald-700"
+                                    : "bg-amber-500/15 text-amber-700"
                               }`}
                             >
-                              {audit.status === "ok" ? "🟢 אומת 100%" : "⚠️ חריגת איתוראן"}
+                              {n.live
+                                ? "טרם הוצלב מול קומקס/איתוראן"
+                                : audit.status === "ok"
+                                  ? "🟢 אומת 100%"
+                                  : "⚠️ חריגת איתוראן"}
                             </span>
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            הזמנת קומקס #{n.comaxOrder} · שעת חתימה: {n.signedAt} · {n.items.length}{" "}
-                            שורות
+                            הזמנת קומקס #{n.comaxOrder} · {n.items.length} שורות
+                            {n.craneTime ? ` · פריקה/מנוף: ${n.craneTime}` : ""}
                           </div>
                         </div>
 
                         <div className="flex items-center gap-3">
                           <div className="text-right text-xs">
-                            <span className="font-display text-base font-bold text-foreground block">
-                              {ils(noteTotal(n))}
+                            <span className="font-display text-xs font-semibold text-muted-foreground block">
+                              {noteItemsCount(n)} פריטים · {noteWeightTons(n).toFixed(1)} טון
                             </span>
                             <span className="text-[11px] text-muted-foreground">
                               {ap?.harel
