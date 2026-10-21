@@ -2,9 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DeliveryCanvasEditor from "@/components/DeliveryCanvasEditor";
-import { NOTES, type DeliveryNote } from "@/lib/data";
-import { fetchNotes, submitApproval, saveSignedNoteToSheet } from "@/lib/api";
-import defaultScan from "@/assets/delivery-note.jpg";
+import { type DeliveryNote } from "@/lib/data";
+import { fetchLiveNotes } from "@/lib/api";
+import { getScanFn } from "@/lib/notes-api.functions";
+import { scanToDataUrl } from "@/lib/scan-render";
 import noaStamp from "@/assets/noa.jpg";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,18 +39,6 @@ const CUSTOMERS_ROOT_DRIVE_URL =
   "https://drive.google.com/drive/folders/1JGNbTlmB5yBH_cLOApKTvE39CEL6roFF";
 
 /**
- * מחלץ מזהה קובץ Drive מתוך קישור מלא ומחזיר כתובת Thumbnail ישירה ברזולוציה גבוהה
- */
-function getDriveThumbnailUrl(driveUrlOrId?: string): string | null {
-  if (!driveUrlOrId) return null;
-  const match =
-    driveUrlOrId.match(/\/d\/([a-zA-Z0-9_-]+)/) || driveUrlOrId.match(/id=([a-zA-Z0-9_-]+)/);
-  const fileId = match ? match[1] : driveUrlOrId;
-  if (!fileId || fileId.length < 15) return null;
-  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
-}
-
-/**
  * פונקציית ביקורת עצמאית ומוגנת ב-100% משגיאות undefined.forEach
  */
 function auditNoteSafe(n?: DeliveryNote): {
@@ -61,6 +50,7 @@ function auditNoteSafe(n?: DeliveryNote): {
 
   const items = Array.isArray(n.items) ? n.items : [];
   items.forEach((i) => {
+    if (n.live) return; // הזמנת קומקס עדיין לא מוצלבת, אין "סופק מול הוזמן" אמיתי
     if (i && typeof i.qty === "number" && typeof i.ordered === "number" && i.qty !== i.ordered) {
       findings.push({
         status: "warn",
@@ -71,6 +61,18 @@ function auditNoteSafe(n?: DeliveryNote): {
 
   const b = n.deposits?.bales60002 || { delivered: 0, billed: 0 };
   const p = n.deposits?.pallets60060 || { delivered: 0, billed: 0 };
+
+  if (n.live) {
+    findings.push({ status: "warn", text: "הצלבת כמויות מול הזמנת קומקס טרם בוצעה" });
+    if (b.delivered || p.delivered) {
+      findings.push({
+        status: "warn",
+        text: `פקדונות כפי שנקראו מהתעודה: בלות 60002 = ${b.delivered}, משטחים 60060 = ${p.delivered} (טרם הוצלבו מול חיוב)`,
+      });
+    }
+    findings.push({ status: "warn", text: "אין הצלבת איתוראן לתעודה זו" });
+    return { status: "warn", findings };
+  }
 
   if (b.delivered !== b.billed) {
     findings.push({
@@ -116,24 +118,71 @@ interface ChatMessage {
 }
 
 function CanvasPageRoute() {
-  // שליפת תעודות חיות ישירות מגיליון Google Sheets ("📑_ארכיון_תעודות_משלוח") עם Fallback מקומי
+  // תעודות חיות מהגיליון בלבד. אין נפילה לנתוני דוגמה: כשל מוצג במפורש.
   const {
-    data: remoteNotes,
-    isLoading: isLoadingNotes,
-    refetch: refetchNotes,
+    data: notesList,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
   } = useQuery({
     queryKey: ["live-notes-canvas"],
-    queryFn: fetchNotes,
+    queryFn: fetchLiveNotes,
     staleTime: 30_000,
+    retry: 1,
   });
 
-  const notesList: DeliveryNote[] = useMemo(() => {
-    if (remoteNotes && remoteNotes.length > 0) return remoteNotes;
-    return NOTES;
-  }, [remoteNotes]);
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground" dir="rtl">
+        טוען תעודות מהגיליון...
+      </div>
+    );
+  }
 
-  // בחירת תעודה נוכחית מתוך הגיליון (ברירת מחדל: תעודה אמיתית 6715766)
-  const [selectedNoteId, setSelectedNoteId] = useState<string>(notesList[0]?.id || "6715766");
+  if (error || !notesList) {
+    return (
+      <div className="p-6 max-w-xl mx-auto" dir="rtl">
+        <Card className="p-5 space-y-3 border-red-500/40 bg-red-500/5">
+          <div className="flex items-center gap-2 font-bold text-red-700">
+            <AlertTriangle className="h-4 w-4" /> לא ניתן לטעון תעודות מהגיליון
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {error instanceof Error ? error.message : "שגיאה לא ידועה"}. לא מוצגים נתוני דוגמה.
+          </p>
+          <Button size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-3.5 w-3.5 ml-1 ${isFetching ? "animate-spin" : ""}`} />
+            נסה שוב
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (notesList.length === 0) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground" dir="rtl">
+        אין עדיין תעודות בגיליון. הסריקות של גליה יופיעו כאן אחרי הריצה הבאה של הקליטה.
+      </div>
+    );
+  }
+
+  return (
+    <CanvasWorkspace notesList={notesList} isLoadingNotes={isFetching} refetchNotes={refetch} />
+  );
+}
+
+function CanvasWorkspace({
+  notesList,
+  isLoadingNotes,
+  refetchNotes,
+}: {
+  notesList: DeliveryNote[];
+  isLoadingNotes: boolean;
+  refetchNotes: () => unknown;
+}) {
+  // בחירת תעודה נוכחית מתוך הגיליון
+  const [selectedNoteId, setSelectedNoteId] = useState<string>(notesList[0].id);
 
   // עדכון הבחירה כאשר הנתונים מגיעים
   useEffect(() => {
@@ -144,8 +193,7 @@ function CanvasPageRoute() {
 
   // חילוץ תעודה מוגנת ב-100% מפני ערכי undefined
   const currentNote = useMemo(() => {
-    const raw = notesList.find((n) => n.id === selectedNoteId) || notesList[0] || NOTES[0];
-    if (!raw) return NOTES[0];
+    const raw = notesList.find((n) => n.id === selectedNoteId) || notesList[0];
     return {
       ...raw,
       items: Array.isArray(raw.items) ? raw.items : [],
@@ -163,8 +211,8 @@ function CanvasPageRoute() {
 
   // חישוב מסלול תיקיית הלקוח הקנונית ב-Google Drive
   const customerFolderInfo = useMemo(() => {
-    const customerNo = currentNote.customerNo || "632122";
-    const customerName = currentNote.customer || "א.ערן אזולאי";
+    const customerNo = currentNote.customerNo || "ללא-מספר";
+    const customerName = currentNote.customer || "לקוח לא מזוהה";
     const folderPath = `תיקיות לקוחות / [${customerNo}] - ${customerName} / 2. תעודות משלוח`;
     return {
       customerNo,
@@ -174,13 +222,22 @@ function CanvasPageRoute() {
     };
   }, [currentNote]);
 
-  // תמונת הסריקה - עדיפות ל-Thumbnail ישיר מ-Google Drive של התעודה המפוצלת בגיליון
-  const driveImgUrl = useMemo(() => {
-    return getDriveThumbnailUrl(currentNote.driveUrl);
-  }, [currentNote.driveUrl]);
-
-  const scanImageSrc =
-    driveImgUrl || currentNote.scanImage || currentNote.scans?.[0] || defaultScan;
+  // הסריקה האמיתית: נמשכת מ-Drive דרך השרת ומרונדרת מקומית (בלי CORS ובלי קנבס מזוהם)
+  const {
+    data: scanImageSrc,
+    isLoading: isLoadingScan,
+    error: scanError,
+    refetch: refetchScan,
+  } = useQuery({
+    queryKey: ["scan", currentNote.fileId],
+    enabled: !!currentNote.fileId,
+    staleTime: Infinity,
+    retry: 1,
+    queryFn: async () => {
+      const f = await getScanFn({ data: { fileId: currentNote.fileId as string } });
+      return scanToDataUrl(f.mimeType, f.base64);
+    },
+  });
 
   /* ----------------- צ'אט נועה AI ואפקט הקלדה בזמן אמת ----------------- */
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -217,24 +274,23 @@ function CanvasPageRoute() {
 📁 סנכרון תיקיית לקוח ב-Drive:
 • תיקייה קנונית: תיקיות לקוחות / [${customerFolderInfo.customerNo}] - ${customerFolderInfo.customerName}
 • יעד תיוק אוטומטי: תת-תיקייה "2. תעודות משלוח"
-• קישור Drive פעיל: ${currentNote.driveUrl ? "סריקת PDF מקורית מגליה מאומתת" : "מסונכרן לתיקיית שורש"}
+• קישור Drive: ${currentNote.driveUrl ? "סריקת PDF מקורית מגליה" : "אין קובץ מקור"}
 
 📦 כמות פריטים ומשקל מוערך לתעודה:
 • סה״כ כמות פריטים: ${totalUnits} יחידות
 • משקל מוערך כולל: ${totalTons} טון (${totalKg.toLocaleString()} ק״ג)
 • פריטים שנפרקו: ${itemsSummary}
-• סטטוס כמויות: ${audit.status === "ok" ? "תואם 100% להזמנה" : "אותרה אי-התאמה הדורשת בדיקה"}
+• סטטוס כמויות: ${currentNote.live ? "נקרא מהסריקה, טרם הוצלב מול הזמנת קומקס" : audit.status === "ok" ? "תואם להזמנה" : "אותרה אי-התאמה הדורשת בדיקה"}
 
 ✍️ סריקת כתב יד וחתימות:
-• זוהתה חתימת מקבל באתר: ${currentNote.signedBy || "מאסרוה ראמי חתם ✅"} בשטח.
-• הצהרת קבלה: "הציוד סופק במלואו ובמצב תקין".
+• זוהתה חתימת מקבל באתר: ${currentNote.signedBy || "לא זוהתה חתימת מקבל בנתונים — לבדוק בעין על הסריקה"}.
 
 ⚖️ חוק הפקדונות ובקרת 1:1:
-• שקי פקדון 60002: ${balesDelivered} סופקו מול ${balesBilled} שנרשמו (${balesDelivered === balesBilled ? "מאוזן 1:1 ✅" : "אי-התאמה בבלות ⚠️"}).
-• משטחי עץ 60060: ${palletsDelivered} סופקו מול ${palletsBilled} שנרשמו (${palletsDelivered === palletsBilled ? "מאוזן 1:1 ✅" : "חריגה במשטחים ⚠️"}).
+• שקי פקדון 60002: ${currentNote.live ? `נקראו ${balesDelivered} מהתעודה (טרם הוצלבו מול חיוב ⚠️)` : `${balesDelivered} סופקו מול ${balesBilled} שנרשמו (${balesDelivered === balesBilled ? "מאוזן 1:1 ✅" : "אי-התאמה בבלות ⚠️"})`}.
+• משטחי עץ 60060: ${currentNote.live ? `נקראו ${palletsDelivered} מהתעודה (טרם הוצלבו מול חיוב ⚠️)` : `${palletsDelivered} סופקו מול ${palletsBilled} שנרשמו (${palletsDelivered === palletsBilled ? "מאוזן 1:1 ✅" : "חריגה במשטחים ⚠️"})`}.
 
 🛰️ איתוראן וזמן מנוף:
-• נהג: ${currentNote.driver || "חכמת 615-41-002"} | שהייה באתר: ${currentNote.gps?.note || "40 דק׳ מנוף מאומתות"}.
+• נהג: ${currentNote.driver || "לא זוהה"} | איתוראן: ${currentNote.gps?.note || "אין הצלבה לתעודה זו"}.
 
 👑 מסקנה להראל מנכ״ל:
 ${
@@ -319,40 +375,6 @@ ${
         },
       ]);
     }, 450);
-  };
-
-  /* ----------------- פעולות שמירה ואישור ----------------- */
-  const handleSaveToFolder = async (dataUrl: string) => {
-    try {
-      await saveSignedNoteToSheet({
-        noteId: currentNote.id,
-        customer: currentNote.customer,
-        driveUrl: currentNote.driveUrl,
-        signedScanDataUrl: dataUrl,
-        signedBy: currentNote.signedBy || "ראמי מאסרווה",
-        statusNote: `נחתם בקנבס ונשמר בתיקיית ${customerFolderInfo.folderPath}`,
-      });
-      toast.success(
-        `תעודה #${currentNote.id} נשמרה בתיקיית הלקוח (${customerFolderInfo.folderPath}) והוזרקה לגיליון! 📁`,
-      );
-    } catch {
-      toast.success(
-        `תעודה #${currentNote.id} נשמרה בתיקיית הלקוח: ${customerFolderInfo.folderPath}! 📁`,
-      );
-    }
-  };
-
-  const handleUpdateSheetLog = async (statusMessage: string) => {
-    try {
-      await submitApproval(
-        currentNote.id,
-        statusMessage.includes("הראל") ? "harel" : "rami",
-        statusMessage,
-      );
-      toast.info(`הסטטוס נרשם בגיליון Google Sheets: ${statusMessage}`);
-    } catch {
-      toast.info(`סטטוס עודכן: ${statusMessage}`);
-    }
   };
 
   return (
@@ -463,16 +485,35 @@ ${
               )}
             </div>
 
-            {/* עורך הקנבס המלא - כולל key={currentNote.id} ו-note={currentNote} לסנכרון מיידי עם הלקוח */}
-            <DeliveryCanvasEditor
-              key={currentNote.id}
-              note={currentNote}
-              imageSrc={scanImageSrc}
-              stampSrc="/sing-rami.jpg"
-              secondaryStampSrc={noaStamp}
-              onSaveToFolder={handleSaveToFolder}
-              onUpdateSheetLog={handleUpdateSheetLog}
-            />
+            {/* השמירה והאישור מתבצעים בתוך העורך (שמירה אמיתית לדרייב, בלי הצלחה מדומה) */}
+            {!currentNote.fileId ? (
+              <div className="p-6 text-center text-sm text-red-700 bg-red-500/5 rounded-xl border border-red-500/30">
+                לתעודה זו אין קובץ סריקה מקושר בגיליון, לכן אי אפשר לפתוח אותה לעריכה.
+              </div>
+            ) : isLoadingScan ? (
+              <div className="p-10 text-center text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin inline ml-2" />
+                טוען את הסריקה המקורית מ-Drive...
+              </div>
+            ) : scanError || !scanImageSrc ? (
+              <div className="p-6 space-y-3 text-center bg-red-500/5 rounded-xl border border-red-500/30">
+                <p className="text-sm font-bold text-red-700">לא ניתן לטעון את הסריקה המקורית</p>
+                <p className="text-xs text-muted-foreground">
+                  {scanError instanceof Error ? scanError.message : "הקובץ לא התקבל"}
+                </p>
+                <Button size="sm" onClick={() => refetchScan()}>
+                  נסה שוב
+                </Button>
+              </div>
+            ) : (
+              <DeliveryCanvasEditor
+                key={currentNote.id}
+                note={currentNote}
+                imageSrc={scanImageSrc}
+                stampSrc="/sing-rami.jpg"
+                secondaryStampSrc={noaStamp}
+              />
+            )}
           </Card>
         </div>
 

@@ -8,9 +8,15 @@ import {
 } from "./data";
 import { CUSTOMERS as DEFAULT_CUSTOMERS, type CustomerProfile } from "./customers-data";
 import { SAMPLE_STOPS as DEFAULT_GPS_STOPS, type GpsStop } from "./ituran";
+import {
+  listNotesFn,
+  approvalFn,
+  saveSignedNoteFn,
+  type SheetNote,
+} from "./notes-api.functions";
 
 export const API_BASE =
-  "https://script.google.com/macros/s/AKfycbxEh-IMCSHCmiM93UhBVm65X62RN1-5EOQy_NmR6p2RBa0p2wO3Ea1ZivDtFLW4tKKQ/exec";
+  "https://script.google.com/macros/s/AKfycbw3lykYo9zKERBm6BlYU25_9SE97IAeG5UzaP7N2E_BBzLU9eTazcdZH62joq-1lNmS/exec";
 
 export const MASTER_SHEET_ID = "1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go";
 
@@ -435,29 +441,28 @@ export async function submitApproval(
   noteId: string,
   approver: "rami" | "harel",
   note?: string,
-): Promise<{ success: boolean; offlineQueued?: boolean }> {
-  const payload: ApprovalPayload = {
-    action: "submitApproval",
-    noteId,
-    approver,
-    note,
-    timestamp: new Date().toISOString(),
-  };
-
+): Promise<{ success: boolean; offlineQueued?: boolean; error?: string }> {
   try {
-    const res = await fetch(API_BASE, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) return { success: true };
+    await approvalFn({ data: { noteId, approver, note } });
+    return { success: true };
   } catch (err) {
+    // כשל אמיתי: לא מדווחים הצלחה. האישור נשמר בתור ויישלח מחדש כשהחיבור חוזר.
+    const payload: ApprovalPayload = {
+      action: "submitApproval",
+      noteId,
+      approver,
+      note,
+      timestamp: new Date().toISOString(),
+    };
     const pending = getFromStorage<ApprovalPayload[]>(PENDING_APPROVALS_KEY, []);
     pending.push(payload);
     setToStorage(PENDING_APPROVALS_KEY, pending);
-    return { success: true, offlineQueued: true };
+    return {
+      success: false,
+      offlineQueued: true,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
-  return { success: true };
 }
 
 /**
@@ -471,12 +476,9 @@ export async function flushPendingApprovals(): Promise<void> {
   const remaining: ApprovalPayload[] = [];
   for (const item of pending) {
     try {
-      const res = await fetch(API_BASE, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(item),
+      await approvalFn({
+        data: { noteId: item.noteId, approver: item.approver, note: item.note },
       });
-      if (!res.ok) remaining.push(item);
     } catch {
       remaining.push(item);
     }
@@ -544,4 +546,75 @@ export async function saveSignedNoteToSheet(params: {
   }
 
   return { success: true, updatedDriveUrl: params.driveUrl };
+}
+
+
+/* ------------------------------------------------------------------ */
+/* נתונים חיים בלבד (ללא נפילה לדמה): משמשים את מסך הקנבס               */
+/* ------------------------------------------------------------------ */
+
+function parseDepositQty(text: string, code: string): number | null {
+  const m = text.match(new RegExp(`${code}\\D{0,25}(\\d+)`));
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function sheetNoteToDeliveryNote(n: SheetNote): DeliveryNote {
+  const bales = parseDepositQty(n.depositsText, "60002");
+  const pallets = parseDepositQty(n.depositsText, "60060");
+  return {
+    id: n.id,
+    comaxOrder: n.comaxOrder || undefined,
+    customer: n.customer || "לא זוהה שם לקוח",
+    customerNo: n.customerNo || undefined,
+    date: n.date,
+    siteAddress: n.address || undefined,
+    driver: [n.driver, n.truck].filter(Boolean).join(" · ") || undefined,
+    craneTime: n.craneNotes || undefined,
+    items: n.items.map((i) => ({
+      name: i.name,
+      qty: i.qty,
+      ordered: i.qty, // הזמנת קומקס עדיין לא מוצלבת (ראו live)
+      weightKg: 0,
+      unit: i.unit || "יח׳",
+    })),
+    deposits:
+      bales !== null || pallets !== null
+        ? {
+            bales60002: { delivered: bales ?? 0, billed: bales ?? 0 },
+            pallets60060: { delivered: pallets ?? 0, billed: pallets ?? 0 },
+          }
+        : undefined,
+    driveUrl: n.driveUrl || undefined,
+    fileId: n.fileId || undefined,
+    billingStatus: n.approvalStatus || undefined,
+    signedUrl: n.signedUrl || undefined,
+    live: true,
+  };
+}
+
+/** שליפה מהגיליון דרך השרת. זורק שגיאה אם אין חיבור. אין מטמון ואין נתוני דוגמה. */
+export async function fetchLiveNotes(): Promise<DeliveryNote[]> {
+  const { notes } = await listNotesFn();
+  return notes.map(sheetNoteToDeliveryNote);
+}
+
+/** שמירה לתיקיית הלקוח. זורק שגיאה אמיתית אם נכשל. */
+export async function saveSignedNoteStrict(params: {
+  noteId: string;
+  customer: string;
+  signedBy?: string;
+  statusNote?: string;
+  dataUrl: string;
+}): Promise<{ driveUrl: string; folder: string }> {
+  if (!params.dataUrl) throw new Error("אין תמונת קנבס לשמירה");
+  return saveSignedNoteFn({ data: params });
+}
+
+/** אישור (ראמי/הראל). זורק שגיאה אם נכשל, בלי תור שקט. */
+export async function approveStrict(
+  noteId: string,
+  approver: "rami" | "harel",
+  note?: string,
+): Promise<void> {
+  await approvalFn({ data: { noteId, approver, note } });
 }

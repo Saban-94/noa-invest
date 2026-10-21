@@ -33,7 +33,7 @@ import {
 import type { DeliveryNote, DeliveryItem } from "@/lib/data";
 import { noteWeightKg, noteWeightTons, noteItemsCount } from "@/lib/data";
 import { approvals, playDispatchChime } from "@/lib/store";
-import { submitApproval, saveSignedNoteToSheet } from "@/lib/api";
+import { saveSignedNoteStrict } from "@/lib/api";
 
 const HAREL_PHONE = "972506822268"; // טלפון הראל אידלסון (מנכ״ל ח. סבן)
 const DEFAULT_RAMI_STAMP = "/sing-rami.jpg";
@@ -78,8 +78,6 @@ export default function DeliveryCanvasEditor({
   imageSrc,
   stampSrc = DEFAULT_RAMI_STAMP,
   secondaryStampSrc,
-  onSaveToFolder,
-  onUpdateSheetLog,
 }: DeliveryCanvasEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -678,37 +676,29 @@ export default function DeliveryCanvasEditor({
   // -------------------------------------------------------------
   const handleSaveAndInjectToSheet = async () => {
     setIsSaving(true);
-    playDispatchChime(0.7);
-
     try {
       const canvas = canvasRef.current;
       const dataUrl = canvas ? canvas.toDataURL("image/png") : "";
+      if (!dataUrl) throw new Error("הקנבס ריק");
 
-      const res = await saveSignedNoteToSheet({
+      const res = await saveSignedNoteStrict({
         noteId: orderId,
         customer: customerName,
-        driveUrl: note?.driveUrl,
-        signedScanDataUrl: dataUrl,
-        itemsCount: totalItemsUnits,
-        totalWeightKg: totalEstimatedWeightKg,
         signedBy,
         statusNote: `נבדק ונחתם ע״י ראמי (${auditSummary.statusLabel})`,
+        dataUrl,
       });
+      playDispatchChime(0.7);
 
-      if (onSaveToFolder && dataUrl) {
-        await onSaveToFolder(dataUrl);
-      }
-
-      if (onUpdateSheetLog) {
-        await onUpdateSheetLog(`תעודה #${orderId} חתומה ומעודכנת בגיליון ובדרייב`);
-      }
-
-      toast.success(`תעודה #${orderId} נשמרה בתיקיית הלקוח והוזרקה לגיליון! 📁`, {
-        description: `עודכנו ${totalItemsUnits} פריטים, משקל ${totalEstimatedWeightTons} טון ולינק תעודה מעודכן.`,
+      toast.success(`תעודה #${orderId} נשמרה בתיקיית הלקוח ב-Drive`, {
+        description: "הסטטוס בגיליון: ממתין לאישור מנכ״ל.",
+        action: { label: "פתח PDF", onClick: () => window.open(res.driveUrl, "_blank") },
       });
     } catch (err) {
       console.error(err);
-      toast.error("שגיאה בסנכרון לגיליון, הנתונים נשמרו במטמון המקומי.");
+      toast.error("השמירה לדרייב נכשלה — לא נשמר דבר", {
+        description: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setIsSaving(false);
     }
@@ -719,38 +709,24 @@ export default function DeliveryCanvasEditor({
   // -------------------------------------------------------------
   const handleSendToHarel = async () => {
     setIsSendingToHarel(true);
-    playDispatchChime(0.9);
 
     try {
       const canvas = canvasRef.current;
       const dataUrl = canvas ? canvas.toDataURL("image/png") : "";
+      if (!dataUrl) throw new Error("הקנבס ריק");
 
-      // 1. שמירה והזרקה לגיליון
-      await saveSignedNoteToSheet({
+      // 1. שמירה אמיתית לדרייב + סטטוס "ממתין לאישור מנכ״ל" בגיליון (נכשל = נעצרים)
+      await saveSignedNoteStrict({
         noteId: orderId,
         customer: customerName,
-        driveUrl: note?.driveUrl,
-        signedScanDataUrl: dataUrl,
-        itemsCount: totalItemsUnits,
-        totalWeightKg: totalEstimatedWeightKg,
         signedBy,
-        statusNote: "אושר ע״י ראמי והועבר ישירות להראל מנכ״ל",
+        statusNote: `אושר ע״י ראמי והועבר להראל: ${totalItemsUnits} פריטים`,
+        dataUrl,
       });
+      playDispatchChime(0.9);
 
-      // 2. עדכון בחנות האישורים המקומית
-      approvals.rami(
-        orderId,
-        `אושר ע״י ראמי: ${totalItemsUnits} פריטים, ${totalEstimatedWeightTons} טון`,
-      );
-      await submitApproval(
-        orderId,
-        "rami",
-        `אושר ע״י ראמי: ${totalItemsUnits} פריטים, ${totalEstimatedWeightTons} טון`,
-      );
-
-      if (onSaveToFolder && dataUrl) {
-        await onSaveToFolder(dataUrl);
-      }
+      // 2. רק אחרי שהשמירה הצליחה: עדכון החנות המקומית (מבצעת גם submitApproval ראמי עם תור אופליין)
+      approvals.rami(orderId, `אושר ע״י ראמי: ${totalItemsUnits} פריטים`);
 
       // 3. הפקת הודעת וואטסאפ ממוקדת לוגיסטיקה - ללא מחיר/כסף כלל
       const itemsListText = items
@@ -788,12 +764,14 @@ ${itemsListText}
       const waUrl = `https://wa.me/${HAREL_PHONE}?text=${encodeURIComponent(whatsappText)}`;
       window.open(waUrl, "_blank", "noopener,noreferrer");
 
-      toast.success(`תעודה #${orderId} שוגרה להראל מנכ״ל בוואטסאפ והוזרקה לגיליון! 👑`, {
-        description: `כמות פריטים: ${totalItemsUnits} | משקל מוערך: ${totalEstimatedWeightTons} טון.`,
+      toast.success(`תעודה #${orderId} נשמרה בדרייב והועברה להראל לאישור 👑`, {
+        description: "הסטטוס בגיליון: ממתין לאישור מנכ״ל. נפתח וואטסאפ לשליחת ההודעה.",
       });
     } catch (err) {
       console.error(err);
-      toast.error("שגיאה בסנכרון האישור, אנא נסה שוב.");
+      toast.error("ההעברה להראל נכשלה — התעודה לא נשמרה ולא נשלחה", {
+        description: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setIsSendingToHarel(false);
     }

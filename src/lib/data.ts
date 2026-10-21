@@ -39,6 +39,12 @@ export type DeliveryNote = {
   billingStatus?: string;
   scans?: string[];
   scanImage?: string;
+  /** מזהה קובץ ה-Drive של הסריקה (נתון חי מהגיליון) */
+  fileId?: string;
+  /** קישור ל-PDF החתום בתיקיית הלקוח, אם כבר נחתם */
+  signedUrl?: string;
+  /** true = נקרא מהגיליון החי; כמויות/פקדונות/איתוראן עדיין לא הוצלבו */
+  live?: boolean;
 };
 
 export type Order = {
