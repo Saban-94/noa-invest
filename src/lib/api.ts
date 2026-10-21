@@ -11,7 +11,7 @@ import { SAMPLE_STOPS as DEFAULT_GPS_STOPS, type GpsStop } from "./ituran";
 import { listNotesFn, approvalFn, saveSignedNoteFn, type SheetNote } from "./notes-api.functions";
 
 export const API_BASE =
-  "https://script.google.com/macros/s/AKfycbz8tUNq-2196oEJfQLCdckHNWZe7yss_XB7-EkCgsIW5acNk1U1asTFHBxaBgW2Ji4D/exec";
+  "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec";
 
 export const MASTER_SHEET_ID = "1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go";
 
@@ -454,7 +454,18 @@ export async function submitApproval(
     await approvalFn({ data: { noteId, approver, note } });
     return { success: true };
   } catch (err) {
-    // כשל אמיתי: לא מדווחים הצלחה. האישור נשמר בתור ויישלח מחדש כשהחיבור חוזר.
+    const msg = err instanceof Error ? err.message : String(err);
+    const isServerRejection =
+      msg.includes("נדחה") || msg.includes("לא מורשה") || msg.includes("אין תעודה חתומה");
+
+    if (isServerRejection) {
+      return {
+        success: false,
+        offlineQueued: false,
+        error: msg,
+      };
+    }
+
     const payload: ApprovalPayload = {
       action: "submitApproval",
       noteId,
@@ -468,7 +479,7 @@ export async function submitApproval(
     return {
       success: false,
       offlineQueued: true,
-      error: err instanceof Error ? err.message : String(err),
+      error: msg,
     };
   }
 }
@@ -584,13 +595,10 @@ function sheetNoteToDeliveryNote(n: SheetNote): DeliveryNote {
       weightKg: 0,
       unit: i.unit || "יח׳",
     })),
-    deposits:
-      bales !== null || pallets !== null
-        ? {
-            bales60002: { delivered: bales ?? 0, billed: bales ?? 0 },
-            pallets60060: { delivered: pallets ?? 0, billed: pallets ?? 0 },
-          }
-        : undefined,
+    deposits: {
+      bales60002: { delivered: bales ?? 0, billed: bales ?? 0 },
+      pallets60060: { delivered: pallets ?? 0, billed: pallets ?? 0 },
+    },
     driveUrl: n.driveUrl || undefined,
     fileId: n.fileId || undefined,
     billingStatus: n.approvalStatus || undefined,

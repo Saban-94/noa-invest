@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { auditNote, fmtDate, noteItemsCount, noteWeightTons, type DeliveryNote } from "@/lib/data";
-import { fetchLiveNotes } from "@/lib/api";
+import { fetchLiveNotes, approveStrict } from "@/lib/api";
+import { getScanFn } from "@/lib/notes-api.functions";
+import { scanToDataUrl } from "@/lib/scan-render";
 import { approvals, useApprovals } from "@/lib/store";
 import { playDispatchChime, playUrgentSignatureAlarm } from "@/lib/audio-alerts";
 import { PageHeader, StatusPill } from "@/components/AppShell";
@@ -16,10 +18,78 @@ import {
   Crown,
   PenTool,
   AlertTriangle,
+  Loader2,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+
+function NoteThumbnail({
+  fileId,
+  fallbackSrc,
+  title,
+}: {
+  fileId?: string;
+  fallbackSrc?: string;
+  title: string;
+}) {
+  const [isVisible, setIsVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!fileId && !fallbackSrc) return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setIsVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "150px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fileId, fallbackSrc]);
+
+  const { data: scanSrc, isLoading } = useQuery({
+    queryKey: ["archive-thumb", fileId],
+    enabled: isVisible && !!fileId,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const f = await getScanFn({ data: { fileId: fileId! } });
+      return scanToDataUrl(f.mimeType, f.base64);
+    },
+  });
+
+  const displaySrc = scanSrc || fallbackSrc;
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex h-24 w-20 shrink-0 items-center justify-center rounded-2xl bg-muted/60 border border-border/40 overflow-hidden shadow-2xs group-hover:scale-102 transition"
+    >
+      {displaySrc ? (
+        <img src={displaySrc} alt={title} className="h-full w-full object-cover" />
+      ) : isLoading ? (
+        <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground">
+          <FileText className="h-6 w-6 opacity-40" />
+          <span>{fileId ? "בטעינה" : "אין סריקה"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function NotesArchive() {
   const [q, setQ] = useState("");
@@ -45,22 +115,36 @@ export function NotesArchive() {
     }
   };
 
-  const handleRamiSign = (e: React.MouseEvent, noteId: string) => {
+  const handleRamiSign = async (e: React.MouseEvent, noteId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    approvals.rami(noteId);
-    void playDispatchChime(0.85);
-    toast.success(`ת.מ. ${noteId} נבדקה ואושרה אישית ע״י ראמי מסארווה ✍️`);
+    try {
+      await approveStrict(noteId, "rami");
+      approvals.rami(noteId);
+      void playDispatchChime(0.85);
+      toast.success(`ת.מ. ${noteId} נבדקה ואושרה אישית ע״י ראמי מסארווה ✍️`);
+    } catch (err) {
+      toast.error(`אישור ראמי נדחה ע״י השרת`, {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
   };
 
-  const handleHarelSign = (e: React.MouseEvent, noteId: string) => {
+  const handleHarelSign = async (e: React.MouseEvent, noteId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    approvals.harel(noteId);
-    playUrgentSignatureAlarm();
-    toast.success(
-      `ת.מ. ${noteId} אושרה סופית לחיוב ע״י הראל אידלסון 👑 הודעות וואטסאפ שוגרו ללינה ולוורד!`,
-    );
+    try {
+      await approveStrict(noteId, "harel");
+      approvals.harel(noteId);
+      playUrgentSignatureAlarm();
+      toast.success(
+        `ת.מ. ${noteId} אושרה סופית לחיוב ע״י הראל אידלסון 👑 הודעות וואטסאפ שוגרו ללינה ולוורד!`,
+      );
+    } catch (err) {
+      toast.error(`אישור מנכ״ל נדחה ע״י השרת`, {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
   };
 
   if (isLoading) {
@@ -165,18 +249,11 @@ export function NotesArchive() {
                   className="flex flex-col gap-3 sm:flex-row sm:items-start"
                 >
                   {/* Thumbnail scan */}
-                  {n.scans?.[0] ? (
-                    <img
-                      src={n.scans[0]}
-                      alt={`ת.מ. ${n.id}`}
-                      loading="lazy"
-                      className="h-24 w-20 shrink-0 rounded-2xl object-cover border border-border/40 shadow-2xs group-hover:scale-102 transition"
-                    />
-                  ) : (
-                    <div className="flex h-24 w-20 shrink-0 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground text-xs">
-                      אין סריקה
-                    </div>
-                  )}
+                  <NoteThumbnail
+                    fileId={n.fileId}
+                    fallbackSrc={n.scans?.[0]}
+                    title={`ת.מ. ${n.id}`}
+                  />
 
                   {/* Main Information */}
                   <div className="min-w-0 flex-1 space-y-1.5">

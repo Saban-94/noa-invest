@@ -15,6 +15,9 @@ import {
   AlertCircle,
   Send,
   Sparkles,
+  Settings,
+  RefreshCw,
+  Server,
 } from "lucide-react";
 import noa from "@/assets/noa.jpg";
 import { PWAInstallButton } from "./PWAInstallButton";
@@ -24,7 +27,16 @@ import { playDispatchChime, playUrgentSignatureAlarm } from "@/lib/audio-alerts"
 import { toast } from "sonner";
 import { useApprovals } from "@/lib/store";
 import { fetchLiveNotes } from "@/lib/api";
+import { pingFn } from "@/lib/notes-api.functions";
 import { type DeliveryNote } from "@/lib/data";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const DESKTOP_NAV = [
   { to: "/", label: "דשבורד מנכ״ל", icon: Crown },
@@ -109,6 +121,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       (approvalsState[n.id]?.rami && !approvalsState[n.id]?.harel),
   ).length;
 
+  const {
+    data: pingData,
+    isLoading: isPingLoading,
+    isError: isPingError,
+    refetch: refetchPing,
+  } = useQuery({
+    queryKey: ["apps-script-ping"],
+    queryFn: async () => {
+      return await pingFn();
+    },
+    staleTime: 60000,
+    retry: 1,
+  });
+
   return (
     <div className="flex min-h-dvh bg-background">
       {/* 1. Desktop Right Sidebar */}
@@ -163,6 +189,108 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="p-3 border-t border-sidebar-border/40 space-y-2">
           <PWAInstallButton variant="nav" />
+
+          {/* הגדרות ואבחון Apps Script */}
+          <Dialog>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                className="w-full flex items-center justify-between rounded-xl px-2.5 py-1.5 text-xs font-semibold opacity-75 hover:opacity-100 hover:bg-sidebar-accent/40 transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Settings className="h-3.5 w-3.5 text-sidebar-foreground/70" />
+                  <span>הגדרות ואבחון</span>
+                </div>
+                <span
+                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
+                    isPingLoading
+                      ? "bg-muted text-muted-foreground"
+                      : isPingError
+                        ? "bg-red-500/20 text-red-700"
+                        : "bg-emerald-500/20 text-emerald-800"
+                  }`}
+                >
+                  {isPingLoading ? "..." : isPingError ? "שגיאה" : pingData?.version || "פעיל"}
+                </span>
+              </button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md" dir="rtl">
+              <DialogHeader>
+                <div className="flex items-center justify-between">
+                  <DialogTitle className="flex items-center gap-2 text-base font-bold">
+                    <Server className="h-4 w-4 text-primary" />
+                    <span>אבחון שרת והגדרות מערכת</span>
+                  </DialogTitle>
+                  {/* פינת מסך ההגדרות: גרסת שרת מ-action=ping */}
+                  <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold">
+                    {isPingLoading
+                      ? "טוען..."
+                      : isPingError
+                        ? "אין חיבור"
+                        : `גרסה: ${pingData?.version || "פעיל"}`}
+                  </span>
+                </div>
+                <DialogDescription className="text-xs text-muted-foreground pt-1">
+                  חיבור בזמן אמת ל-Google Apps Script ו-Google Sheets
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 pt-3 text-xs">
+                <div className="rounded-xl border border-border p-3 space-y-2 bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">סטטוס שרת Apps Script:</span>
+                    <span className="font-bold flex items-center gap-1.5">
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          isPingLoading
+                            ? "bg-amber-500 animate-pulse"
+                            : isPingError
+                              ? "bg-red-500"
+                              : "bg-emerald-500"
+                        }`}
+                      />
+                      <span>
+                        {isPingLoading
+                          ? "בודק קישוריות..."
+                          : isPingError
+                            ? "מנותק (שגיאת חיבור)"
+                            : "מחובר ותקין"}
+                      </span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">גרסת שרת (GAS version):</span>
+                    <span className="font-mono font-bold text-foreground">
+                      {isPingLoading ? "בבדיקה..." : pingData?.version || "לא זמין"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">מזהה גיליון ראשי (Master):</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      1u1NiB7...Z9Go
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void refetchPing();
+                      toast.info("מבצע בדיקת חיבור מול השרת...");
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted transition"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    <span>בדוק חיבור שוב</span>
+                  </button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <div className="px-2 pt-1 text-[10px] opacity-60 text-center">
             ח. סבן חומרי בניין (1994) בע״מ
           </div>

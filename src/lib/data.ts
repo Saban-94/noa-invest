@@ -288,6 +288,27 @@ export function auditNote(n?: DeliveryNote): {
 } {
   const findings: { status: AuditStatus; text: string }[] = [];
   if (!n) return { status: "ok", findings: [{ status: "ok", text: "תעודה בטעינה" }] };
+  if (n.live) {
+    findings.push({
+      status: "warn",
+      text: "טרם הוצלב מול קומקס/איתוראן",
+    });
+    const b = n.deposits?.bales60002 || { delivered: 0, billed: 0 };
+    const p = n.deposits?.pallets60060 || { delivered: 0, billed: 0 };
+    if (b.delivered) {
+      findings.push({
+        status: "warn",
+        text: `בלות פקדון 60002: ${b.delivered} (טרם הוצלבו מול חיוב)`,
+      });
+    }
+    if (p.delivered) {
+      findings.push({
+        status: "warn",
+        text: `משטחי עץ 60060: ${p.delivered} (טרם הוצלבו מול חיוב)`,
+      });
+    }
+    return { status: "warn", findings };
+  }
   (n.items || []).forEach((i) => {
     if (i.qty !== i.ordered)
       findings.push({

@@ -35,7 +35,7 @@ import { noteWeightKg, noteWeightTons, noteItemsCount } from "@/lib/data";
 import { approvals, playDispatchChime } from "@/lib/store";
 import { saveSignedNoteStrict } from "@/lib/api";
 
-const HAREL_PHONE = "972506822268"; // טלפון הראל אידלסון (מנכ״ל ח. סבן)
+const HAREL_PHONE = "972506662300"; // טלפון הראל אידלסון (מנכ״ל ח. סבן: 050-6662300)
 const DEFAULT_RAMI_STAMP = "/sing-rami.jpg";
 
 interface PathPoint {
@@ -69,8 +69,6 @@ interface DeliveryCanvasEditorProps {
   imageSrc?: string;
   stampSrc?: string;
   secondaryStampSrc?: string;
-  onSaveToFolder?: (finalDataUrl: string) => Promise<void> | void;
-  onUpdateSheetLog?: (status: string) => Promise<void> | void;
 }
 
 export default function DeliveryCanvasEditor({
@@ -184,27 +182,27 @@ export default function DeliveryCanvasEditor({
     setTextAnnotations([]);
   }, [note?.id, note]);
 
-  // טעינת תמונת התעודה האמיתית (מ-Google Drive או קובץ סריקה)
-  const activeImageSource = imageSrc || note?.scanImage || note?.scans?.[0];
+  // טעינת תמונת התעודה האמיתית (מ-Google Drive דרך שרת Apps Script)
+  const activeImageSource = imageSrc || note?.scanImage;
 
   useEffect(() => {
     if (!activeImageSource) {
       setLoadedScanImg(null);
-      setRenderMode("vector_doc");
       return;
     }
 
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    if (!activeImageSource.startsWith("data:")) {
+      img.crossOrigin = "anonymous";
+    }
     img.src = activeImageSource;
     img.onload = () => {
       setLoadedScanImg(img);
       setRenderMode("real_scan");
     };
     img.onerror = () => {
-      console.warn("[Canvas] Could not load scan image, falling back to vector doc");
+      console.warn("[Canvas] Could not load scan image");
       setLoadedScanImg(null);
-      setRenderMode("vector_doc");
     };
   }, [activeImageSource]);
 

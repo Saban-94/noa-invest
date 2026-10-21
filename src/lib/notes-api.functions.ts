@@ -7,7 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
  */
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbzcXKwUH_Dcrxl90InG_a9CItCewDWyv_IKH6-UudNPQaWMYEcCwZ1xDP4sZiZZXuCb/exec";
+  "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec";
 
 function gasUrl(): string {
   return process.env["GAS_URL"] || DEFAULT_GAS_URL;
@@ -139,3 +139,8 @@ export const approvalFn = createServerFn({ method: "POST" })
     await gasPost({ action: "submitApproval", ...data });
     return { success: true as const };
   });
+
+export const pingFn = createServerFn({ method: "GET" }).handler(async () => {
+  const data = await gasGet({ action: "ping" });
+  return { version: String(data.version || "unknown"), success: true as const };
+});

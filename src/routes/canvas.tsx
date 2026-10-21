@@ -542,11 +542,23 @@ ${
               </div>
 
               <Badge
-                variant={audit.status === "ok" ? "default" : "secondary"}
-                className="text-[10px] gap-1 bg-emerald-600 text-white"
+                variant={
+                  currentNote.live ? "outline" : audit.status === "ok" ? "default" : "secondary"
+                }
+                className={`text-[10px] gap-1 ${
+                  currentNote.live
+                    ? "bg-amber-500/15 text-amber-800 border-amber-500/30"
+                    : audit.status === "ok"
+                      ? "bg-emerald-600 text-white"
+                      : ""
+                }`}
               >
                 <ShieldCheck className="h-3 w-3" />
-                {audit.status === "ok" ? "אומת 1:1" : "נדרשת בדיקה"}
+                {currentNote.live
+                  ? "טרם הוצלב מול קומקס/איתוראן"
+                  : audit.status === "ok"
+                    ? "אומת 1:1"
+                    : "נדרשת בדיקה"}
               </Badge>
             </div>
 

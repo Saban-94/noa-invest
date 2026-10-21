@@ -1,26 +1,34 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { NOTES, auditNote, noteItemsCount, noteWeightKg, noteWeightTons } from "@/lib/data";
-import { fetchLiveNotes } from "@/lib/api";
+import {
+  auditNote,
+  noteItemsCount,
+  noteWeightKg,
+  noteWeightTons,
+  type DeliveryNote,
+} from "@/lib/data";
+import { fetchLiveNotes, approveStrict } from "@/lib/api";
+import { getScanFn } from "@/lib/notes-api.functions";
+import { scanToDataUrl } from "@/lib/scan-render";
 import { approvals, useApprovals } from "@/lib/store";
 import { playUrgentSignatureAlarm, playDispatchChime } from "@/lib/audio-alerts";
 import { PageHeader, StatusPill } from "@/components/AppShell";
-import { CheckCircle2, ShieldCheck, Crown, Layers, Sparkles, Send } from "lucide-react";
+import {
+  ShieldCheck,
+  Crown,
+  Sparkles,
+  Loader2,
+  AlertTriangle,
+  ArrowRight,
+  RefreshCw,
+  PenTool,
+  FileText,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/notes/$id")({
-  loader: async ({ params }) => {
-    try {
-      const live = await fetchLiveNotes();
-      const n = live.find((x) => x.id === params.id);
-      if (n) return n;
-    } catch {
-      // fallback
-    }
-    const n = NOTES.find((x) => x.id === params.id);
-    if (!n) throw notFound();
-    return n;
-  },
   head: ({ params }) => ({
     meta: [
       { title: `תעודה ${params.id} — נועה ח. סבן` },
@@ -33,36 +41,164 @@ export const Route = createFileRoute("/notes/$id")({
 });
 
 function Viewer() {
-  const n = Route.useLoaderData();
-  const ap = useApprovals()[n.id];
-  const a = auditNote(n);
+  const { id } = Route.useParams();
+  const apState = useApprovals();
 
   const [customNote, setCustomNote] = useState("");
   const [showCelebration, setShowCelebration] = useState(false);
+  const [isApprovingRami, setIsApprovingRami] = useState(false);
+  const [isApprovingHarel, setIsApprovingHarel] = useState(false);
 
-  const handleRamiApproval = () => {
-    approvals.rami(n.id, customNote.trim() || undefined);
-    void playDispatchChime(0.85);
-    toast.success(`ת.מ. ${n.id} נבדקה ואושרה אישית ע״י ראמי מסארווה ✍️`);
+  // 1. שליפת תעודות חיות מהגיליון לפי מזהה התעודה ללא נתוני דמה
+  const {
+    data: notes,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<DeliveryNote[]>({
+    queryKey: ["live-notes"],
+    queryFn: fetchLiveNotes,
+    staleTime: 30000,
+  });
+
+  const n = notes?.find((x) => x.id === id);
+
+  // 2. טעינת הסריקה האמיתית מ-Google Drive דרך שרת Apps Script
+  const {
+    data: scanSrc,
+    isLoading: isLoadingScan,
+    error: scanError,
+    refetch: refetchScan,
+  } = useQuery({
+    queryKey: ["scan", n?.fileId],
+    enabled: !!n?.fileId,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const f = await getScanFn({ data: { fileId: n!.fileId! } });
+      return scanToDataUrl(f.mimeType, f.base64);
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center min-h-[60vh] gap-3 p-6 text-center"
+        dir="rtl"
+      >
+        <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        <h2 className="text-lg font-bold">טוען תעודה מהגיליון...</h2>
+        <p className="text-xs text-muted-foreground">מתחבר ל-Google Apps Script ללא נתוני דמה</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-6 text-center"
+        dir="rtl"
+      >
+        <AlertTriangle className="h-12 w-12 text-destructive" />
+        <h2 className="text-lg font-bold text-destructive">שגיאה בטעינת התעודה מהגיליון</h2>
+        <p className="text-xs text-muted-foreground max-w-md">
+          {error instanceof Error ? error.message : "כשל בחיבור"}
+        </p>
+        <Button onClick={() => refetch()} className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          <span>נסה שוב</span>
+        </Button>
+      </div>
+    );
+  }
+
+  if (!n) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-6 text-center"
+        dir="rtl"
+      >
+        <FileText className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-lg font-bold">תעודה #{id} לא נמצאה בגיליון</h2>
+        <p className="text-xs text-muted-foreground">
+          ייתכן שהתעודה טרם נסרקה או שמספרה שונה בגיליון Google Sheets
+        </p>
+        <Button asChild variant="outline">
+          <Link to="/notes" className="gap-2">
+            <ArrowRight className="h-4 w-4" />
+            <span>חזרה לארכיון התעודות</span>
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const ap = apState[n.id];
+  const a = auditNote(n);
+
+  const handleRamiApproval = async () => {
+    setIsApprovingRami(true);
+    try {
+      await approveStrict(n.id, "rami", customNote.trim() || undefined);
+      approvals.rami(n.id, customNote.trim() || undefined);
+      void playDispatchChime(0.85);
+      toast.success(`ת.מ. ${n.id} נבדקה ואושרה אישית ע״י ראמי מסארווה ✍️`);
+    } catch (err) {
+      toast.error("אישור ראמי נדחה ע״י השרת", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsApprovingRami(false);
+    }
   };
 
-  const handleHarelApproval = () => {
-    approvals.harel(n.id, customNote.trim() || undefined);
-    playUrgentSignatureAlarm();
-    setShowCelebration(true);
-    toast.success(`ת.מ. ${n.id} אושרה סופית לחיוב ע״י מנכ״ל 👑`);
+  const handleHarelApproval = async () => {
+    setIsApprovingHarel(true);
+    try {
+      await approveStrict(n.id, "harel", customNote.trim() || undefined);
+      approvals.harel(n.id, customNote.trim() || undefined);
+      playUrgentSignatureAlarm();
+      setShowCelebration(true);
+      toast.success(`ת.מ. ${n.id} אושרה סופית לחיוב ע״י מנכ״ל 👑`);
+    } catch (err) {
+      toast.error("אישור מנכ״ל נדחה ע״י השרת", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsApprovingHarel(false);
+    }
   };
 
   return (
     <>
       <PageHeader
         title={`ת.מ. ${n.id}`}
-        subtitle={`${n.customer} · הזמנת קומקס #${n.comaxOrder}`}
+        subtitle={`${n.customer} · הזמנת קומקס #${n.comaxOrder || n.id}`}
         action={<StatusPill s={a.status} />}
       />
 
-      <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 md:px-8">
-        {/* Green Celebration Banner after Harel Approval */}
+      <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 md:px-8" dir="rtl">
+        {/* כפתור מעבר מהיר לעריכת התעודה בקנבס */}
+        <div className="flex items-center justify-between gap-3 bg-muted/40 p-3 rounded-2xl border border-border/70 text-xs">
+          <div className="flex items-center gap-2">
+            <PenTool className="h-4 w-4 text-primary" />
+            <span className="font-semibold">
+              רוצה לחתום, להטביע חותמת או לסמן במרקר על גבי התעודה?
+            </span>
+          </div>
+          <Button
+            asChild
+            size="sm"
+            variant="default"
+            className="gap-1.5 rounded-xl text-xs font-bold"
+          >
+            <Link to="/canvas" search={{ id: n.id }}>
+              <PenTool className="h-3.5 w-3.5" />
+              <span>פתח בעורך הקנבס</span>
+            </Link>
+          </Button>
+        </div>
+
+        {/* באנר ירוק לאחר אישור הראל */}
         {(ap?.harel || showCelebration) && (
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-700 p-5 text-white shadow-lift animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="flex items-start gap-4">
@@ -78,8 +214,8 @@ function Viewer() {
                 </h3>
                 <p className="text-xs leading-relaxed text-emerald-100">
                   נשלחה הודעת אימות אוטומטית ללינה בהנהלת חשבונות (
-                  <strong>lina@saban94.co.il</strong>) להפקת חשבונית מס, ועודכן יומן הפיקוח של ורד
-                  אידלסון (<strong>050-6662300</strong>) ב-Google Drive.
+                  <strong>lina@saban94.co.il</strong>) להפקת חשבונית מס, ועודכן יומן הפיקוח ב-Google
+                  Drive.
                 </p>
               </div>
             </div>
@@ -87,29 +223,58 @@ function Viewer() {
         )}
 
         <div className="grid gap-6 md:grid-cols-[1fr_340px]">
-          {/* Left Column: 4-Layer Adobe-Style Delivery Note Viewer */}
+          {/* עמודה ימנית: סריקה מקורית מ-Drive עם שכבות בקרה וחותמות */}
           <div className="space-y-4">
-            {(n.scans ?? []).map((src, i) => (
-              <div
-                key={src}
-                className="relative overflow-hidden rounded-3xl bg-card shadow-card border border-border/70"
-              >
-                {/* Layer 1: Original High-Res Scan Background */}
+            {!n.fileId ? (
+              <div className="flex flex-col items-center justify-center h-[520px] rounded-3xl bg-card border border-border/80 text-center p-6 space-y-3">
+                <AlertTriangle className="h-10 w-10 text-amber-500" />
+                <p className="text-sm font-bold">לתעודה זו לא קיים קובץ סריקה מקושר ב-Drive</p>
+                <p className="text-xs text-muted-foreground">
+                  ודא שגליה סרקה את התעודה וקישור הדרייב קיים בעמודה K או T בגיליון
+                </p>
+              </div>
+            ) : isLoadingScan ? (
+              <div className="flex flex-col items-center justify-center h-[520px] rounded-3xl bg-card border border-border/80 text-center p-6 space-y-3">
+                <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                <p className="text-sm font-bold">טוען סריקה מקורית מ-Google Drive...</p>
+                <p className="text-xs text-muted-foreground">
+                  חילוץ PDF ורינדור עמוד ראשון דרך שרת Apps Script
+                </p>
+              </div>
+            ) : scanError || !scanSrc ? (
+              <div className="flex flex-col items-center justify-center h-[520px] rounded-3xl bg-card border border-red-500/30 text-center p-6 space-y-3">
+                <AlertTriangle className="h-10 w-10 text-destructive" />
+                <p className="text-sm font-bold text-destructive">
+                  לא ניתן לטעון את הסריקה המקורית מ-Drive
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {scanError instanceof Error ? scanError.message : "כשל בשליפת הקובץ"}
+                </p>
+                <Button size="sm" onClick={() => refetchScan()}>
+                  נסה שוב
+                </Button>
+              </div>
+            ) : (
+              <div className="relative overflow-hidden rounded-3xl bg-card shadow-card border border-border/70">
                 <img
-                  src={src}
-                  alt={`סריקת תעודה ${n.id} - עמוד ${i + 1}`}
+                  src={scanSrc}
+                  alt={`סריקת תעודה ${n.id}`}
                   className="w-full object-contain select-none"
                   loading="eager"
                 />
 
-                {/* Layer 2: Noa AI Watermark Badge */}
+                {/* שכבת תג בקרה */}
                 <div className="absolute top-4 left-4 rounded-xl bg-card/85 backdrop-blur-md px-3 py-1.5 text-xs font-bold text-foreground border border-border/50 shadow-sm flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>שכבת בקרת נועה AI · אומת 1:1</span>
+                  <span>
+                    {n.live
+                      ? "שכבת בקרת נועה AI · טרם הוצלב מול קומקס/איתוראן"
+                      : "שכבת בקרת נועה AI · אומת 1:1"}
+                  </span>
                 </div>
 
-                {/* Layer 3: Rami Review Stamp */}
-                {i === 0 && ap?.rami && (
+                {/* חותמת ראמי */}
+                {ap?.rami && (
                   <div className="stamp absolute bottom-16 left-6 bg-card/75 backdrop-blur-md text-sm text-rami border-rami/80 shadow-md">
                     ח. סבן — נבדק ואושר אישית ע״י ראמי מסארווה ✍️
                     <br />
@@ -117,8 +282,8 @@ function Viewer() {
                   </div>
                 )}
 
-                {/* Layer 4: Harel CEO Final Burgundy Stamp */}
-                {i === 0 && ap?.harel && (
+                {/* חותמת הראל מנכ״ל */}
+                {ap?.harel && (
                   <div className="stamp absolute bottom-40 right-6 bg-card/75 backdrop-blur-md text-sm text-ceo border-ceo/80 shadow-md">
                     ח. סבן (1994) בע״מ — אושר סופית לחיוב 👑
                     <br />
@@ -127,12 +292,12 @@ function Viewer() {
                   </div>
                 )}
               </div>
-            ))}
+            )}
           </div>
 
-          {/* Right Column: Due Diligence & Approval Controls */}
+          {/* עמודה שמאלית: בקרת נועה AI, פקדונות וחתימות */}
           <aside className="space-y-4">
-            {/* Due Diligence Summary */}
+            {/* דוח בקרת נועה */}
             <div className="rounded-3xl bg-card p-5 shadow-card border border-border/70 space-y-3">
               <div className="flex items-center justify-between border-b pb-3">
                 <div className="flex items-center gap-2">
@@ -153,7 +318,7 @@ function Viewer() {
                 ))}
               </ul>
 
-              {/* 1:1 Deposits Summary */}
+              {/* סיכום פקדונות 1:1 */}
               <div className="grid grid-cols-2 gap-2 border-t pt-3 text-center text-xs">
                 <div className="rounded-xl bg-amber-500/10 p-2 border border-amber-500/20">
                   <span className="text-[10px] text-amber-900 block font-semibold">
@@ -174,7 +339,7 @@ function Viewer() {
                 </div>
               </div>
 
-              {/* Items & Weight Summary */}
+              {/* סיכום כמות פריטים ומשקל מוערך (ללא אזכור כספי) */}
               <div className="border-t pt-3 space-y-1.5">
                 <div className="flex items-baseline justify-between">
                   <span className="text-xs text-muted-foreground font-semibold">כמות פריטים</span>
@@ -193,13 +358,12 @@ function Viewer() {
               </div>
             </div>
 
-            {/* Approvals Action Card */}
+            {/* כרטיס אישור וחתימה דיגיטלית */}
             <div className="rounded-3xl bg-card p-5 shadow-card border border-border/70 space-y-3">
               <h3 className="font-display text-sm font-bold text-foreground">
                 אישור וחתימה דיגיטלית
               </h3>
 
-              {/* Optional note input */}
               <input
                 type="text"
                 placeholder="הערה לחתימה (אופציונלי)..."
@@ -208,27 +372,29 @@ function Viewer() {
                 className="w-full rounded-2xl bg-muted/50 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 border"
               />
 
-              {/* Rami Button */}
+              {/* כפתור ראמי */}
               {!ap?.rami && (
                 <button
                   onClick={handleRamiApproval}
-                  className="w-full rounded-2xl bg-rami py-3.5 font-display text-sm font-bold text-rami-foreground shadow-sm hover:opacity-95 transition active:scale-98"
+                  disabled={isApprovingRami}
+                  className="w-full rounded-2xl bg-rami py-3.5 font-display text-sm font-bold text-rami-foreground shadow-sm hover:opacity-95 transition active:scale-98 disabled:opacity-50"
                 >
-                  נבדק ואושר אישית ע״י ראמי ✍️
+                  {isApprovingRami ? "מאשר בשרת..." : "נבדק ואושר אישית ע״י ראמי ✍️"}
                 </button>
               )}
 
-              {/* Harel CEO Button */}
+              {/* כפתור הראל מנכ״ל */}
               {ap?.rami && !ap?.harel && (
                 <button
                   onClick={handleHarelApproval}
-                  className="w-full rounded-2xl bg-ceo py-3.5 font-display text-sm font-bold text-ceo-foreground shadow-lift hover:opacity-95 transition active:scale-98"
+                  disabled={isApprovingHarel}
+                  className="w-full rounded-2xl bg-ceo py-3.5 font-display text-sm font-bold text-ceo-foreground shadow-lift hover:opacity-95 transition active:scale-98 disabled:opacity-50"
                 >
-                  אושר סופית לחיוב 👑 הראל אידלסון
+                  {isApprovingHarel ? "מאשר בשרת..." : "אושר סופית לחיוב 👑 הראל אידלסון"}
                 </button>
               )}
 
-              {/* Reset button for testing / corrections */}
+              {/* איפוס חתימות */}
               {ap && (
                 <button
                   onClick={() => {
