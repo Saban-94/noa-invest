@@ -11,7 +11,7 @@ import { SAMPLE_STOPS as DEFAULT_GPS_STOPS, type GpsStop } from "./ituran";
 import { listNotesFn, approvalFn, saveSignedNoteFn, type SheetNote } from "./notes-api.functions";
 
 export const API_BASE =
-  "https://script.google.com/macros/s/AKfycbzcXKwUH_Dcrxl90InG_a9CItCewDWyv_IKH6-UudNPQaWMYEcCwZ1xDP4sZiZZXuCb/exec";
+  "https://script.google.com/macros/s/AKfycbz8tUNq-2196oEJfQLCdckHNWZe7yss_XB7-EkCgsIW5acNk1U1asTFHBxaBgW2Ji4D/exec";
 
 export const MASTER_SHEET_ID = "1u1NiB7TAjHQQMEqZfGZI5mCOOKDu9F33RzBfuMnZ9Go";
 
