@@ -1,54 +1,64 @@
-import { describe, it, expect } from "vitest";
-import { sheetNoteToGalya } from "./live-adapter";
-import { groupNotesIntoVisits } from "./cross-matcher";
 import type { SheetNote } from "../notes-api.functions";
 
-const base: SheetNote = {
-  id: "6715766",
-  key: "k1",
-  date: "2026-10-15",
-  time: "06:29",
-  docNumber: "6715766",
-  comaxOrder: "6215960",
-  customerNo: "632122",
-  customer: "א.ערן אזולאי",
-  address: "משה שרת 9, הוד השרון",
-  driver: "חכמת",
-  truck: "",
-  fileId: "",
-  driveUrl: "",
-  items: [
-    { sku: "1", name: "חול", qty: 5, unit: "בלה" },
-    { sku: "2", name: "מלט", qty: 20, unit: "שק" },
-  ],
-  depositsText: "בלות 60002: 5",
-  craneNotes: "פריקת מנוף משעה 9:20 עד שעה 10:00",
-  extractStatus: "OK",
-  approvalStatus: "",
-  signedUrl: "",
-  ramiApprovedAt: "",
-  harelApprovedAt: "",
-};
+export interface GalyaDeliveryNote {
+  noteId: string;
+  docDate: string;
+  docTime: string;
+  docNumber: string;
+  comaxOrder: string;
+  customerNo: string;
+  customerName: string;
+  deliveryAddress: string;
+  driverName: string;
+  truckPlate: string;
+  fileId: string;
+  driveUrl: string;
+  itemsSummary: string;
+  depositsText: string;
+  craneTimeRaw: string;
+  extractStatus: string;
+  approvalStatus: string;
+  signedUrl: string;
+  ramiApprovedAt: string;
+  harelApprovedAt: string;
+}
 
-describe("live-adapter", () => {
-  it("ממיר שורת גיליון ומנרמל תאריך", () => {
-    const g = sheetNoteToGalya(base);
-    expect(g.noteId).toBe("6715766");
-    expect(g.docDate).toBe("15/10/2026");
-    expect(g.itemsSummary).toBe("5 בלה חול + 20 שק מלט");
-    expect(g.craneTimeRaw).toContain("9:20");
-  });
+/**
+ * ממיר שורת גיליון (SheetNote) למבנה נתוני גליה מנומל
+ */
+export function sheetNoteToGalya(note: SheetNote): GalyaDeliveryNote {
+  // המרת תאריך מ-YYYY-MM-DD ל-DD/MM/YYYY אם נדרש
+  let formattedDate = note.date || "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(formattedDate)) {
+    const [y, m, d] = formattedDate.split("-");
+    formattedDate = `${d}/${m}/${y}`;
+  }
 
-  it("הביקור שנבנה מתעודה חיה מסיק משאית מהנהג ומחשב כתב יד", () => {
-    const [v] = groupNotesIntoVisits([sheetNoteToGalya(base)]);
-    expect(v?.truck).toBe("615-41-002");
-    expect(v?.handwrittenUnloadMin).toBe(40);
-    expect(v?.measurementSource).toBe("handwritten");
-  });
+  // סיכום פריטים
+  const itemsSummary = (note.items || [])
+    .map(item => `${item.qty} ${item.unit || ""} ${item.name || ""}`.trim())
+    .join(" + ");
 
-  it("שדות חסרים לא קורסים", () => {
-    const g = sheetNoteToGalya({ ...base, items: [], address: "", driver: "" });
-    expect(g.itemsSummary).toBe("");
-    expect(g.deliveryAddress).toBe("");
-  });
-});
+  return {
+    noteId: note.id || note.docNumber || "",
+    docDate: formattedDate,
+    docTime: note.time || "",
+    docNumber: note.docNumber || "",
+    comaxOrder: note.comaxOrder || "",
+    customerNo: note.customerNo || "",
+    customerName: note.customer || "",
+    deliveryAddress: note.address || "",
+    driverName: note.driver || "",
+    truckPlate: note.truck || "",
+    fileId: note.fileId || "",
+    driveUrl: note.driveUrl || "",
+    itemsSummary,
+    depositsText: note.depositsText || "",
+    craneTimeRaw: note.craneNotes || "",
+    extractStatus: note.extractStatus || "OK",
+    approvalStatus: note.approvalStatus || "",
+    signedUrl: note.signedUrl || "",
+    ramiApprovedAt: note.ramiApprovedAt || "",
+    harelApprovedAt: note.harelApprovedAt || ""
+  };
+}
