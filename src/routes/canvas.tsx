@@ -628,7 +628,7 @@ ${
                 onClick={() => setUserInput("התעודה מאושרת, שלחי להראל מנכ״ל")}
                 className="shrink-0 px-2.5 py-1 rounded-lg bg-card border hover:bg-muted text-muted-foreground font-medium transition-colors"
               >
-                 שלח להראל
+                שלח להראל
               </button>
             </div>
 
