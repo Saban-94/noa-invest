@@ -43,6 +43,7 @@ export type DeliveryNote = {
   fileId?: string;
   /** קישור ל-PDF החתום בתיקיית הלקוח, אם כבר נחתם */
   signedUrl?: string;
+  noteStage?: "pending_rami" | "returned_to_rami" | "pending_harel" | "pending_harel_reply" | "final";
   /** true = נקרא מהגיליון החי; כמויות/פקדונות/איתוראן עדיין לא הוצלבו */
   live?: boolean;
 };

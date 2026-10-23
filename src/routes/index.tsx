@@ -51,15 +51,15 @@ function Index() {
   const ready = notesList.filter(
     (n) =>
       !ap[n.id]?.harel &&
-      (n.billingStatus === "ממתין לאישור מנכ״ל" || (ap[n.id]?.rami && !ap[n.id]?.harel)),
+      (n.noteStage === "pending_harel" ||
+        n.noteStage === "pending_harel_reply" ||
+        (ap[n.id]?.rami && !ap[n.id]?.harel)),
   );
 
-  const pendingRami = notesList.filter(
-    (n) => !ap[n.id]?.harel && n.billingStatus !== "ממתין לאישור מנכ״ל" && !ap[n.id]?.rami,
-  );
+  const returnedToRami = notesList.filter((n) => n.noteStage === "returned_to_rami");
 
   const done = notesList.filter(
-    (n) => ap[n.id]?.harel || n.billingStatus === "מאושר לחיוב" || n.billingStatus === "מאושר",
+    (n) => ap[n.id]?.harel || n.noteStage === "final",
   );
 
   const sumTons = ready.reduce((s, n) => s + noteWeightTons(n), 0);
@@ -187,14 +187,30 @@ function Index() {
           )}
         </section>
 
-        {ready.length === 0 && (
+        {ready.length === 0 && returnedToRami.length === 0 && (
           <div className="rounded-3xl bg-card p-8 text-center shadow-card border border-border/60">
             <div className="text-4xl">☕</div>
             <p className="mt-2 font-display text-lg font-bold">אין מה לאשר כרגע</p>
-            <p className="text-sm text-muted-foreground">
-              {pendingRami.length} תעודות עדיין בבדיקת ראמי וסדרני החצר
-            </p>
           </div>
+        )}
+
+        {returnedToRami.length > 0 && (
+            <section>
+                <h3 className="mb-2 text-sm font-bold text-destructive">הוחזרו לבירור ({returnedToRami.length})</h3>
+                <div className="space-y-2">
+                {returnedToRami.map((n) => (
+                    <Link
+                    key={n.id}
+                    to="/inquiry/$id"
+                    params={{ id: n.id }}
+                    className="flex items-center justify-between rounded-2xl bg-destructive/10 px-4 py-3 shadow-card border border-destructive/30 hover:border-destructive transition"
+                    >
+                    <span className="font-semibold text-sm">{n.customer} · ת.מ. #{n.id}</span>
+                    <span className="text-xs font-bold text-destructive">לטיפול ראמי</span>
+                    </Link>
+                ))}
+                </div>
+            </section>
         )}
 
         {/* Ready Delivery Notes Cards for Harel */}
@@ -206,7 +222,11 @@ function Index() {
               key={n.id}
               className="overflow-hidden rounded-3xl bg-card shadow-card border border-border/70"
             >
-              <Link to="/notes/$id" params={{ id: n.id }} className="block p-5">
+              <Link
+                to={n.noteStage === "pending_harel_reply" ? "/inquiry/$id" : "/notes/$id"}
+                params={{ id: n.id }}
+                className="block p-5"
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-muted-foreground">
                     ת.מ. #{n.id} · {n.driver || driverOf(n.driverId)?.name || "חכמת מנוף"} · קומקס #
@@ -216,11 +236,13 @@ function Index() {
                 </div>
                 <h2 className="mt-2 text-xl font-bold">{n.customer}</h2>
                 <p className="mt-1 text-[15px] font-medium leading-relaxed">
-                  {n.live
-                    ? "נבדק ונחתם ע״י ראמי — ממתין לאישור מנכ״ל סופי 👑"
-                    : a.status === "ok"
-                      ? "הכל תואם — קומקס, פקדונות 1:1 ואיתוראן 🟢"
-                      : a.findings.find((f) => f.status !== "ok")?.text}
+                  {n.noteStage === "pending_harel_reply"
+                    ? "ממתינה לטיפול הראל · תשובת ראמי 👑"
+                    : n.live
+                      ? "נבדק ונחתם ע״י ראמי — ממתין לאישור מנכ״ל סופי 👑"
+                      : a.status === "ok"
+                        ? "הכל תואם — קומקס, פקדונות 1:1 ואיתוראן 🟢"
+                        : a.findings.find((f) => f.status !== "ok")?.text}
                 </p>
                 <div className="mt-3 flex items-end justify-between">
                   <div className="text-left">

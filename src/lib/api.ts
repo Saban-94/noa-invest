@@ -602,6 +602,7 @@ function sheetNoteToDeliveryNote(n: SheetNote): DeliveryNote {
     driveUrl: n.driveUrl || undefined,
     fileId: n.fileId || undefined,
     billingStatus: n.approvalStatus || undefined,
+    noteStage: (n.approvalStatus || "pending_rami") as any,
     signedUrl: n.signedUrl || undefined,
     live: true,
   };
