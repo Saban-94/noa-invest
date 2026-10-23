@@ -567,6 +567,53 @@ export async function saveSignedNoteToSheet(params: {
   return { success: true, updatedDriveUrl: params.driveUrl };
 }
 
+export type RamiInquiryItem = {
+  rowIndex: number;
+  receivedDate: string;
+  docNumber: string;
+  customer: string;
+  address: string;
+  driver: string;
+  errorReason: string;
+  aiAnalysis: string;
+  ramiReply: string;
+  status: string;
+  harelApproval: string;
+  driveLink: string;
+};
+
+/**
+ * שליפת תעודות בירור ראמי בזמן אמת מתוך הגיליון
+ */
+export async function fetchRamiInquiries(): Promise<RamiInquiryItem[]> {
+  try {
+    const res = await fetch(`${API_BASE}?action=getRamiInquiries&sheetId=${MASTER_SHEET_ID}`);
+    if (res.ok) {
+      const data = await res.json();
+      const rawList = Array.isArray(data) ? data : data?.data || data?.inquiries;
+      if (Array.isArray(rawList)) {
+        return rawList.map((r: any, i: number) => ({
+          rowIndex: r.rowIndex || i + 2,
+          receivedDate: r.receivedDate || r["תאריך קליטה"] || "",
+          docNumber: r.docNumber || r["מס׳ תעודה"] || "",
+          customer: r.customer || r["שם לקוח"] || "",
+          address: r.address || r["כתובת אספקה"] || "",
+          driver: r.driver || r["נהג"] || "",
+          errorReason: r.errorReason || r["תיאור החריגה / הטעות שזוהתה"] || "",
+          aiAnalysis: r.aiAnalysis || r["ניתוח AI וכתב יד"] || "",
+          ramiReply: r.ramiReply || r["הסבר ומענה מראמי"] || "",
+          status: r.status || r["סטטוס בירור"] || "ממתין למענה ראמי ⏳",
+          harelApproval: r.harelApproval || r["אושר ע״י הראל"] || "",
+          driveLink: r.driveLink || r["קישור לתעודה"] || r["מזהה קובץ Drive"] || "",
+        }));
+      }
+    }
+  } catch (err) {
+    console.warn("[API] fetchRamiInquiries error:", err);
+  }
+  return [];
+}
+
 /* ------------------------------------------------------------------ */
 /* נתונים חיים בלבד (ללא נפילה לדמה): משמשים את מסך הקנבס               */
 /* ------------------------------------------------------------------ */
