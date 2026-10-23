@@ -39,12 +39,12 @@ import {
 } from "@/components/ui/dialog";
 
 const DESKTOP_NAV = [
-  { to: "/", label: "דשבורד מנכ״ל", icon: Crown },
-  { to: "/orders", label: "הזמנות חיות", icon: ClipboardList },
+  { to: "/", label: "ראשי הראל", icon: Crown },
+  { to: "/orders", label: "הזמנות בסידור", icon: ClipboardList },
   { to: "/notes", label: "תעודות משלוח", icon: FileText },
   { to: "/canvas", label: "עריכת תעודה (קנבס)", icon: Edit3 },
   { to: "/customers", label: "תיקי לקוחות", icon: Users },
-  { to: "/ituran", label: "איתוראן GPS", icon: Satellite },
+  { to: "/ituran", label: " נתוני-איתורן", icon: Satellite },
   { to: "/chat", label: "צ'אט נועה AI", icon: MessageCircle },
   { to: "/inquiry", label: "בירור תעודות", icon: Search },
 ] as const;
