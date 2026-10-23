@@ -112,6 +112,35 @@
   --gradient-ceo: linear-gradient(135deg, oklch(0.4 0.13 15), oklch(0.3 0.1 10));
 }
 
+.dark {
+  --background: oklch(0.15 0.01 200);
+  --foreground: oklch(0.95 0.01 200);
+  --card: oklch(0.2 0.01 200);
+  --card-foreground: oklch(0.95 0.01 200);
+  --popover: oklch(0.2 0.01 200);
+  --popover-foreground: oklch(0.95 0.01 200);
+  --primary: oklch(0.7 0.1 170);
+  --primary-foreground: oklch(0.2 0.01 200);
+  --secondary: oklch(0.3 0.01 200);
+  --secondary-foreground: oklch(0.95 0.01 200);
+  --muted: oklch(0.3 0.01 200);
+  --muted-foreground: oklch(0.7 0.01 200);
+  --accent: oklch(0.3 0.01 200);
+  --accent-foreground: oklch(0.95 0.01 200);
+  --border: oklch(0.3 0.01 200);
+  --input: oklch(0.3 0.01 200);
+  --ring: oklch(0.7 0.1 170);
+  --sidebar: oklch(0.15 0.01 200);
+  --sidebar-foreground: oklch(0.9 0.01 200);
+  --sidebar-accent: oklch(0.25 0.01 200);
+  --sidebar-accent-foreground: oklch(0.95 0.01 200);
+  --sidebar-border: oklch(0.3 0.01 200);
+  --chat-bg: oklch(0.2 0.01 200);
+  --bubble-in: oklch(0.3 0.01 200);
+  --bubble-out: oklch(0.4 0.05 160);
+}
+
+
 @layer base {
   * {
     border-color: var(--color-border);

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, useEffect } from "react";
 import {
   Crown,
   FileText,
@@ -7,23 +7,23 @@ import {
   ClipboardList,
   MessageCircle,
   Users,
-  Volume2,
-  BellRing,
   Truck,
   Edit3,
-  CheckCircle2,
-  AlertCircle,
   Send,
   Sparkles,
   Settings,
   RefreshCw,
   Server,
+  Sun,
+  Moon,
+  Search,
 } from "lucide-react";
 import noa from "@/assets/noa.jpg";
 import { PWAInstallButton } from "./PWAInstallButton";
 import { useQuery } from "@tanstack/react-query";
+import { useTheme } from "@/hooks/use-theme";
 
-import { playDispatchChime, playUrgentSignatureAlarm } from "@/lib/audio-alerts";
+import { playDispatchChime } from "@/lib/audio-alerts";
 import { toast } from "sonner";
 import { useApprovals } from "@/lib/store";
 import { fetchLiveNotes } from "@/lib/api";
@@ -46,6 +46,7 @@ const DESKTOP_NAV = [
   { to: "/customers", label: "תיקי לקוחות", icon: Users },
   { to: "/ituran", label: "איתוראן GPS", icon: Satellite },
   { to: "/chat", label: "צ'אט נועה AI", icon: MessageCircle },
+  { to: "/inquiry", label: "בירור תעודות", icon: Search },
 ] as const;
 
 const MOBILE_NAV = [
@@ -53,13 +54,33 @@ const MOBILE_NAV = [
   { to: "/orders", label: "הזמנות", icon: Truck },
   { to: "/notes", label: "תעודות", icon: FileText },
   { to: "/canvas", label: "קנבס", icon: Edit3 },
-  { to: "/customers", label: "לקוחות", icon: Users },
-  { to: "/chat", label: "נועה", icon: MessageCircle },
+  { to: "/inquiry", label: "בירור", icon: Search },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const approvalsState = useApprovals();
+  const { theme, toggleTheme } = useTheme();
+  
+  const [isSidebarActive, setIsSidebarActive] = useState(false);
+  
+  // Interaction tracking (mouse/touch)
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    const handleInteraction = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setIsSidebarActive(true), 2000); // 2 seconds delay
+    };
+
+    window.addEventListener("mousemove", handleInteraction);
+    window.addEventListener("touchstart", handleInteraction);
+
+    return () => {
+      window.removeEventListener("mousemove", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+      clearTimeout(timeout);
+    };
+  }, []);
 
   const [quickInput, setQuickInput] = useState("");
   const [quickMessages, setQuickMessages] = useState<
@@ -136,9 +157,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
 
   return (
-    <div className="flex min-h-dvh bg-background">
+    <div className={`flex min-h-dvh ${isSidebarActive ? "bg-background" : "bg-background"}`}>
       {/* 1. Desktop Right Sidebar */}
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-l border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
+      <aside className={`sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-l border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex transition-all ${isSidebarActive ? "opacity-100" : "opacity-90"}`}>
         <div>
           <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border/40">
             <div className="relative">
@@ -188,9 +209,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="p-3 border-t border-sidebar-border/40 space-y-2">
+          <button 
+            onClick={toggleTheme}
+            className="w-full flex items-center justify-between rounded-xl px-3.5 py-2 text-xs font-bold opacity-75 hover:opacity-100 hover:bg-sidebar-accent/50"
+          >
+            <div className="flex items-center gap-2">
+              {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+              <span>{theme === "light" ? "מצב כהה" : "מצב בהיר"}</span>
+            </div>
+          </button>
           <PWAInstallButton variant="nav" />
 
-          {/* הגדרות ואבחון Apps Script */}
           <Dialog>
             <DialogTrigger asChild>
               <button
@@ -221,7 +250,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <Server className="h-4 w-4 text-primary" />
                     <span>אבחון שרת והגדרות מערכת</span>
                   </DialogTitle>
-                  {/* פינת מסך ההגדרות: גרסת שרת מ-action=ping */}
                   <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold">
                     {isPingLoading
                       ? "טוען..."
@@ -297,10 +325,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* 2. Main Middle Workspace */}
       <main className="min-w-0 flex-1 pb-24 md:pb-6">{children}</main>
 
-      {/* 3. Desktop Left Sidebar */}
       <aside className="sticky top-0 hidden h-dvh w-80 shrink-0 flex-col border-r border-border/70 bg-card p-4 xl:flex">
         <div className="flex items-center justify-between border-b pb-3.5">
           <div className="flex items-center gap-2.5">
@@ -377,7 +403,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* 4. Mobile Bottom Tab Bar */}
       <nav className="glass fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border/70 pb-safe md:hidden shadow-lg backdrop-blur-md">
         {MOBILE_NAV.map(({ to, label, icon: I }) => {
           const isCurrent = active(to);
