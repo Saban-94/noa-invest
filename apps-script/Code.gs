@@ -370,7 +370,7 @@ function handleGetRamiInquiries() {
       return i >= 0 ? String(row[i] || "") : "";
     };
     const driveUrl = get(["קישור חתום", "קישור לתעודה", "קישור קובץ Drive", "קישור דרייב", "driveUrl", "driveLink"]);
-    const fileMatch = driveUrl.match(/[-\\w]{25,}/);
+    const fileMatch = driveUrl.match(/[-\w]{25,}/);
     inquiries.push({
       rowIndex: r + 1,
       id: docNumber,
@@ -412,7 +412,7 @@ function handleSubmitRamiReply(body) {
   const prev = String(sheet.getRange(rowNum, replyIdx + 1).getValue() || "").trim();
   const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
   const entry = "[" + nowStr + "] ראמי: " + reply;
-  sheet.getRange(rowNum, replyIdx + 1).setValue(prev ? prev + "\\n" + entry : entry);
+  sheet.getRange(rowNum, replyIdx + 1).setValue(prev ? prev + "\n" + entry : entry);
   sheet.getRange(rowNum, statusIdx + 1).setValue("ממתין לאישור הראל");
   SpreadsheetApp.flush();
   return jsonResponse({ success: true, noteId: noteId, status: "ממתין לאישור הראל" });
@@ -424,7 +424,7 @@ function handleSaveInquiryAnnotations(body) {
   const compositeData = String(body.compositeDataUrl || "");
   const annotationJson = String(body.annotationJson || "{}");
   if (!noteId) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
-  if (!/^data:image\\/png;base64,/.test(layerData) || !/^data:image\\/png;base64,/.test(compositeData)) {
+  if (!/^data:image\/png;base64,/.test(layerData) || !/^data:image\/png;base64,/.test(compositeData)) {
     return jsonResponse({ success: false, error: "נדרשות תמונת שכבה ותמונה משולבת בפורמט PNG" });
   }
   if (layerData.length > 25000000 || compositeData.length > 25000000 || annotationJson.length > 1000000) {
@@ -438,8 +438,8 @@ function handleSaveInquiryAnnotations(body) {
 
   const folders = DriveApp.getFoldersByName("תיקי בירור - סימונים");
   const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("תיקי בירור - סימונים");
-  const layerBytes = Utilities.base64Decode(layerData.replace(/^data:image\\/png;base64,/, ""));
-  const compositeBytes = Utilities.base64Decode(compositeData.replace(/^data:image\\/png;base64,/, ""));
+  const layerBytes = Utilities.base64Decode(layerData.replace(/^data:image\/png;base64,/, ""));
+  const compositeBytes = Utilities.base64Decode(compositeData.replace(/^data:image\/png;base64,/, ""));
   const layerFile = folder.createFile(Utilities.newBlob(layerBytes, "image/png", "בירור_" + noteId + "_שכבת_סימון.png"));
   const compositeFile = folder.createFile(Utilities.newBlob(compositeBytes, "image/png", "בירור_" + noteId + "_תמונה_משולבת.png"));
   const jsonFile = folder.createFile(Utilities.newBlob(annotationJson, "application/json", "בירור_" + noteId + "_נתוני_סימון.json"));
