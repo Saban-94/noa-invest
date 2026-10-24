@@ -152,7 +152,7 @@ function RamiInquiryAdvancedView() {
     const observer = new ResizeObserver(updateSize);
     observer.observe(stage);
     return () => observer.disconnect();
-  }, [scanQuery.dataUrl, inquiry?.docNumber]);
+  }, [scanQuery.data?.dataUrl, inquiry?.docNumber]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -338,8 +338,8 @@ function RamiInquiryAdvancedView() {
             <div ref={stageRef} className="relative flex min-h-[420px] items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted/40">
               {scanQuery.isLoading ? (
                 <div className="flex min-h-[420px] items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /> טוען את המסמך המקורי...</div>
-              ) : scanQuery.dataUrl ? (
-                <img ref={imageRef} src={scanQuery.dataUrl} alt={`סריקת תעודה ${inquiry.docNumber}`} className="pointer-events-none block max-h-[760px] w-full select-none object-contain" onLoad={() => setStageSize((s) => ({ ...s, height: Math.max(420, stageRef.current?.clientHeight || 480) }))} />
+              ) : scanQuery.data?.dataUrl ? (
+                <img ref={imageRef} src={scanQuery.data?.dataUrl} alt={`סריקת תעודה ${inquiry.docNumber}`} className="pointer-events-none block max-h-[760px] w-full select-none object-contain" onLoad={() => setStageSize((s) => ({ ...s, height: Math.max(420, stageRef.current?.clientHeight || 480) }))} />
               ) : (
                 <div className="flex min-h-[420px] max-w-md flex-col items-center justify-center gap-3 p-8 text-center">
                   <FileImage className="h-12 w-12 text-muted-foreground/60" />
