@@ -138,6 +138,15 @@ async function gasPost(body: Record<string, unknown>) {
   }
 }
 
+/** חילוץ מזהה Drive מתמיכה בקישורים /file/d/ID/view, open?id=ID וגם מזהה גולמי. */
+function extractDriveFileId(value?: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/\/d\/([A-Za-z0-9_-]+)/) || raw.match(/[?&]id=([A-Za-z0-9_-]+)/);
+  const id = match ? match[1] : (/^[A-Za-z0-9_-]{15,}$/.test(raw) ? raw : "");
+  return id.length >= 15 ? id : "";
+}
+
 export type SheetNote = {
   id: string;
   key: string;
