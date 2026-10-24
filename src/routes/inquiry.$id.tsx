@@ -199,6 +199,12 @@ function RamiInquiryAdvancedView() {
     toast.success("שכבת הסימון נוקתה");
   };
 
+  const undoLastStroke = () => {
+    strokesRef.current = strokesRef.current.slice(0, -1);
+    drawStrokes();
+    toast.success("הפעולה האחרונה בוטלה");
+  };
+
   const saveAnnotations = useMutation({
     mutationFn: async () => {
       const canvas = canvasRef.current;
@@ -290,7 +296,7 @@ function RamiInquiryAdvancedView() {
   }
 
   const status = String(inquiry.status || "ממתין לטיפול");
-  const waitingHarel = /הראל|מנכ|harel/i.test(status);
+  const waitingHarel = /הראל|מנכ|harel|ממתין|pending/i.test(status);
   const currentRound = inquiry.ramiReply ? 2 : 1;
 
   return (
@@ -332,7 +338,8 @@ function RamiInquiryAdvancedView() {
               <Button size="sm" variant={tool === "marker" ? "default" : "outline"} onClick={() => setTool("marker")} className="gap-2"><Highlighter className="h-4 w-4" /> מרקר</Button>
               <Button size="sm" variant={tool === "arrow" ? "default" : "outline"} onClick={() => setTool("arrow")} className="gap-2"><AlertTriangle className="h-4 w-4" /> חץ אדום</Button>
               <Button size="sm" variant={tool === "signature" ? "default" : "outline"} onClick={() => setTool("signature")} className="gap-2"><PenLine className="h-4 w-4" /> חתימה</Button>
-              <Button size="sm" variant="outline" onClick={clearStrokes} className="gap-2"><Trash2 className="h-4 w-4" /> נקה</Button>
+              <Button size="sm" variant="outline" onClick={undoLastStroke} className="gap-2"><RotateCcw className="h-4 w-4" /> בטל פעולה</Button>
+              <Button size="sm" variant="outline" onClick={clearStrokes} className="gap-2"><Trash2 className="h-4 w-4" /> נקה הכל</Button>
             </div>
           </div>
           <div className="p-4 md:p-5">
