@@ -7,7 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
  */
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec";
+  "https://script.google.com/macros/s/AKfycbzWxHsWF0QmWa-38-ZpIyWCPOKlmjY088Np5a5wzqTN1oNxXfxrcWYDKgk2UNcKX-ToYg/exec";
 
 let activeGasUrl: string | null = null;
 
@@ -162,9 +162,45 @@ export type SheetNote = {
   harelApprovedAt: string;
 };
 
+type ResolvedFile = { fileId?: string; viewUrl?: string; source?: string };
+
+/**
+ * תעודות שהגיליון החזיר בלי fileId (לינק חסר, או נוסחת HYPERLINK שנקראה כתווית בלבד):
+ * מבקשים מ-Apps Script לאתר את הקובץ (גיליון, טאב בירור, תיקיית הארכיון) ומשלימים.
+ * כשל כאן לא שובר את הרשימה.
+ */
+async function fillMissingFiles(notes: SheetNote[]): Promise<void> {
+  const missing = notes
+    .filter((n) => !n.fileId && n.id)
+    .map((n) => n.id)
+    .slice(0, 100);
+  if (missing.length === 0) return;
+  try {
+    const r = await gasGet({ action: "resolveNoteFiles", ids: missing.join(",") });
+    const files = (r.files && typeof r.files === "object" ? r.files : {}) as Record<
+      string,
+      ResolvedFile
+    >;
+    for (const n of notes) {
+      const f = files[n.id];
+      if (!n.fileId && f?.fileId) {
+        n.fileId = f.fileId;
+        n.driveUrl = n.driveUrl || f.viewUrl || "";
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[AppsScript] resolveNoteFiles failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 export const listNotesFn = createServerFn({ method: "POST" }).handler(async () => {
   const data = await gasGet({ action: "getNotes" });
-  return { notes: (Array.isArray(data.notes) ? data.notes : []) as SheetNote[] };
+  const notes = (Array.isArray(data.notes) ? data.notes : []) as SheetNote[];
+  await fillMissingFiles(notes);
+  return { notes };
 });
 
 export const getScanFn = createServerFn({ method: "POST" })
