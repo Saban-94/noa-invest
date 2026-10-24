@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec";
+  "https://script.google.com/macros/s/AKfycbzWxHsWF0QmWa-38-ZpIyWCPOKlmjY088Np5a5wzqTN1oNxXfxrcWYDKgk2UNcKX-ToYg/exec";
 
 export type InquiryRound = {
   round: number;
