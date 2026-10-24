@@ -18,18 +18,23 @@ export const saveInquiryAnnotationsFn = createServerFn({ method: "POST" })
   .inputValidator((value: {
     noteId: string;
     pngDataUrl: string;
+    compositeDataUrl: string;
     annotationJson: string;
   }) => {
     const noteId = String(value?.noteId || "").trim();
     const pngDataUrl = String(value?.pngDataUrl || "");
+    const compositeDataUrl = String(value?.compositeDataUrl || "");
     const annotationJson = String(value?.annotationJson || "{}");
     if (!noteId) throw new Error("חסר מספר תעודה");
     if (!/^data:image\/png;base64,/.test(pngDataUrl)) {
       throw new Error("נדרשת תמונת PNG תקינה של שכבת הסימון");
     }
-    if (pngDataUrl.length > 25_000_000) throw new Error("תמונת הסימון גדולה מדי");
+    if (!/^data:image\/png;base64,/.test(compositeDataUrl)) {
+      throw new Error("נדרשת תמונת PNG משולבת");
+    }
+    if (pngDataUrl.length > 25_000_000 || compositeDataUrl.length > 25_000_000) throw new Error("התמונה גדולה מדי");
     if (annotationJson.length > 1_000_000) throw new Error("נתוני הסימון גדולים מדי");
-    return { noteId, pngDataUrl, annotationJson };
+    return { noteId, pngDataUrl, compositeDataUrl, annotationJson };
   })
   .handler(async ({ data }) => {
     const response = await fetch(gasUrl(), {
