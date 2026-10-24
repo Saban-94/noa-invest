@@ -16,7 +16,7 @@ const TAB_GALYA = "ארכיון_תעודות_גליה";
 
 function getSecretToken() {
   const prop = PropertiesService.getScriptProperties().getProperty("API_TOKEN");
-  return prop || "saban2026";
+  return prop || "";
 }
 
 function jsonResponse(obj) {
@@ -132,26 +132,26 @@ function handleGetNotes(params) {
   const col = (name) => headers.indexOf(name);
 
   const idxDateRec = col("תאריך קליטה");
-  const idxDateDoc = col("תאריך תעודה");
-  const idxTimeDoc = col("שעת תעודה");
-  const idxDocNum = col("מס' תעודת משלוח");
-  const idxOrderNum = col("מס' הזמנה");
-  const idxCustNum = col("מס' לקוח");
-  const idxCustName = col("שם לקוח");
-  const idxAddress = col("כתובת אספקה");
-  const idxDriver = col("נהג");
-  const idxTruck = col("רישוי / משאית");
-  const idxLink = col("קישור לתעודה");
-  const idxItems = col("פריטים");
-  const idxDeposits = col("פיקדונות");
-  const idxCrane = col("זמני מנוף / המתנה");
+  const idxDateDoc = headerIndex_(headers, ["תאריך תעודה", "תאריך אספקה", "תאריך", "date", "deliveryDate"]);
+  const idxTimeDoc = headerIndex_(headers, ["שעת תעודה", "שעת אספקה", "שעה", "time"]);
+  const idxDocNum = headerIndex_(headers, ["מס' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח", "מספר ת.מ", "מספר תעודה", "מס׳ תעודה", "docNumber", "noteId", "id"]);
+  const idxOrderNum = headerIndex_(headers, ["מס' הזמנה", "מס׳ הזמנה", "מספר הזמנה", "בגין הזמנה", "comaxOrder", "orderId"]);
+  const idxCustNum = headerIndex_(headers, ["מס' לקוח", "מס׳ לקוח", "מספר לקוח", "customerNo"]);
+  const idxCustName = headerIndex_(headers, ["שם לקוח", "לקוח", "customer", "customerName"]);
+  const idxAddress = headerIndex_(headers, ["כתובת אספקה", "כתובת יעד", "כתובת אתר", "כתובת", "address", "siteAddress"]);
+  const idxDriver = headerIndex_(headers, ["נהג", "נהג משוייך", "נהג ורכב", "driver"]);
+  const idxTruck = headerIndex_(headers, ["רישוי / משאית", "מספר רכב", "משאית", "רכב", "truck"]);
+  const idxLink = headerIndex_(headers, ["קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl"]);
+  const idxItems = headerIndex_(headers, ["פריטים", "פירוט מוצרים ומק״טים", "סחורה מפורטת", "items"]);
+  const idxDeposits = headerIndex_(headers, ["פיקדונות", "פקדונות", "בלות פקדון (60002)", "משטחי סבן (60060)", "deposits"]);
+  const idxCrane = headerIndex_(headers, ["זמני מנוף / המתנה", "זמני מנוף/פריקה", "זמן פריקה/מנוף", "craneNotes"]);
   const idxSourceFile = col("קובץ מקור");
-  const idxExtractStatus = col("סטטוס חילוץ");
-  const idxUniqueKey = col("מפתח ייחודי");
-  const idxApprovalStatus = col("סטטוס אישור");
-  const idxSignedLink = col("קישור חתום");
-  const idxRami = col("אישור ראמי");
-  const idxHarel = col("אישור הראל");
+  const idxExtractStatus = headerIndex_(headers, ["סטטוס חילוץ", "extractStatus"]);
+  const idxUniqueKey = headerIndex_(headers, ["מפתח ייחודי", "key", "uniqueKey"]);
+  const idxApprovalStatus = headerIndex_(headers, ["סטטוס אישור", "סטטוס", "approvalStatus"]);
+  const idxSignedLink = headerIndex_(headers, ["קישור חתום", "קישור PDF חתום", "קישור סריקה חתומה", "signedUrl", "signedLink"]);
+  const idxRami = headerIndex_(headers, ["אישור ראמי", "חתימת ראמי", "ramiApprovedAt"]);
+  const idxHarel = headerIndex_(headers, ["אישור הראל", "חתימת הראל", "harelApprovedAt"]);
 
   const notes = [];
   for (let r = 1; r < values.length; r++) {
@@ -159,7 +159,10 @@ function handleGetNotes(params) {
     const docNum = String(row[idxDocNum] || "").trim();
     if (!docNum) continue;
 
-    const link = idxLink >= 0 ? String(row[idxLink] || "") : "";
+    const headerLink = idxLink >= 0 ? String(row[idxLink] || "").trim() : "";
+    const columnLValue = row.length > 11 ? String(row[11] || "").trim() : "";
+    // עמודה L היא fallback תואם לארכיון הקיים, אך רק אם יש בה קישור Drive אמיתי.
+    const link = headerLink || (/drive\.google\.com|docs\.google\.com/i.test(columnLValue) ? columnLValue : "");
     const signedLink = idxSignedLink >= 0 ? String(row[idxSignedLink] || "") : "";
     let fileId = "";
     const m = (signedLink || link).match(/[-\w]{25,}/);
