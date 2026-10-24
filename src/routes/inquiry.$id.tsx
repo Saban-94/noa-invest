@@ -60,16 +60,16 @@ function RamiInquiryAdvancedView() {
       const { inquiries } = await listRamiInquiriesFn();
       return inquiries.map((item) => ({
         rowIndex: 0,
-        receivedDate: item.date || "",
+        receivedDate: item.receivedDate || item.date || "",
         docNumber: item.id,
         customer: item.customer || "",
         address: item.address || "",
         driver: item.driver || "",
-        errorReason: item.issue || "",
+        errorReason: item.errorReason || item.issue || "",
         aiAnalysis: item.aiAnalysis || "",
-        ramiReply: (item.rounds || []).map((round) => round.rami?.text || "").filter(Boolean).join("\\n"),
+        ramiReply: item.ramiReply || (item.rounds || []).map((round) => round.rami?.text || "").filter(Boolean).join("\\n"),
         status: item.status || "ממתין לטיפול",
-        harelApproval: (item.rounds || []).map((round) => round.harel?.text || "").filter(Boolean).join("\\n"),
+        harelApproval: item.harelApproval || (item.rounds || []).map((round) => round.harel?.text || "").filter(Boolean).join("\\n"),
         driveLink: item.driveUrl || "",
         fileId: item.fileId || "",
       }));
