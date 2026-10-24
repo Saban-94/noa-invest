@@ -58,6 +58,10 @@ function doGet(e) {
       return handleGetNotes(p);
     }
 
+    if (action === "getRamiInquiries") {
+      return handleGetRamiInquiries();
+    }
+
     if (action === "getFile") {
       return handleGetFile(p.id);
     }
@@ -92,6 +96,14 @@ function doPost(e) {
 
     if (action === "submitApproval") {
       return handleSubmitApproval(body);
+    }
+
+    if (action === "submitRamiReply") {
+      return handleSubmitRamiReply(body);
+    }
+
+    if (action === "saveInquiryAnnotations") {
+      return handleSaveInquiryAnnotations(body);
     }
 
     if (action === "saveSignedNote") {
@@ -295,5 +307,161 @@ function handleSaveSignedNote(body) {
     success: true,
     driveUrl: fileUrl,
     folder: targetFolder.getName(),
+  });
+}
+
+
+/* ------------------------------------------------------------------ */
+/* בירור ראמי: שליפה, שמירת מענה ושכבת סימון                             */
+/* ------------------------------------------------------------------ */
+
+function getInquirySheet_() {
+  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  const candidates = ["בירור_ראמי", "בירור ראמי", "בירור_ראמי ", TAB_GALYA];
+  for (const name of candidates) {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) return sheet;
+  }
+  throw new Error("לא נמצא גיליון בירור ראמי או ארכיון תעודות");
+}
+
+function headerIndex_(headers, names) {
+  for (const name of names) {
+    const index = headers.indexOf(name);
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
+function ensureHeader_(sheet, headers, names, preferredName) {
+  const existing = headerIndex_(headers, names);
+  if (existing >= 0) return existing;
+  const index = headers.length;
+  sheet.getRange(1, index + 1).setValue(preferredName);
+  headers.push(preferredName);
+  return index;
+}
+
+function inquiryRow_(sheet, noteId, headers) {
+  const idIndex = headerIndex_(headers, ["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
+  if (idIndex < 0) throw new Error("לא נמצאה עמודת מספר תעודה בגיליון הבירור");
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][idIndex] || "").trim() === noteId) return r + 1;
+  }
+  return -1;
+}
+
+function handleGetRamiInquiries() {
+  const sheet = getInquirySheet_();
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) return jsonResponse({ success: true, inquiries: [] });
+  const headers = values[0].map(h => String(h || "").trim());
+  const idx = (names) => headerIndex_(headers, names);
+  const docIdx = idx(["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
+  if (docIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה" });
+  const inquiries = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const docNumber = String(row[docIdx] || "").trim();
+    if (!docNumber) continue;
+    const get = (names) => {
+      for (const name of names) {
+        const i = headers.indexOf(name);
+        if (i >= 0) {
+          const value = String(row[i] || "").trim();
+          if (value) return value;
+        }
+      }
+      return "";
+    };
+    const driveUrl = get(["קישור חתום", "קישור לתעודה", "קישור קובץ Drive", "קישור דרייב", "driveUrl", "driveLink"]);
+    const fileMatch = driveUrl.match(/[-\w]{25,}/);
+    inquiries.push({
+      rowIndex: r + 1,
+      id: docNumber,
+      docNumber: docNumber,
+      receivedDate: get(["תאריך קליטה", "תאריך תעודה", "date", "receivedDate"]),
+      date: get(["תאריך תעודה", "תאריך קליטה", "date"]),
+      customer: get(["שם לקוח", "customer", "customerName"]),
+      address: get(["כתובת אספקה", "כתובת", "address"]),
+      driver: get(["נהג", "נהג ורכב", "driver"]),
+      issue: get(["תיאור החריגה / הטעות שזוהתה", "תיאור חריגה", "הערת אישור", "errorReason", "issue"]),
+      errorReason: get(["תיאור החריגה / הטעות שזוהתה", "תיאור חריגה", "errorReason", "issue"]),
+      aiAnalysis: get(["ניתוח AI וכתב יד", "ניתוח AI", "aiAnalysis"]),
+      ramiReply: get(["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"]),
+      status: get(["סטטוס בירור", "סטטוס אישור", "status"]) || "ממתין לטיפול",
+      harelApproval: get(["אושר ע״י הראל", "אישור הראל", "harelApproval"]),
+      fileId: fileMatch ? fileMatch[0] : "",
+      driveUrl: driveUrl,
+      driveLink: driveUrl,
+      rounds: [],
+    });
+  }
+  return jsonResponse({ success: true, inquiries: inquiries });
+}
+
+function handleSubmitRamiReply(body) {
+  const noteId = String(body.noteId || "").trim();
+  const reply = String(body.text || "").trim();
+  if (!noteId) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
+  if (reply.length < 3) return jsonResponse({ success: false, error: "המענה קצר מדי" });
+  if (reply.length > 2000) return jsonResponse({ success: false, error: "המענה ארוך מדי" });
+
+  const sheet = getInquirySheet_();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h || "").trim());
+  const rowNum = inquiryRow_(sheet, noteId, headers);
+  if (rowNum < 0) return jsonResponse({ success: false, error: "התעודה לא נמצאה בגיליון הבירור" });
+
+  const replyIdx = ensureHeader_(sheet, headers, ["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"], "הסבר ומענה מראמי");
+  const statusIdx = ensureHeader_(sheet, headers, ["סטטוס בירור", "סטטוס אישור", "status"], "סטטוס בירור");
+  const prev = String(sheet.getRange(rowNum, replyIdx + 1).getValue() || "").trim();
+  const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
+  const entry = "[" + nowStr + "] ראמי: " + reply;
+  sheet.getRange(rowNum, replyIdx + 1).setValue(prev ? prev + "\n" + entry : entry);
+  sheet.getRange(rowNum, statusIdx + 1).setValue("ממתין לאישור הראל");
+  SpreadsheetApp.flush();
+  return jsonResponse({ success: true, noteId: noteId, status: "ממתין לאישור הראל" });
+}
+
+function handleSaveInquiryAnnotations(body) {
+  const noteId = String(body.noteId || "").trim();
+  const layerData = String(body.pngDataUrl || "");
+  const compositeData = String(body.compositeDataUrl || "");
+  const annotationJson = String(body.annotationJson || "{}");
+  if (!noteId) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
+  if (!/^data:image\/png;base64,/.test(layerData) || !/^data:image\/png;base64,/.test(compositeData)) {
+    return jsonResponse({ success: false, error: "נדרשות תמונת שכבה ותמונה משולבת בפורמט PNG" });
+  }
+  if (layerData.length > 25000000 || compositeData.length > 25000000 || annotationJson.length > 1000000) {
+    return jsonResponse({ success: false, error: "קובצי הסימון חורגים מהגודל המותר" });
+  }
+
+  const sheet = getInquirySheet_();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h || "").trim());
+  const rowNum = inquiryRow_(sheet, noteId, headers);
+  if (rowNum < 0) return jsonResponse({ success: false, error: "התעודה לא נמצאה בגיליון הבירור" });
+
+  const folders = DriveApp.getFoldersByName("תיקי בירור - סימונים");
+  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("תיקי בירור - סימונים");
+  const layerBytes = Utilities.base64Decode(layerData.replace(/^data:image\/png;base64,/, ""));
+  const compositeBytes = Utilities.base64Decode(compositeData.replace(/^data:image\/png;base64,/, ""));
+  const layerFile = folder.createFile(Utilities.newBlob(layerBytes, "image/png", "בירור_" + noteId + "_שכבת_סימון.png"));
+  const compositeFile = folder.createFile(Utilities.newBlob(compositeBytes, "image/png", "בירור_" + noteId + "_תמונה_משולבת.png"));
+  const jsonFile = folder.createFile(Utilities.newBlob(annotationJson, "application/json", "בירור_" + noteId + "_נתוני_סימון.json"));
+
+  const layerIdx = ensureHeader_(sheet, headers, ["קישור שכבת סימון"], "קישור שכבת סימון");
+  const compositeIdx = ensureHeader_(sheet, headers, ["קישור תמונה משולבת"], "קישור תמונה משולבת");
+  const jsonIdx = ensureHeader_(sheet, headers, ["קישור נתוני סימון"], "קישור נתוני סימון");
+  sheet.getRange(rowNum, layerIdx + 1).setValue(layerFile.getUrl());
+  sheet.getRange(rowNum, compositeIdx + 1).setValue(compositeFile.getUrl());
+  sheet.getRange(rowNum, jsonIdx + 1).setValue(jsonFile.getUrl());
+  SpreadsheetApp.flush();
+  return jsonResponse({
+    success: true,
+    noteId: noteId,
+    driveUrl: compositeFile.getUrl(),
+    annotationUrl: layerFile.getUrl(),
+    metadataUrl: jsonFile.getUrl(),
   });
 }
