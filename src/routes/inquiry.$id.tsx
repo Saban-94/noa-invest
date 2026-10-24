@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
@@ -92,7 +92,7 @@ function RamiInquiryAdvancedView() {
     retry: 1,
   });
 
-  const drawStrokes = () => {
+  const drawStrokes = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const context = canvas.getContext("2d");
@@ -139,7 +139,7 @@ function RamiInquiryAdvancedView() {
       }
       context.restore();
     }
-  };
+  }, [stageSize.width, stageSize.height]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -166,7 +166,7 @@ function RamiInquiryAdvancedView() {
     if (!context) return;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawStrokes();
-  }, [stageSize.width, stageSize.height]);
+  }, [stageSize.width, stageSize.height, drawStrokes]);
 
   const getPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
     const rect = event.currentTarget.getBoundingClientRect();
