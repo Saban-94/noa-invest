@@ -24,6 +24,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { getScanFn } from "@/lib/notes-api.functions";
+import { scanToDataUrl } from "@/lib/scan-render";
 import { saveInquiryAnnotationsFn } from "@/lib/inquiry-annotations.functions";
 import { listRamiInquiriesFn, replyRamiInquiryFn } from "@/lib/inquiries-api.functions";
 
@@ -87,7 +88,7 @@ function RamiInquiryAdvancedView() {
     enabled: Boolean(fileId),
     queryFn: async () => {
       const file = await getScanFn({ data: { fileId } });
-      return { dataUrl: `data:${file.mimeType || "image/png"};base64,${file.base64}` };
+      return { dataUrl: await scanToDataUrl(file.mimeType, file.base64) };
     },
     retry: 1,
   });
