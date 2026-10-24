@@ -36,10 +36,27 @@ type Tool = "marker" | "arrow" | "signature";
 type Point = { x: number; y: number };
 type Stroke = { tool: Tool; points: Point[] };
 
-function driveFileId(value?: string): string {
-  if (!value) return "";
-  const match = value.match(/[-\w]{25,}/);
-  return match?.[0] || "";
+function driveFileId(value?: string, rowItem?: any): string {
+  if (value) {
+    const match = value.match(/[-\w]{25,}/);
+    if (match?.[0]) return match[0];
+  }
+  if (rowItem) {
+    const possibleFields = [
+      rowItem.fileId,
+      rowItem.driveUrl,
+      rowItem.driveLink,
+      rowItem["מזהה קובץ Drive"],
+      rowItem["כתובת הקובץ (URL)"]
+    ];
+    for (const f of possibleFields) {
+      if (f && typeof f === "string") {
+        const m = f.match(/[-\w]{25,}/);
+        if (m?.[0]) return m?.[0];
+      }
+    }
+  }
+  return "";
 }
 
 function RamiInquiryAdvancedView() {
