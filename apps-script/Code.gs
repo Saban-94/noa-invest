@@ -366,8 +366,14 @@ function handleGetRamiInquiries() {
     const docNumber = String(row[docIdx] || "").trim();
     if (!docNumber) continue;
     const get = (names) => {
-      const i = idx(names);
-      return i >= 0 ? String(row[i] || "") : "";
+      for (const name of names) {
+        const i = headers.indexOf(name);
+        if (i >= 0) {
+          const value = String(row[i] || "").trim();
+          if (value) return value;
+        }
+      }
+      return "";
     };
     const driveUrl = get(["קישור חתום", "קישור לתעודה", "קישור קובץ Drive", "קישור דרייב", "driveUrl", "driveLink"]);
     const fileMatch = driveUrl.match(/[-\w]{25,}/);
