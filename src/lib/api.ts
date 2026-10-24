@@ -648,7 +648,7 @@ function sheetNoteToDeliveryNote(n: SheetNote): DeliveryNote {
     },
     driveUrl: n.driveUrl || undefined,
     // אם Apps Script לא סיפק fileId, חילוץ מזהה מהקישור המקורי (למשל עמודה L) לפני הצגת "אין סריקה".
-    fileId: n.fileId || extractDriveFileId(n.signedUrl || n.driveUrl) || undefined,
+    fileId: n.fileId || extractDriveFileId(n.signedUrl) || extractDriveFileId(n.driveUrl) || undefined,
     billingStatus: n.approvalStatus || undefined,
     noteStage: (n.approvalStatus || "pending_rami") as any,
     signedUrl: n.signedUrl || undefined,
