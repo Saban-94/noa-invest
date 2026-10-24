@@ -23,10 +23,9 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { listRamiInquiriesFn } from "@/lib/inquiries-api.functions";
 import { getScanFn } from "@/lib/notes-api.functions";
 import { saveInquiryAnnotationsFn } from "@/lib/inquiry-annotations.functions";
-import { replyRamiInquiryFn } from "@/lib/inquiries-api.functions";
+import { listRamiInquiriesFn, replyRamiInquiryFn } from "@/lib/inquiries-api.functions";
 
 export const Route = createFileRoute("/inquiry/$id")({
   component: RamiInquiryAdvancedView,
@@ -53,7 +52,6 @@ function RamiInquiryAdvancedView() {
   const [tool, setTool] = useState<Tool>("marker");
   const [replyText, setReplyText] = useState("");
   const [signatureApproved, setSignatureApproved] = useState(false);
-  const [isDrawing, setIsDrawing] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 480 });
 
   const inquiryQuery = useQuery({
@@ -181,7 +179,6 @@ function RamiInquiryAdvancedView() {
     const stroke: Stroke = { tool, points: [getPoint(event)] };
     activeStrokeRef.current = stroke;
     strokesRef.current = [...strokesRef.current, stroke];
-    setIsDrawing(true);
     drawStrokes();
   };
 
@@ -193,7 +190,6 @@ function RamiInquiryAdvancedView() {
 
   const stopDrawing = () => {
     activeStrokeRef.current = null;
-    setIsDrawing(false);
   };
 
   const clearStrokes = () => {
@@ -285,7 +281,7 @@ function RamiInquiryAdvancedView() {
         <FileImage className="mx-auto h-12 w-12 text-muted-foreground" />
         <h2 className="text-lg font-bold">תיק בירור #{id} לא נמצא</h2>
         <p className="text-sm text-muted-foreground">ייתכן שהתיק הוסר או שמספר התעודה שונה.</p>
-        <Link to="/inquiry" className="inline-flex items-center gap-2 text-primary font-bold">
+        <Link to="/inquiries" className="inline-flex items-center gap-2 text-primary font-bold">
           <ArrowRight className="h-4 w-4" /> חזרה לרשימת הבירורים
         </Link>
       </div>
