@@ -123,10 +123,14 @@ function handleGetNotes(params) {
     return jsonResponse({ success: false, error: "Sheet tab not found: " + TAB_GALYA });
   }
 
-  const values = sheet.getDataRange().getValues();
+  const dataRange = sheet.getDataRange();
+  const values = dataRange.getValues();
   if (values.length <= 1) {
     return jsonResponse({ success: true, notes: [] });
   }
+  // Read-only metadata: preserve formulas and rich-text hyperlinks without editing the sheet.
+  const formulas = dataRange.getFormulas();
+  const richTextValues = dataRange.getRichTextValues();
 
   const headers = values[0].map(h => String(h || "").trim());
   const col = (name) => headers.indexOf(name);
@@ -159,14 +163,23 @@ function handleGetNotes(params) {
     const docNum = String(row[idxDocNum] || "").trim();
     if (!docNum) continue;
 
-    const headerLink = idxLink >= 0 ? String(row[idxLink] || "").trim() : "";
-    const columnLValue = row.length > 11 ? String(row[11] || "").trim() : "";
-    // עמודה L היא fallback תואם לארכיון הקיים, אך רק אם יש בה קישור Drive אמיתי.
-    const link = headerLink || (/drive\.google\.com|docs\.google\.com/i.test(columnLValue) ? columnLValue : "");
-    const signedLink = idxSignedLink >= 0 ? String(row[idxSignedLink] || "") : "";
-    let fileId = "";
-    const m = (signedLink || link).match(/[-\w]{25,}/);
-    if (m) fileId = m[0];
+    const headerLinkValue = idxLink >= 0
+      ? driveLinkFromCell_(row[idxLink], formulas[r][idxLink], richTextValues[r][idxLink])
+      : "";
+    // Support the actual scan-link locations K and T as read-only fallbacks.
+    const columnKLink = row.length > 10
+      ? driveLinkFromCell_(row[10], formulas[r][10], richTextValues[r][10])
+      : "";
+    const columnTLink = row.length > 19
+      ? driveLinkFromCell_(row[19], formulas[r][19], richTextValues[r][19])
+      : "";
+    const signedLinkRaw = idxSignedLink >= 0
+      ? driveLinkFromCell_(row[idxSignedLink], formulas[r][idxSignedLink], richTextValues[r][idxSignedLink])
+      : "";
+    const link = headerLinkValue || columnKLink || columnTLink;
+    const signedLink = signedLinkRaw;
+    const sourceLink = signedLink || link;
+    const fileId = extractDriveFileId_(sourceLink);
 
     notes.push({
       id: docNum,
@@ -326,6 +339,33 @@ function getInquirySheet_() {
     if (sheet) return sheet;
   }
   throw new Error("לא נמצא גיליון בירור ראמי או ארכיון תעודות");
+}
+
+/**
+ * Resolve a Drive link from a cell's raw value, HYPERLINK formula, or rich-text link.
+ * This function only reads the sheet; it never writes or alters cell content.
+ */
+function driveLinkFromCell_(value, formula, richText) {
+  const formulaMatch = String(formula == null ? "" : formula).match(/HYPERLINK\s*\(\s*"([^"]+)"/i);
+  const candidates = [
+    richText && typeof richText.getLinkUrl === "function" ? richText.getLinkUrl() : "",
+    String(value == null ? "" : value).trim(),
+    formulaMatch ? formulaMatch[1] : "",
+  ];
+  for (const candidate of candidates) {
+    const textValue = String(candidate || "").trim();
+    if (/https?:\/\/(?:drive|docs)\.google\.com\//i.test(textValue)) return textValue;
+    if (/^[A-Za-z0-9_-]{25,}$/.test(textValue)) return textValue;
+  }
+  return "";
+}
+
+function extractDriveFileId_(urlOrId) {
+  const raw = String(urlOrId || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/\/d\/([A-Za-z0-9_-]+)/) || raw.match(/[?&]id=([A-Za-z0-9_-]+)/);
+  const id = match ? match[1] : (/^[A-Za-z0-9_-]{25,}$/.test(raw) ? raw : "");
+  return id || "";
 }
 
 function headerIndex_(headers, names) {
