@@ -310,7 +310,7 @@ function RamiInquiryAdvancedView() {
                 <ExternalLink className="h-4 w-4" /> מסמך המקור
               </a>
             )}
-            <Link to="/inquiry" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-secondary-foreground hover:opacity-90">
+            <Link to="/inquiries" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-secondary-foreground hover:opacity-90">
               <ArrowRight className="h-4 w-4" /> חזרה לבירורים
             </Link>
           </div>
