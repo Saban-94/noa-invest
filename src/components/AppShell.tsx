@@ -17,6 +17,8 @@ import {
   Search,
   HelpCircle,
 } from "lucide-react";
+import { type ReactNode, useState, useEffect } from "react";
+import { useLocation, Link } from "@tanstack/react-router";
 import noa from "@/assets/noa.jpg";
 import { PWAInstallButton } from "./PWAInstallButton";
 import { useQuery } from "@tanstack/react-query";
