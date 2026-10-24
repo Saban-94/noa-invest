@@ -21,6 +21,10 @@ export type RamiInquiry = {
   driveUrl: string;
   status: string; // "ממתין למענה ראמי ⏳" | "pending_harel_reply" | ...
   rounds: InquiryRound[];
+  receivedDate?: string;
+  errorReason?: string;
+  ramiReply?: string;
+  harelApproval?: string;
 };
 
 export type InquiryKind = "return" | "crane" | "damaged" | "other";
