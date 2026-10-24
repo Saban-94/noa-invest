@@ -623,6 +623,15 @@ function parseDepositQty(text: string, code: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/** חילוץ מזהה Drive מתמיכה בקישורים /file/d/ID/view, open?id=ID וגם מזהה גולמי. */
+function extractDriveFileId(value?: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/\/d\/([A-Za-z0-9_-]+)/) || raw.match(/[?&]id=([A-Za-z0-9_-]+)/);
+  const id = match ? match[1] : (/^[A-Za-z0-9_-]{15,}$/.test(raw) ? raw : "");
+  return id.length >= 15 ? id : "";
+}
+
 function sheetNoteToDeliveryNote(n: SheetNote): DeliveryNote {
   const bales = parseDepositQty(n.depositsText, "60002");
   const pallets = parseDepositQty(n.depositsText, "60060");
@@ -647,7 +656,8 @@ function sheetNoteToDeliveryNote(n: SheetNote): DeliveryNote {
       pallets60060: { delivered: pallets ?? 0, billed: pallets ?? 0 },
     },
     driveUrl: n.driveUrl || undefined,
-    fileId: n.fileId || undefined,
+    // אם Apps Script לא סיפק fileId, חילוץ מזהה מהקישור המקורי (למשל עמודה L) לפני הצגת "אין סריקה".
+    fileId: n.fileId || extractDriveFileId(n.signedUrl || n.driveUrl) || undefined,
     billingStatus: n.approvalStatus || undefined,
     noteStage: (n.approvalStatus || "pending_rami") as any,
     signedUrl: n.signedUrl || undefined,
