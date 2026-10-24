@@ -397,12 +397,19 @@ function inquiryRow_(sheet, noteId, headers) {
 
 function handleGetRamiInquiries() {
   const sheet = getInquirySheet_();
-  const values = sheet.getDataRange().getValues();
+  const dataRange = sheet.getDataRange();
+  const values = dataRange.getValues();
   if (!values.length) return jsonResponse({ success: true, inquiries: [] });
+  // Read formulas and rich-text links too: some Drive links are attached to cell text,
+  // rather than stored as the visible cell value.
+  const formulas = dataRange.getFormulas();
+  const richTextValues = dataRange.getRichTextValues();
   const headers = values[0].map(h => String(h || "").trim());
   const idx = (names) => headerIndex_(headers, names);
   const docIdx = idx(["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
   if (docIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה" });
+  const linkIdx = idx(["קישור חתום", "קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl"]);
+  const signedIdx = idx(["קישור חתום", "קישור PDF חתום", "קישור סריקה חתומה", "signedUrl", "signedLink"]);
   const inquiries = [];
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
@@ -418,8 +425,21 @@ function handleGetRamiInquiries() {
       }
       return "";
     };
-    const driveUrl = get(["קישור חתום", "קישור לתעודה", "קישור קובץ Drive", "קישור דרייב", "driveUrl", "driveLink"]);
-    const fileMatch = driveUrl.match(/[-\w]{25,}/);
+    const headerDriveLink = linkIdx >= 0
+      ? driveLinkFromCell_(row[linkIdx], formulas[r][linkIdx], richTextValues[r][linkIdx])
+      : "";
+    const signedLink = signedIdx >= 0
+      ? driveLinkFromCell_(row[signedIdx], formulas[r][signedIdx], richTextValues[r][signedIdx])
+      : "";
+    // Actual scan links may be stored in K or T without a recognized header.
+    const columnKLink = row.length > 10
+      ? driveLinkFromCell_(row[10], formulas[r][10], richTextValues[r][10])
+      : "";
+    const columnTLink = row.length > 19
+      ? driveLinkFromCell_(row[19], formulas[r][19], richTextValues[r][19])
+      : "";
+    const driveUrl = signedLink || headerDriveLink || columnKLink || columnTLink;
+    const fileId = extractDriveFileId_(driveUrl);
     inquiries.push({
       rowIndex: r + 1,
       id: docNumber,
@@ -435,7 +455,7 @@ function handleGetRamiInquiries() {
       ramiReply: get(["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"]),
       status: get(["סטטוס בירור", "סטטוס אישור", "status"]) || "ממתין לטיפול",
       harelApproval: get(["אושר ע״י הראל", "אישור הראל", "harelApproval"]),
-      fileId: fileMatch ? fileMatch[0] : "",
+      fileId: fileId,
       driveUrl: driveUrl,
       driveLink: driveUrl,
       rounds: [],
@@ -443,7 +463,6 @@ function handleGetRamiInquiries() {
   }
   return jsonResponse({ success: true, inquiries: inquiries });
 }
-
 function handleSubmitRamiReply(body) {
   const noteId = String(body.noteId || "").trim();
   const reply = String(body.text || "").trim();
