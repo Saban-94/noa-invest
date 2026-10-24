@@ -23,7 +23,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { fetchRamiInquiries } from "@/lib/api";
+import { listRamiInquiriesFn } from "@/lib/inquiries-api.functions";
 import { getScanFn } from "@/lib/notes-api.functions";
 import { saveInquiryAnnotationsFn } from "@/lib/inquiry-annotations.functions";
 import { replyRamiInquiryFn } from "@/lib/inquiries-api.functions";
@@ -58,7 +58,24 @@ function RamiInquiryAdvancedView() {
 
   const inquiryQuery = useQuery({
     queryKey: ["rami-inquiries"],
-    queryFn: fetchRamiInquiries,
+    queryFn: async () => {
+      const { inquiries } = await listRamiInquiriesFn();
+      return inquiries.map((item) => ({
+        rowIndex: 0,
+        receivedDate: item.date || "",
+        docNumber: item.id,
+        customer: item.customer || "",
+        address: item.address || "",
+        driver: item.driver || "",
+        errorReason: item.issue || "",
+        aiAnalysis: item.aiAnalysis || "",
+        ramiReply: (item.rounds || []).map((round) => round.rami?.text || "").filter(Boolean).join("\\n"),
+        status: item.status || "ממתין לטיפול",
+        harelApproval: (item.rounds || []).map((round) => round.harel?.text || "").filter(Boolean).join("\\n"),
+        driveLink: item.driveUrl || "",
+        fileId: item.fileId || "",
+      }));
+    },
     staleTime: 20_000,
     retry: 1,
   });
