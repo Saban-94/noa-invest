@@ -1,5 +1,3 @@
-import { Link, useLocation } from "@tanstack/react-router";
-import { useState, type ReactNode, useEffect } from "react";
 import {
   Crown,
   FileText,
@@ -17,6 +15,7 @@ import {
   Sun,
   Moon,
   Search,
+  HelpCircle,
 } from "lucide-react";
 import noa from "@/assets/noa.jpg";
 import { PWAInstallButton } from "./PWAInstallButton";
