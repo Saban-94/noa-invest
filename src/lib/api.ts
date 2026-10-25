@@ -637,14 +637,16 @@ function sheetNoteToDeliveryNote(n: SheetNote): DeliveryNote {
     craneTime: n.craneNotes || undefined,
     items: n.items.map((i) => ({
       name: i.name,
+      sku: i.sku || undefined,
       qty: i.qty,
       ordered: i.qty, // הזמנת קומקס עדיין לא מוצלבת (ראו live)
       weightKg: 0,
       unit: i.unit || "יח׳",
     })),
+    // Missing deposit text must remain unknown; never silently convert it to 0:0.
     deposits: {
-      bales60002: { delivered: bales ?? 0, billed: bales ?? 0 },
-      pallets60060: { delivered: pallets ?? 0, billed: pallets ?? 0 },
+      ...(bales !== null ? { bales60002: { delivered: bales, billed: bales } } : {}),
+      ...(pallets !== null ? { pallets60060: { delivered: pallets, billed: pallets } } : {}),
     },
     driveUrl: n.driveUrl || undefined,
     // אם Apps Script לא סיפק fileId, חילוץ מזהה מהקישור המקורי (למשל עמודה L) לפני הצגת "אין סריקה".
