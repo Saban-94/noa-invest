@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { InquiryThread } from "@/components/InquiryThread";
 import { listWorkroomInquiriesFn, openOrCreateWorkroomTaskFn, ramiReplyFn } from "@/lib/inquiry-workflow.functions";
 import type { WorkroomInquiry } from "@/lib/inquiry-workflow";
+import { buildLogisticsFindings, isLogisticsAuditComplete } from "@/lib/logistics-audit";
 
 export const Route = createFileRoute("/notes/$id")({
   head: ({ params }) => ({
@@ -52,6 +53,29 @@ function Viewer() {
   const [isApprovingRami, setIsApprovingRami] = useState(false);
   const [isApprovingHarel, setIsApprovingHarel] = useState(false);
   const [isOpeningTask, setIsOpeningTask] = useState(false);
+  const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
+  const [auditLoaded, setAuditLoaded] = useState(false);
+  const [showAllAuditFindings, setShowAllAuditFindings] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`noa-logistics-audit:${id}`);
+      setAuditEvidence(saved ? JSON.parse(saved) as Record<string, string> : {});
+    } catch {
+      setAuditEvidence({});
+    } finally {
+      setAuditLoaded(true);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!auditLoaded) return;
+    try {
+      localStorage.setItem(`noa-logistics-audit:${id}`, JSON.stringify(auditEvidence));
+    } catch {
+      // Keep the gate active in memory if browser persistence is unavailable.
+    }
+  }, [id, auditEvidence, auditLoaded]);
   const navigate = useNavigate();
 
   const workroomQuery = useQuery({
@@ -185,11 +209,20 @@ function Viewer() {
 
   const ap = apState[n.id];
   const a = auditNote(n);
+  const auditFindings = buildLogisticsFindings(n);
+  const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence);
+  const auditEvidenceCount = auditFindings.filter((finding) => (auditEvidence[finding.id] || "").trim().length >= 12).length;
 
   const handleRamiApproval = async () => {
+    if (!auditComplete) {
+      toast.error("האישור נחסם: נדרשת השלמת בדיקת הלוגיסטיקה", {
+        description: `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.`,
+      });
+      return;
+    }
     setIsApprovingRami(true);
     try {
-      await approveStrict(n.id, "rami", customNote.trim() || undefined);
+      await approveStrict(n.id, "rami", customNote.trim() || undefined, auditEvidence);
       approvals.rami(n.id, customNote.trim() || undefined);
       void playDispatchChime(0.85);
       toast.success(`ת.מ. ${n.id} נבדקה ואושרה אישית ע״י ראמי מסארווה ✍️`);
@@ -203,9 +236,15 @@ function Viewer() {
   };
 
   const handleHarelApproval = async () => {
+    if (!auditComplete) {
+      toast.error("אישור מנכ״ל נחסם: הבדיקה הלוגיסטית לא הושלמה", {
+        description: `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.`,
+      });
+      return;
+    }
     setIsApprovingHarel(true);
     try {
-      await approveStrict(n.id, "harel", customNote.trim() || undefined);
+      await approveStrict(n.id, "harel", customNote.trim() || undefined, auditEvidence);
       approvals.harel(n.id, customNote.trim() || undefined);
       playUrgentSignatureAlarm();
       setShowCelebration(true);
@@ -249,6 +288,35 @@ function Viewer() {
           </Button>
         </div>
 
+        <section className="rounded-3xl border border-amber-500/30 bg-card p-5 shadow-card space-y-4" aria-label="בקרת לוגיסטיקה של נועה">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+            <div><h2 className="font-display text-base font-extrabold">🧠 בקרת לוגיסטיקה מלאה · נועה AI</h2><p className="mt-1 text-xs text-muted-foreground">כמויות, מק״טים, פיקדונות, שירותי הובלה ומקור התעודה — אין אישור לפני תיעוד כל בדיקה.</p></div>
+            <span className={auditComplete ? "rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-800" : "rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900"}>{auditComplete ? "כל הבדיקות תועדו" : `נדרשות אסמכתאות · ${auditEvidenceCount}/${auditFindings.length}`}</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border p-3"><p className="text-xs text-muted-foreground">שורות פריטים</p><p className="mt-1 text-xl font-extrabold">{n.items?.length || 0}</p></div>
+            <div className="rounded-2xl border p-3"><p className="text-xs text-muted-foreground">בדיקות פיקדון</p><p className="mt-1 text-xl font-extrabold">60002 · 60060</p></div>
+            <div className="rounded-2xl border p-3"><p className="text-xs text-muted-foreground">מקור וביצוע הובלה</p><p className="mt-1 text-sm font-extrabold">{n.comaxOrder ? `הזמנה ${n.comaxOrder}` : "מזהה הזמנה חסר"}</p></div>
+          </div>
+          <div className="space-y-3">
+            {(showAllAuditFindings ? auditFindings : auditFindings.slice(0, 8)).map((finding) => {
+              const evidence = auditEvidence[finding.id] || "";
+              const documented = evidence.trim().length >= 12;
+              return <div key={finding.id} className={`rounded-2xl border p-4 space-y-3 ${documented ? "border-emerald-300 bg-emerald-50/50" : "border-amber-300 bg-amber-50/40"}`}>
+                <div className="flex items-start gap-3"><span className="mt-0.5 text-lg">{documented ? "✓" : "!"}</span><div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-extrabold">{finding.title}</h3><span className="rounded-full border px-2 py-0.5 text-[10px] font-bold">{finding.category}</span><span className="text-[10px] text-muted-foreground">{documented ? "אסמכתא תועדה בדפדפן" : "ממתין לאסמכתא"}</span></div>
+                  <p className="mt-1 text-xs leading-6 text-muted-foreground">{finding.detail}</p><p className="mt-1 text-xs"><strong>נדרש לאמת מול:</strong> {finding.sourceRequired}</p>
+                  {(finding.expected || finding.observed) && <p className="mt-1 text-xs"><strong>צפוי:</strong> {finding.expected || "לא הוגדר"} · <strong>נצפה:</strong> {finding.observed || "לא זוהה"}</p>}
+                </div></div>
+                <label className="block space-y-1.5"><span className="text-xs font-bold">הפניה לאסמכתא / תוצאת בדיקה (לפחות 12 תווים)</span>
+                  <textarea value={evidence} onChange={(event) => setAuditEvidence((previous) => ({ ...previous, [finding.id]: event.target.value }))} rows={2} placeholder="למשל: PDF עמוד 2 שורה 4; הזמנה 12345; אישור הנהג מתאריך..." className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs leading-5 outline-none focus:ring-2 focus:ring-primary/30" />
+                </label>
+              </div>;
+            })}
+          </div>
+          {auditFindings.length > 8 && <Button variant="outline" size="sm" onClick={() => setShowAllAuditFindings((value) => !value)}>{showAllAuditFindings ? "הצג פחות בדיקות" : `הצג את כל ${auditFindings.length} הבדיקות`}</Button>}
+          <p className="text-xs leading-6 text-muted-foreground">חשוב: תיעוד זה נשמר כרגע בדפדפן המקומי בלבד ואינו הוכחה עצמאית לאימות. אין כאן חילוץ אוטומטי של PDF או הצלבה חיה מול קומקס/צי רכב; יש לצרף אסמכתאות אמיתיות. יש להשלים שמירה ואכיפה בצד השרת לפני שימוש כתהליך ביקורת מחייב.</p>
+        </section>
         {/* באנר ירוק לאחר אישור הראל */}
         {(ap?.harel || showCelebration) && (
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-700 p-5 text-white shadow-lift animate-in fade-in slide-in-from-top-4 duration-300">

@@ -10,6 +10,8 @@ export type Driver = {
 
 export type DeliveryItem = {
   name: string;
+  /** SKU from the source sheet, when supplied separately from the display name. */
+  sku?: string;
   qty: number;
   ordered: number;
   price?: number;
