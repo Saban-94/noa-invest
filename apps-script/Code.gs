@@ -323,7 +323,7 @@ function handleSubmitApproval(body) {
  * Run this function once from the Apps Script editor to create the audit tab
  * before the first approval. It is safe to run repeatedly.
  */
-function setupLogisticsAuditSheet_() {
+function setupLogisticsAuditSheet() {
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
   const sheet = ensureLogisticsAuditSheet_(ss);
   SpreadsheetApp.flush();
