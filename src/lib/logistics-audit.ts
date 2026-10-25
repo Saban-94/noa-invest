@@ -66,6 +66,29 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
     const isTransport = /הובל|מנוף|משלוח|הובלה|הובלות/i.test(normalize(item.name));
     const id = `item:${sku || normalize(item.name).toLowerCase().replace(/\s+/g, "-") || index}`;
 
+    if (note.live) {
+      findings.push({
+        id: `${id}:live-order-crosscheck`,
+        category: "quantity",
+        title: `${title} — כמות הזמנה לא הוצלבה`,
+        detail: "בנתון החי הכמות הצפויה אינה מגיעה מהזמנה נפרדת. אין להסיק שהכמות תואמת רק משום שהשדות המקומיים זהים.",
+        expected: "כמות מהזמנת המקור",
+        observed: String(item.qty ?? "לא ידוע"),
+        sourceRequired: "הזמנת קומקס ותעודת PDF, אותו מק״ט ויחידת מידה",
+        severity: "blocker",
+      });
+      findings.push({
+        id: `${id}:catalog-crosscheck`,
+        category: "source",
+        title: `${title} — אימות מק״ט מול קטלוג`,
+        detail: "אין כרגע חיבור לקטלוג מק״טים מוסמך. התאמה מספרית/טקסטואלית בלבד אינה מאשרת שהמק״ט קיים, פעיל ומתאים לפריט.",
+        expected: sku || "מק״ט מקור חסר",
+        observed: item.name,
+        sourceRequired: "קטלוג מק״טים פעיל של קומקס ותיאור פריט תואם",
+        severity: "blocker",
+      });
+    }
+
     if (!sku) {
       findings.push({
         id: `${id}:sku`,
