@@ -26,6 +26,7 @@ describe("logistics audit", () => {
     expect(findings.some((item) => item.id === "item:60060:quantity")).toBe(true);
     expect(findings.some((item) => item.id === "deposit:60060:mismatch")).toBe(true);
     expect(findings.some((item) => item.id === "item:70001:transport-proof")).toBe(true);
+    expect(findings.some((item) => item.id === "item:70001:transport-sku-validity")).toBe(true);
   });
 
   it("uses the source-sheet SKU even when the display name omits it", () => {
@@ -40,6 +41,8 @@ describe("logistics audit", () => {
     const findings = buildLogisticsFindings({ ...baseNote, live: true });
     expect(findings.some((item) => item.id === "source:live")).toBe(true);
     expect(findings.some((item) => item.id === "tracking:transport")).toBe(true);
+    expect(findings.some((item) => item.id === "deposit:60002:live-crosscheck")).toBe(true);
+    expect(findings.some((item) => item.id === "deposit:60060:live-crosscheck")).toBe(true);
   });
 
   it("requires a meaningful evidence note for every finding", () => {
