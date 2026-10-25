@@ -26,7 +26,11 @@ import {
 import { getScanFn } from "@/lib/notes-api.functions";
 import { scanToDataUrl } from "@/lib/scan-render";
 import { saveInquiryAnnotationsFn } from "@/lib/inquiry-annotations.functions";
-import { listRamiInquiriesFn, replyRamiInquiryFn } from "@/lib/inquiries-api.functions";
+import { listWorkroomInquiriesFn, ramiReplyFn } from "@/lib/inquiry-workflow.functions";
+import { STATUS_LABEL } from "@/lib/inquiry-workflow";
+import { InquiryThread } from "@/components/InquiryThread";
+import { notifyHarelQueueFn } from "@/lib/onesignal.functions";
+import { playDispatchChime } from "@/lib/audio-alerts";
 
 export const Route = createFileRoute("/inquiry/$id")({
   component: RamiInquiryAdvancedView,
@@ -68,38 +72,39 @@ function RamiInquiryAdvancedView() {
   const strokesRef = useRef<Stroke[]>([]);
   const activeStrokeRef = useRef<Stroke | null>(null);
   const [tool, setTool] = useState<Tool>("marker");
-  const [replyText, setReplyText] = useState("");
   const [signatureApproved, setSignatureApproved] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 480 });
 
   const inquiryQuery = useQuery({
-    queryKey: ["rami-inquiries"],
+    queryKey: ["workroom", "inquiry-detail"],
     queryFn: async () => {
-      const { inquiries } = await listRamiInquiriesFn();
+      const { inquiries } = await listWorkroomInquiriesFn();
       return inquiries.map((item) => ({
         rowIndex: 0,
-        receivedDate: item.receivedDate || item.date || "",
-        docNumber: item.id,
+        inquiryId: item.id,
+        receivedDate: item.updatedAt || "",
+        docNumber: item.docNumber,
         customer: item.customer || "",
         address: item.address || "",
         driver: item.driver || "",
-        errorReason: item.errorReason || item.issue || "",
+        errorReason: item.issue || "",
         aiAnalysis: item.aiAnalysis || "",
-        ramiReply: item.ramiReply || (item.rounds || []).map((round) => round.rami?.text || "").filter(Boolean).join("\\n"),
-        status: item.status || "ממתין לטיפול",
-        harelApproval: item.harelApproval || (item.rounds || []).map((round) => round.harel?.text || "").filter(Boolean).join("\\n"),
+        ramiReply: item.thread.filter((message) => message.role === "rami").map((message) => message.text).join("\n"),
+        status: STATUS_LABEL[item.status] || item.status,
+        harelApproval: item.thread.filter((message) => message.role === "harel").map((message) => message.text).join("\n"),
         driveLink: item.driveUrl || "",
-        fileId: item.fileId || "",
+        fileId: item.scanFileId || "",
+        thread: item.thread || [],
       }));
     },
     staleTime: 20_000,
     retry: 1,
   });
   const inquiry = inquiryQuery.data?.find(
-    (item: any) => String(item.docNumber) === String(id) || String(item.rowIndex) === String(id),
+    (item) => String(item.docNumber) === String(id) || String(item.inquiryId) === String(id),
   );
 
-  const fileId = useMemo(() => driveFileId(inquiry?.driveLink), [inquiry?.driveLink]);
+  const fileId = useMemo(() => driveFileId(inquiry?.fileId || inquiry?.driveLink, inquiry), [inquiry?.fileId, inquiry?.driveLink]);
   const scanQuery = useQuery({
     queryKey: ["inquiry-scan", fileId],
     enabled: Boolean(fileId),
@@ -268,14 +273,30 @@ function RamiInquiryAdvancedView() {
   });
 
   const sendReply = useMutation({
-    mutationFn: () =>
-      replyRamiInquiryFn({
-        data: { noteId: String(inquiry?.docNumber || id), text: replyText.trim() },
+    mutationFn: (payload: { text: string; replyToId?: string }) =>
+      ramiReplyFn({
+        data: {
+          inquiryId: String(inquiry?.inquiryId || inquiry?.docNumber || id),
+          noteId: String(inquiry?.docNumber || id),
+          text: payload.text,
+          replyToId: payload.replyToId,
+        },
       }),
     onSuccess: async () => {
+      void playDispatchChime(0.9);
+      try {
+        await notifyHarelQueueFn({
+          data: {
+            noteId: String(inquiry?.docNumber || id),
+            customer: inquiry?.customer,
+            kind: "rami_replied",
+          },
+        });
+      } catch (error) {
+        console.warn("OneSignal", error);
+      }
+      await qc.invalidateQueries({ queryKey: ["workroom"] });
       toast.success("המענה נשמר ונשלח להראל");
-      setReplyText("");
-      await qc.invalidateQueries({ queryKey: ["rami-inquiries"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "שליחת המענה נכשלה"),
   });
@@ -408,20 +429,14 @@ function RamiInquiryAdvancedView() {
 
           <Card className="rounded-3xl border-border p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3 border-b border-border pb-4"><div><h2 className="flex items-center gap-2 font-extrabold"><MessageSquare className="h-5 w-5 text-primary" /> שרשור ראמי והראל</h2><p className="mt-1 text-xs text-muted-foreground">כל מענה מתועד בשרת ובגיליון</p></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-extrabold">סבב {currentRound}</span></div>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-2xl border-r-4 border-amber-400 bg-muted/40 p-4"><div className="mb-1 text-xs font-extrabold">נועה AI · ניתוח</div><p className="text-sm leading-6">{inquiry.aiAnalysis || inquiry.errorReason || "אין הודעת ניתוח זמינה."}</p></div>
-              {inquiry.ramiReply && <div className="rounded-2xl border-r-4 border-primary bg-primary/5 p-4"><div className="mb-1 text-xs font-extrabold">ראמי · מענה קיים</div><p className="whitespace-pre-wrap text-sm leading-6">{inquiry.ramiReply}</p></div>}
-              {inquiry.harelApproval && <div className="rounded-2xl border-r-4 border-emerald-500 bg-emerald-50/70 p-4"><div className="mb-1 flex items-center gap-2 text-xs font-extrabold text-emerald-800"><CheckCircle2 className="h-4 w-4" /> הראל · אישור</div><p className="text-sm leading-6">{inquiry.harelApproval}</p></div>}
-            </div>
-            <div className="mt-5 border-t border-border pt-4">
-              <label htmlFor="replyText" className="mb-2 block text-sm font-extrabold">המענה המקצועי של ראמי</label>
-              <textarea id="replyText" rows={5} maxLength={2000} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="תאר את הבדיקה שבוצעה, ממצאים בשטח והסיבה לפער..." className="w-full resize-y rounded-2xl border border-border bg-background p-3 text-sm leading-6 outline-none transition focus:ring-2 focus:ring-primary/30" />
-              <div className="mt-1 text-left text-xs text-muted-foreground">{replyText.length}/2000</div>
-              <Button onClick={() => sendReply.mutate()} disabled={sendReply.isPending || replyText.trim().length < 3} className="mt-3 w-full gap-2 font-bold">
-                {sendReply.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sendReply.isPending ? "שולח מענה..." : "שלח מענה להראל לאישור"}
-              </Button>
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">ההודעה נחשבת שנשלחה רק לאחר אישור מהשרת. אישור מנכ״ל נשאר שלב נפרד.</p>
+            <div className="mt-4">
+              <InquiryThread
+                messages={inquiry.thread || []}
+                onReply={async (text, replyToId) => {
+                  await sendReply.mutateAsync({ text, replyToId });
+                }}
+              />
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">כל הודעה נשמרת בשרשור השרת. שליחת מענה לראמי מפעילה צליל ומנסה לשלוח התראה להראל; אישור מנכ״ל נשאר שלב נפרד.</p>
             </div>
           </Card>
         </div>
