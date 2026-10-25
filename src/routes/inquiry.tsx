@@ -95,6 +95,7 @@ function InquiryBoard() {
       inquiryId: string;
       noteId: string;
       text: string;
+      replyToId?: string;
       customer?: string;
       notifyHarel: boolean;
     }) => {
@@ -103,6 +104,7 @@ function InquiryBoard() {
           inquiryId: p.inquiryId,
           noteId: p.noteId,
           text: p.text,
+          replyToId: p.replyToId,
         },
       });
       if (p.notifyHarel) {
@@ -210,11 +212,12 @@ function InquiryBoard() {
                 data={card}
                 defaultOpen={!!isFocus}
                 mode="rami"
-                onReply={async (text) => {
+                onReply={async (text, replyToId) => {
                   await replyMut.mutateAsync({
                     inquiryId: inq.id || inq.docNumber,
                     noteId: inq.docNumber,
                     text,
+                    replyToId,
                     customer: inq.customer,
                     notifyHarel: true,
                   });
