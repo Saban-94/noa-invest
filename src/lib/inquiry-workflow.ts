@@ -35,6 +35,8 @@ export type InquiryMessage = {
   at: string;
   action?: MessageAction;
   attachments?: InquiryAttachment[];
+  /** Stable id of the message this reply addresses, when applicable. */
+  replyToId?: string;
 };
 
 export type InquiryTask = {
