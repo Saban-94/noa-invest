@@ -40,6 +40,8 @@ describe("logistics audit", () => {
   it("blocks live records until source cross-check and transport verification are documented", () => {
     const findings = buildLogisticsFindings({ ...baseNote, live: true });
     expect(findings.some((item) => item.id === "source:live")).toBe(true);
+    expect(findings.some((item) => item.id === "item:60060:live-order-crosscheck")).toBe(true);
+    expect(findings.some((item) => item.id === "item:60060:catalog-crosscheck")).toBe(true);
     expect(findings.some((item) => item.id === "tracking:transport")).toBe(true);
     expect(findings.some((item) => item.id === "deposit:60002:live-crosscheck")).toBe(true);
     expect(findings.some((item) => item.id === "deposit:60060:live-crosscheck")).toBe(true);
