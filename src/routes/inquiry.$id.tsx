@@ -18,7 +18,6 @@ import {
   PenLine,
   RotateCcw,
   Save,
-  Send,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -104,7 +103,7 @@ function RamiInquiryAdvancedView() {
     (item) => String(item.docNumber) === String(id) || String(item.inquiryId) === String(id),
   );
 
-  const fileId = useMemo(() => driveFileId(inquiry?.fileId || inquiry?.driveLink, inquiry), [inquiry?.fileId, inquiry?.driveLink]);
+  const fileId = useMemo(() => driveFileId(inquiry?.fileId || inquiry?.driveLink), [inquiry?.fileId, inquiry?.driveLink]);
   const scanQuery = useQuery({
     queryKey: ["inquiry-scan", fileId],
     enabled: Boolean(fileId),
@@ -436,7 +435,7 @@ function RamiInquiryAdvancedView() {
                   await sendReply.mutateAsync({ text, replyToId });
                 }}
               />
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">כל הודעה נשמרת בשרשור השרת. שליחת מענה לראמי מפעילה צליל ומנסה לשלוח התראה להראל; אישור מנכ״ל נשאר שלב נפרד.</p>
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">כל הודעה נשמרת בשרשור השרת. שליחת מענה של ראמי להראל מפעילה צליל ומנסה לשלוח התראה; אישור מנכ״ל נשאר שלב נפרד.</p>
             </div>
           </Card>
         </div>
