@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InquiryThread } from "@/components/InquiryThread";
-import { listWorkroomInquiriesFn, ramiReplyFn } from "@/lib/inquiry-workflow.functions";
+import { listWorkroomInquiriesFn, openOrCreateWorkroomTaskFn, ramiReplyFn } from "@/lib/inquiry-workflow.functions";
 import type { WorkroomInquiry } from "@/lib/inquiry-workflow";
 
 export const Route = createFileRoute("/notes/$id")({
@@ -51,6 +51,8 @@ function Viewer() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [isApprovingRami, setIsApprovingRami] = useState(false);
   const [isApprovingHarel, setIsApprovingHarel] = useState(false);
+  const [isOpeningTask, setIsOpeningTask] = useState(false);
+  const navigate = useNavigate();
 
   const workroomQuery = useQuery({
     queryKey: ["workroom", "note-thread", id],
@@ -61,6 +63,33 @@ function Viewer() {
   const relatedInquiry: WorkroomInquiry | undefined = workroomQuery.data?.inquiries.find(
     (item) => String(item.docNumber) === String(id) || String(item.id) === String(id) || String(item.task?.noteId || "") === String(id),
   );
+
+  const handleOpenTask = async () => {
+    setIsOpeningTask(true);
+    try {
+      await openOrCreateWorkroomTaskFn({
+        data: {
+          noteId: id,
+          customer: n?.customer,
+          customerNo: n?.customerNo,
+          address: n?.address,
+          driver: n?.driver,
+          issue: customNote.trim() || n?.craneNotes || "בדיקה וטיפול בתעודת המשלוח",
+          fileId: n?.fileId,
+          driveUrl: n?.driveUrl,
+        },
+      });
+      await workroomQuery.refetch();
+      await navigate({ to: "/inquiry", search: { task: id, tab: "tasks" } });
+      toast.success(`נפתחה או אותרה משימה לתעודה ${id}`);
+    } catch (err) {
+      toast.error("לא ניתן לפתוח משימה לתעודה", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsOpeningTask(false);
+    }
+  };
 
   const handleThreadReply = async (text: string, replyToId?: string) => {
     if (!relatedInquiry) throw new Error("לא נמצא תיק בירור מקושר לתעודה זו");
@@ -440,6 +469,10 @@ function Viewer() {
               <h2 className="font-display text-base font-extrabold">💬 שרשור בירור · ראמי ↔ הראל</h2>
               <p className="mt-1 text-xs text-muted-foreground">הודעות נשמרות דרך שרת העבודה ומקושרות לתעודה</p>
             </div>
+            <Button size="sm" className="gap-2" onClick={() => void handleOpenTask()} disabled={isOpeningTask}>
+              {isOpeningTask ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
+              {isOpeningTask ? "פותח משימה..." : "פתח / צור משימה לתעודה"}
+            </Button>
             <Button asChild size="sm" variant="outline" className="gap-2">
               <Link to="/harel">לוח המשימות של הראל <ArrowRight className="h-3.5 w-3.5" /></Link>
             </Button>
@@ -458,7 +491,9 @@ function Viewer() {
             <div className="rounded-2xl border border-dashed p-5 text-center">
               <p className="text-sm font-bold">לא נמצא תיק בירור מקושר לתעודה {n.id}</p>
               <p className="mt-1 text-xs text-muted-foreground">אפשר לפתוח את לוח המשימות של הראל כדי לאתר או ליצור תיק מקושר.</p>
-              <Button asChild size="sm" className="mt-3"><Link to="/inquiry/$id" params={{ id: relatedInquiry?.docNumber || n.id }}>פתיחת תיק הבירור והמשימה</Link></Button>
+              <Button size="sm" className="mt-3" onClick={() => void handleOpenTask()} disabled={isOpeningTask}>
+                {isOpeningTask ? "פותח משימה..." : "פתיחת תיק הבירור והמשימה"}
+              </Button>
             </div>
           )}
         </section>
