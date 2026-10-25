@@ -67,7 +67,7 @@ function doGet(e) {
     }
 
     if (action === "getWorkroomInquiries") {
-      return handleGetWorkroomInquiries_();
+      return handleGetWorkroomInquiries_(p);
     }
 
     return jsonResponse({ success: false, error: "unknown action: " + action });
@@ -298,6 +298,7 @@ function handleSubmitApproval(body) {
     sheet.getRange(rowNum, noteIdx + 1).setValue((prev ? prev + " | " : "") + approver + ": " + note);
   }
   SpreadsheetApp.flush();
+  invalidateWorkroomSheetCache_();
   return jsonResponse({ success: true, noteId: noteId, approver: approver });
 }
 
@@ -348,6 +349,7 @@ function handleSaveSignedNote(body) {
   sheet.getRange(rowNum, idxApprovalStatus + 1).setValue("ממתין לאישור מנכ״ל");
   sheet.getRange(rowNum, idxNote + 1).setValue(statusNote);
   SpreadsheetApp.flush();
+  invalidateWorkroomSheetCache_();
 
   return jsonResponse({ success: true, driveUrl: fileUrl, folder: targetFolder.getName() });
 }
@@ -651,10 +653,80 @@ function workroomReadRows_(sheet) {
   return { headers: headers, inquiries: output };
 }
 
-function handleGetWorkroomInquiries_() {
+const WORKROOM_CACHE_TTL_SECONDS = 45;
+const WORKROOM_CACHE_CHUNK_CHARS = 30000;
+
+function workroomCacheKey_(sheetName) {
+  return "workroom:v1:" + String(sheetName || "default").replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+function workroomCacheRead_(baseKey) {
+  const cache = CacheService.getScriptCache();
+  const metaRaw = cache.get(baseKey + ":meta");
+  if (!metaRaw) return null;
+  try {
+    const meta = JSON.parse(metaRaw);
+    if (!meta || !Number.isInteger(meta.chunks) || meta.chunks < 1 || meta.chunks > 100) return null;
+    let json = "";
+    for (let i = 0; i < meta.chunks; i++) {
+      const part = cache.get(baseKey + ":" + i);
+      if (part == null) return null;
+      json += part;
+    }
+    return JSON.parse(json);
+  } catch (err) {
+    return null;
+  }
+}
+
+function workroomCacheWrite_(baseKey, value) {
+  const cache = CacheService.getScriptCache();
+  const json = JSON.stringify(value);
+  const chunks = [];
+  for (let i = 0; i < json.length; i += WORKROOM_CACHE_CHUNK_CHARS) {
+    chunks.push(json.substring(i, i + WORKROOM_CACHE_CHUNK_CHARS));
+  }
+  if (!chunks.length) chunks.push("{}");
+  try {
+    for (let i = 0; i < chunks.length; i++) {
+      cache.put(baseKey + ":" + i, chunks[i], WORKROOM_CACHE_TTL_SECONDS);
+    }
+    cache.put(baseKey + ":meta", JSON.stringify({ chunks: chunks.length }), WORKROOM_CACHE_TTL_SECONDS);
+  } catch (err) {
+    // Cache is an optimization only; a cache quota/size failure must not fail the API.
+    cache.remove(baseKey + ":meta");
+  }
+}
+
+function invalidateWorkroomSheetCache_() {
+  const cache = CacheService.getScriptCache();
   const sheet = getInquirySheet_();
-  const result = workroomReadRows_(sheet);
-  return jsonResponse({ success: true, inquiries: result.inquiries });
+  const baseKey = workroomCacheKey_(sheet.getName());
+  const metaRaw = cache.get(baseKey + ":meta");
+  if (metaRaw) {
+    try {
+      const meta = JSON.parse(metaRaw);
+      for (let i = 0; i < Number(meta.chunks || 0); i++) cache.remove(baseKey + ":" + i);
+    } catch (err) {}
+  }
+  cache.remove(baseKey + ":meta");
+}
+
+function handleGetWorkroomInquiries_(params) {
+  const sheet = getInquirySheet_();
+  const baseKey = workroomCacheKey_(sheet.getName());
+  let inquiries = workroomCacheRead_(baseKey);
+  if (!inquiries) {
+    const result = workroomReadRows_(sheet);
+    inquiries = result.inquiries;
+    workroomCacheWrite_(baseKey, inquiries);
+  }
+  const requestedStatus = String((params && params.status) || "").trim();
+  if (requestedStatus) {
+    const statuses = requestedStatus.split(",").map(s => s.trim()).filter(Boolean);
+    inquiries = inquiries.filter(item => statuses.indexOf(String(item.status || "")) >= 0);
+  }
+  return jsonResponse({ success: true, inquiries: inquiries, cachedForSeconds: WORKROOM_CACHE_TTL_SECONDS });
 }
 
 function handleGetWorkroomInquiry_(body) {
@@ -724,6 +796,7 @@ function handleWorkroomRamiReply_(body) {
     const stamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
     sheet.getRange(rowNum, legacyIdx + 1).setValue(prev ? prev + "\n[" + stamp + "] ראמי: " + reply : "[" + stamp + "] ראמי: " + reply);
     SpreadsheetApp.flush();
+  invalidateWorkroomSheetCache_();
     return jsonResponse({ success: true, inquiryId: key, status: "pending_harel" });
   } catch (err) {
     return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
@@ -749,6 +822,7 @@ function handleWorkroomHarelReply_(body) {
     state.thread.push(workroomMessage_("harel", reply, "replied", [], String(body.replyToId || "")));
     workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: state.task, status: state.status });
     SpreadsheetApp.flush();
+  invalidateWorkroomSheetCache_();
     return jsonResponse({ success: true, inquiryId: key, status: state.status });
   } catch (err) {
     return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
@@ -803,6 +877,7 @@ function handleWorkroomHarelDecision_(body) {
     }
     workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: task, status: status });
     SpreadsheetApp.flush();
+  invalidateWorkroomSheetCache_();
     return jsonResponse({ success: true, inquiryId: key, status: status, task: task });
   } catch (err) {
     return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
@@ -926,6 +1001,7 @@ function handleSubmitRamiReply(body) {
   sheet.getRange(rowNum, replyIdx + 1).setValue(prev ? prev + "\n" + entry : entry);
   sheet.getRange(rowNum, statusIdx + 1).setValue("ממתין לאישור הראל");
   SpreadsheetApp.flush();
+  invalidateWorkroomSheetCache_();
   return jsonResponse({ success: true, noteId: noteId, status: "ממתין לאישור הראל" });
 }
 
@@ -962,6 +1038,7 @@ function handleSaveInquiryAnnotations(body) {
   sheet.getRange(rowNum, compositeIdx + 1).setValue(compositeFile.getUrl());
   sheet.getRange(rowNum, jsonIdx + 1).setValue(jsonFile.getUrl());
   SpreadsheetApp.flush();
+  invalidateWorkroomSheetCache_();
   return jsonResponse({
     success: true,
     noteId: noteId,
