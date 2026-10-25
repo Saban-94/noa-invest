@@ -544,7 +544,7 @@ function workroomReadRows_(sheet) {
     addDrive(["קישור חתום", "קישור PDF חתום", "קישור סריקה חתומה", "signedUrl", "signedLink"]);
     addDrive(["קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ"]);
     [11, 10, 19].forEach(i => { if (row.length > i) driveCandidates.push(driveLinkFromCell_(row[i], formulas[r][i], rich[r][i])); });
-    const driveUrl = driveCandidates.find(v => v && (/drive\\.google\\.com|docs\\.google\\.com/i.test(v) || /^[A-Za-z0-9_-]{25,}$/.test(v))) || "";
+    const driveUrl = driveCandidates.find(v => v && (/drive\.google\.com|docs\.google\.com/i.test(v) || /^[A-Za-z0-9_-]{25,}$/.test(v))) || "";
     const fileId = extractDriveFileId_(driveUrl) || (/^[A-Za-z0-9_-]{25,}$/.test(driveUrl) ? driveUrl : "");
     const statusRaw = get(["workflowStatus", "סטטוס בירור", "סטטוס אישור", "status"]) || "pending_rami";
     const raw = {
