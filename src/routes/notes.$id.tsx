@@ -222,7 +222,7 @@ function Viewer() {
     }
     setIsApprovingRami(true);
     try {
-      await approveStrict(n.id, "rami", customNote.trim() || undefined);
+      await approveStrict(n.id, "rami", customNote.trim() || undefined, auditEvidence);
       approvals.rami(n.id, customNote.trim() || undefined);
       void playDispatchChime(0.85);
       toast.success(`ת.מ. ${n.id} נבדקה ואושרה אישית ע״י ראמי מסארווה ✍️`);
@@ -244,7 +244,7 @@ function Viewer() {
     }
     setIsApprovingHarel(true);
     try {
-      await approveStrict(n.id, "harel", customNote.trim() || undefined);
+      await approveStrict(n.id, "harel", customNote.trim() || undefined, auditEvidence);
       approvals.harel(n.id, customNote.trim() || undefined);
       playUrgentSignatureAlarm();
       setShowCelebration(true);
