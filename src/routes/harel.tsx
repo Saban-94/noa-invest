@@ -195,11 +195,11 @@ function HarelDashboard() {
                       תעודה
                     </Link>
                     <Link
-                      to="/inquiry/$id"
-                      params={{ id: selected.id || selected.docNumber }}
-                      className="rounded-xl border px-3 py-1.5 text-xs font-bold hover:bg-muted"
+                      to="/inquiry"
+                      search={{ task: selected.docNumber, tab: "tasks" }}
+                      className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-bold hover:bg-orange-500/15"
                     >
-                      חדר בירור
+                      פתיחת משימה
                     </Link>
                   </div>
                 </div>
