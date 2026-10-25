@@ -752,7 +752,7 @@ function handleGetRamiInquiries() {
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
     const docNumber = String(row[docIdx] || "").trim();
-    if (!docNumber) continue;
+    if (!docNumber || /^(ללא[-_ ]?מספר|לא[-_ ]?מספר|test|ddw)/i.test(docNumber)) continue;
     const get = (names) => {
       for (const name of names) {
         const i = headers.indexOf(name);
@@ -800,9 +800,21 @@ function handleGetRamiInquiries() {
       driveUrl: driveUrl,
       driveLink: driveUrl,
       rounds: [],
+      _score: [driveUrl, get(["שם לקוח", "customer", "customerName"]), get(["תיאור החריגה / הטעות שזוהתה", "תיאור חריגה", "errorReason", "issue"]), get(["ניתוח AI וכתב יד", "ניתוח AI", "aiAnalysis"]), get(["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"])].filter(Boolean).length,
     });
   }
-  return jsonResponse({ success: true, inquiries: inquiries });
+  const unique = {};
+  inquiries.forEach(item => {
+    const key = workroomKey_(item.docNumber);
+    if (!key) return;
+    if (!unique[key] || Number(item._score || 0) > Number(unique[key]._score || 0)) unique[key] = item;
+  });
+  const deduped = Object.keys(unique).map(key => {
+    const item = unique[key];
+    delete item._score;
+    return item;
+  });
+  return jsonResponse({ success: true, inquiries: deduped });
 }
 function handleSubmitRamiReply(body) {
   const noteId = String(body.noteId || "").trim();
