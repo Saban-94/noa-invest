@@ -289,7 +289,7 @@ function handleSaveSignedNote(body) {
   const statusNote = String(body.statusNote || "נבדק ונחתם בקנבס").trim();
 
   if (!noteId || !signedScanDataUrl) return jsonResponse({ success: false, error: "Missing noteId or image dataUrl" });
-  if (!/^data:image\\/\\w+;base64,/.test(signedScanDataUrl) || signedScanDataUrl.length > 25000000) {
+  if (signedScanDataUrl.indexOf("data:image/") !== 0 || signedScanDataUrl.indexOf(";base64,") < 0 || signedScanDataUrl.length > 25000000) {
     return jsonResponse({ success: false, error: "תמונת חתימה לא תקינה או גדולה מדי" });
   }
 
@@ -303,7 +303,7 @@ function handleSaveSignedNote(body) {
   if (docIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה" });
   const rowNum = workroomUniqueRowOrError_(sheet, noteId, headers, docIdx);
 
-  const base64Data = signedScanDataUrl.replace(/^data:image\\/\\w+;base64,/, "");
+  const base64Data = signedScanDataUrl.substring(signedScanDataUrl.indexOf(";base64,") + 8);
   const bytes = Utilities.base64Decode(base64Data);
   const blob = Utilities.newBlob(bytes, "image/png", "תעודה_" + noteId + "_חתומה.png");
   let targetFolder = DriveApp.getRootFolder();
