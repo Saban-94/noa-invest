@@ -44,7 +44,7 @@ async function gasRequest(
     method,
     redirect: "follow",
     headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
-    body: method === "POST" ? JSON.stringify({ token: apiToken(), ...body }) : undefined,
+    body: method === "POST" ? JSON.stringify({ action, token: apiToken(), ...body }) : undefined,
   });
   const text = await res.text();
   let data: Record<string, unknown>;
@@ -75,7 +75,7 @@ export const getWorkroomInquiryFn = createServerFn({ method: "POST" })
   });
 
 export const ramiReplyFn = createServerFn({ method: "POST" })
-  .validator((d: { inquiryId: string; text: string; noteId?: string }) => {
+  .validator((d: { inquiryId: string; text: string; noteId?: string; replyToId?: string }) => {
     if (!d.inquiryId || !String(d.text || "").trim()) {
       throw new Error("חסר מזהה בירור או טקסט מענה");
     }
@@ -86,6 +86,26 @@ export const ramiReplyFn = createServerFn({ method: "POST" })
       inquiryId: data.inquiryId,
       noteId: data.noteId,
       text: data.text.trim(),
+      replyToId: data.replyToId || "",
+    });
+  });
+
+export const harelReplyFn = createServerFn({ method: "POST" })
+  .validator((d: { inquiryId: string; noteId?: string; text: string; replyToId?: string }) => {
+    if (!d.inquiryId || !String(d.text || "").trim()) {
+      throw new Error("חסר מזהה בירור או טקסט מענה");
+    }
+    if (String(d.text).trim().length < 3 || String(d.text).trim().length > 2000) {
+      throw new Error("אורך המענה חייב להיות 3–2,000 תווים");
+    }
+    return d;
+  })
+  .handler(async ({ data }) => {
+    return gasRequest("harelReply", {
+      inquiryId: data.inquiryId,
+      noteId: data.noteId,
+      text: data.text.trim(),
+      replyToId: data.replyToId || "",
     });
   });
 
