@@ -4,14 +4,14 @@
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InquiryThread } from "@/components/InquiryThread";
 import { HarelDecisionPanel } from "@/components/HarelDecisionPanel";
 import { NoaChatShell } from "@/components/NoaChatShell";
-import { listWorkroomInquiriesFn } from "@/lib/inquiry-workflow.functions";
+import { harelReplyFn, listWorkroomInquiriesFn } from "@/lib/inquiry-workflow.functions";
 import {
   STATUS_LABEL,
   isOverdue,
@@ -29,6 +29,7 @@ export const Route = createFileRoute("/harel")({
 
 function HarelDashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const q = useQuery({
     queryKey: ["workroom", "harel"],
@@ -220,7 +221,20 @@ function HarelDashboard() {
                 <div className="mb-3 text-xs font-bold text-muted-foreground">
                   שרשור תיעוד
                 </div>
-                <InquiryThread messages={selected.thread || []} />
+                <InquiryThread
+                  messages={selected.thread || []}
+                  onReply={async (text, replyToId) => {
+                    await harelReplyFn({
+                      data: {
+                        inquiryId: selected.id || selected.docNumber,
+                        noteId: selected.docNumber,
+                        text,
+                        replyToId,
+                      },
+                    });
+                    await queryClient.invalidateQueries({ queryKey: ["workroom"] });
+                  }}
+                />
               </Card>
 
               <NoaChatShell
