@@ -491,6 +491,18 @@ function workroomUniqueRowOrError_(sheet, key, headers, docIdx) {
   return matches[0].rowNum;
 }
 
+function workroomStatusLabel_(raw) {
+  const value = String(raw || "").trim();
+  const map = {
+    pending_rami: "ממתין לראמי",
+    pending_harel: "ממתין לאישור הראל",
+    returned_to_rami: "הוחזר לראמי",
+    approved: "אושר",
+    rejected: "נדחה"
+  };
+  return map[value] || value || "ממתין לטיפול";
+}
+
 function workroomReadRows_(sheet) {
   const range = sheet.getDataRange();
   const values = range.getValues();
@@ -586,7 +598,8 @@ function handleGetWorkroomInquiry_(body) {
 function workroomWriteState_(sheet, rowNum, headers, state) {
   const threadIdx = ensureHeader_(sheet, headers, ["threadJson", "היסטוריית בירור JSON"], "threadJson");
   const taskIdx = ensureHeader_(sheet, headers, ["taskJson", "משימה JSON"], "taskJson");
-  const statusIdx = ensureHeader_(sheet, headers, ["workflowStatus", "סטטוס בירור", "status"], "workflowStatus");
+  // Keep workflow state separate from legacy Hebrew approval/status columns.
+  const statusIdx = ensureHeader_(sheet, headers, ["workflowStatus"], "workflowStatus");
   const updatedIdx = ensureHeader_(sheet, headers, ["updatedAt", "עודכן בתאריך"], "updatedAt");
   sheet.getRange(rowNum, threadIdx + 1).setValue(JSON.stringify(state.thread || []));
   sheet.getRange(rowNum, taskIdx + 1).setValue(state.task ? JSON.stringify(state.task) : "");
@@ -794,7 +807,7 @@ function handleGetRamiInquiries() {
       errorReason: get(["תיאור החריגה / הטעות שזוהתה", "תיאור חריגה", "errorReason", "issue"]),
       aiAnalysis: get(["ניתוח AI וכתב יד", "ניתוח AI", "aiAnalysis"]),
       ramiReply: get(["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"]),
-      status: get(["סטטוס בירור", "סטטוס אישור", "status"]) || "ממתין לטיפול",
+      status: workroomStatusLabel_(get(["workflowStatus", "סטטוס בירור", "סטטוס אישור", "status"])),
       harelApproval: get(["אושר ע״י הראל", "אישור הראל", "harelApproval"]),
       fileId: fileId,
       driveUrl: driveUrl,
