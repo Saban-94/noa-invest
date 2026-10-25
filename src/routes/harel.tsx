@@ -4,14 +4,14 @@
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InquiryThread } from "@/components/InquiryThread";
 import { HarelDecisionPanel } from "@/components/HarelDecisionPanel";
 import { NoaChatShell } from "@/components/NoaChatShell";
-import { listWorkroomInquiriesFn } from "@/lib/inquiry-workflow.functions";
+import { harelReplyFn, listWorkroomInquiriesFn } from "@/lib/inquiry-workflow.functions";
 import {
   STATUS_LABEL,
   isOverdue,
@@ -29,11 +29,13 @@ export const Route = createFileRoute("/harel")({
 
 function HarelDashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const q = useQuery({
     queryKey: ["workroom", "harel"],
     queryFn: () => listWorkroomInquiriesFn(),
-    refetchInterval: 60_000,
+    staleTime: 120_000,
+    refetchInterval: 120_000,
   });
 
   const all = q.data?.inquiries || [];
@@ -48,13 +50,25 @@ function HarelDashboard() {
   const returned = all.filter((i) => i.status === "returned_to_rami");
   const approvedToday = all.filter((i) => i.status === "approved").length;
 
+  // Include returned-to-Rami items in the default selection, not just pending approvals.
   const selected: WorkroomInquiry | null =
     all.find((i) => i.id === selectedId || i.docNumber === selectedId) ||
-    pendingHarel[0] ||
+    queue[0] ||
     null;
 
   return (
     <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 md:px-8" dir="rtl">
+      <section className="overflow-hidden rounded-3xl border border-emerald-900/10 bg-gradient-to-l from-emerald-950 via-emerald-900 to-emerald-800 p-5 text-white shadow-xl shadow-emerald-950/10 md:flex md:items-center md:justify-between md:gap-6">
+        <div>
+          <div className="text-xs font-bold tracking-wide text-emerald-200">SABAN FLOW · מרכז החלטות</div>
+          <h2 className="mt-1 text-xl font-extrabold">תור החלטות ומשימות פתוחות</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-emerald-100/85">מעבר על תעודות, קריאת היסטוריית בירור, החזרה לראמי והמשך טיפול מתוך תיק אחד.</p>
+        </div>
+        <div className="mt-4 flex shrink-0 gap-2 md:mt-0">
+          <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3"><div className="text-[11px] text-emerald-100">ממתינות לאישור</div><div className="mt-1 text-xl font-black">{pendingHarel.length}</div></div>
+          <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3"><div className="text-[11px] text-emerald-100">הוחזרו לראמי</div><div className="mt-1 text-xl font-black">{returned.length}</div></div>
+        </div>
+      </section>
       <PageHeader
         title="דשבורד הראל"
         subtitle="תור אישור תעודות · החזרה לראמי עם יעד ונדנוד · תיעוד מלא"
@@ -182,11 +196,11 @@ function HarelDashboard() {
                       תעודה
                     </Link>
                     <Link
-                      to="/inquiry/$id"
-                      params={{ id: selected.id || selected.docNumber }}
-                      className="rounded-xl border px-3 py-1.5 text-xs font-bold hover:bg-muted"
+                      to="/inquiry"
+                      search={{ task: selected.docNumber, tab: "tasks" }}
+                      className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-bold hover:bg-orange-500/15"
                     >
-                      חדר בירור
+                      פתיחת משימה
                     </Link>
                   </div>
                 </div>
@@ -208,7 +222,20 @@ function HarelDashboard() {
                 <div className="mb-3 text-xs font-bold text-muted-foreground">
                   שרשור תיעוד
                 </div>
-                <InquiryThread messages={selected.thread || []} />
+                <InquiryThread
+                  messages={selected.thread || []}
+                  onReply={async (text, replyToId) => {
+                    await harelReplyFn({
+                      data: {
+                        inquiryId: selected.id || selected.docNumber,
+                        noteId: selected.docNumber,
+                        text,
+                        replyToId,
+                      },
+                    });
+                    await queryClient.invalidateQueries({ queryKey: ["workroom"] });
+                  }}
+                />
               </Card>
 
               <NoaChatShell

@@ -19,10 +19,30 @@ import {
 } from "./inquiry-workflow";
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbzojoQ3q4SS-Z8tfHGwQombE491fNnrmXkyz4XdM2-4K5KeSChW7kOppnbpKAHOOTzbvw/exec";
+  "https://script.google.com/macros/s/AKfycbzWxHsWF0QmWa-38-ZpIyWCPOKlmjY088Np5a5wzqTN1oNxXfxrcWYDKgk2UNcKX-ToYg/exec";
+
+// Per-warm-instance cache avoids repeating a full Apps Script + Sheets scan on
+// concurrent page loads. Mutations invalidate it immediately after GAS confirms.
+const WORKROOM_CACHE_TTL_MS = 45_000;
+let workroomListCache: { inquiries: WorkroomInquiry[] } | null = null;
+let workroomListCacheAt = 0;
+let workroomListInFlight: Promise<{ inquiries: WorkroomInquiry[] }> | null = null;
+let workroomCacheGeneration = 0;
+
+function invalidateWorkroomListCache(): void {
+  workroomCacheGeneration += 1;
+  workroomListCache = null;
+  workroomListCacheAt = 0;
+  workroomListInFlight = null;
+}
 
 function gasUrl(): string {
-  return process.env["GAS_URL"] || DEFAULT_GAS_URL;
+  const envUrl = process.env["GAS_URL"];
+  // Workflow endpoints added in v6 are not available in the older deployment.
+  if (envUrl && envUrl.includes("AKfycbzojoQ3q4SS-Z8tfHGwQombE491fNnrmXkyz4XdM2-4K5KeSChW7kOppnbpKAHOOTzbvw")) {
+    return DEFAULT_GAS_URL;
+  }
+  return envUrl || DEFAULT_GAS_URL;
 }
 
 function apiToken(): string {
@@ -44,7 +64,7 @@ async function gasRequest(
     method,
     redirect: "follow",
     headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
-    body: method === "POST" ? JSON.stringify({ token: apiToken(), ...body }) : undefined,
+    body: method === "POST" ? JSON.stringify({ action, token: apiToken(), ...body }) : undefined,
   });
   const text = await res.text();
   let data: Record<string, unknown>;
@@ -59,10 +79,29 @@ async function gasRequest(
 
 export const listWorkroomInquiriesFn = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ inquiries: WorkroomInquiry[] }> => {
-    const data = await gasRequest("getWorkroomInquiries", undefined, "GET");
-    const raw = Array.isArray(data.inquiries) ? data.inquiries : [];
-    const inquiries = raw.map(normalizeInquiry);
-    return { inquiries };
+    const now = Date.now();
+    if (workroomListCache && now - workroomListCacheAt < WORKROOM_CACHE_TTL_MS) {
+      return workroomListCache;
+    }
+    if (workroomListInFlight) return workroomListInFlight;
+
+    const generation = workroomCacheGeneration;
+    const request = (async (): Promise<{ inquiries: WorkroomInquiry[] }> => {
+      const data = await gasRequest("getWorkroomInquiries", undefined, "GET");
+      const raw = Array.isArray(data.inquiries) ? data.inquiries : [];
+      return { inquiries: raw.map(normalizeInquiry) };
+    })();
+    workroomListInFlight = request;
+    try {
+      const result = await request;
+      if (generation === workroomCacheGeneration) {
+        workroomListCache = result;
+        workroomListCacheAt = Date.now();
+      }
+      return result;
+    } finally {
+      if (workroomListInFlight === request) workroomListInFlight = null;
+    }
   },
 );
 
@@ -75,18 +114,42 @@ export const getWorkroomInquiryFn = createServerFn({ method: "POST" })
   });
 
 export const ramiReplyFn = createServerFn({ method: "POST" })
-  .validator((d: { inquiryId: string; text: string; noteId?: string }) => {
+  .validator((d: { inquiryId: string; text: string; noteId?: string; replyToId?: string }) => {
     if (!d.inquiryId || !String(d.text || "").trim()) {
       throw new Error("חסר מזהה בירור או טקסט מענה");
     }
     return d;
   })
   .handler(async ({ data }) => {
-    return gasRequest("ramiReply", {
+    const result = await gasRequest("ramiReply", {
       inquiryId: data.inquiryId,
       noteId: data.noteId,
       text: data.text.trim(),
+      replyToId: data.replyToId || "",
     });
+    invalidateWorkroomListCache();
+    return result;
+  });
+
+export const harelReplyFn = createServerFn({ method: "POST" })
+  .validator((d: { inquiryId: string; noteId?: string; text: string; replyToId?: string }) => {
+    if (!d.inquiryId || !String(d.text || "").trim()) {
+      throw new Error("חסר מזהה בירור או טקסט מענה");
+    }
+    if (String(d.text).trim().length < 3 || String(d.text).trim().length > 2000) {
+      throw new Error("אורך המענה חייב להיות 3–2,000 תווים");
+    }
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const result = await gasRequest("harelReply", {
+      inquiryId: data.inquiryId,
+      noteId: data.noteId,
+      text: data.text.trim(),
+      replyToId: data.replyToId || "",
+    });
+    invalidateWorkroomListCache();
+    return result;
   });
 
 export const harelDecideFn = createServerFn({ method: "POST" })
@@ -110,7 +173,7 @@ export const harelDecideFn = createServerFn({ method: "POST" })
     },
   )
   .handler(async ({ data }) => {
-    return gasRequest("harelDecide", {
+    const result = await gasRequest("harelDecide", {
       inquiryId: data.inquiryId,
       noteId: data.noteId,
       decision: data.decision,
@@ -121,6 +184,8 @@ export const harelDecideFn = createServerFn({ method: "POST" })
       annotationUrl: data.annotationUrl || "",
       fileId: data.fileId || "",
     });
+    invalidateWorkroomListCache();
+    return result;
   });
 
 export const harelUploadAndAssignFn = createServerFn({ method: "POST" })
@@ -140,11 +205,13 @@ export const harelUploadAndAssignFn = createServerFn({ method: "POST" })
     },
   )
   .handler(async ({ data }) => {
-    return gasRequest("harelUploadAssign", {
+    const result = await gasRequest("harelUploadAssign", {
       ...data,
       dueAt: data.dueAt || defaultDueAt(4),
       nudgeEveryMin: 60,
     });
+    invalidateWorkroomListCache();
+    return result;
   });
 
 function normalizeInquiry(raw: any): WorkroomInquiry {
@@ -231,7 +298,7 @@ export function buildThreadAfterHarelReturn(
 ): InquiryMessage[] {
   return appendMessage(thread, {
     role: "harel",
-    text: `הוחזר לראמי. מה חסר: ${reason}\nיעד: ${dueAt}`,
+    text: `הוחזר לראמי. מה חסר: ${reason}\\nיעד: ${dueAt}`,
     action: "returned_to_rami",
   });
 }

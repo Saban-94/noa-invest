@@ -132,7 +132,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { data: notes } = useQuery<DeliveryNote[]>({
     queryKey: ["live-notes-appshell"],
     queryFn: fetchLiveNotes,
-    staleTime: 30000,
+    staleTime: 120000,
   });
 
   const notesList = notes || [];
