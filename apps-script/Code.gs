@@ -412,11 +412,12 @@ function ensureHeader_(sheet, headers, names, preferredName) {
 function inquiryRow_(sheet, noteId, headers) {
   const idIndex = headerIndex_(headers, ["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
   if (idIndex < 0) throw new Error("לא נמצאה עמודת מספר תעודה בגיליון הבירור");
-  const values = sheet.getDataRange().getValues();
-  for (let r = 1; r < values.length; r++) {
-    if (String(values[r][idIndex] || "").trim() === noteId) return r + 1;
+  const matches = workroomFindRows_(sheet, noteId, headers, idIndex);
+  if (!matches.length) return -1;
+  if (matches.length > 1) {
+    throw new Error("נמצאו " + matches.length + " שורות עם אותו מספר תעודה. לא בוצעה כתיבה כדי למנוע עדכון שורה שגויה.");
   }
-  return -1;
+  return matches[0].rowNum;
 }
 
 
@@ -808,10 +809,10 @@ function handleGetRamiInquiries() {
 }
 function handleSubmitRamiReply(body) {
   const noteId = String(body.noteId || "").trim();
-  const reply = String(body.text || "").trim();
+  let reply = "";
+  try { reply = workroomValidateReply_(body.text); }
+  catch (err) { return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) }); }
   if (!noteId) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
-  if (reply.length < 3) return jsonResponse({ success: false, error: "המענה קצר מדי" });
-  if (reply.length > 2000) return jsonResponse({ success: false, error: "המענה ארוך מדי" });
 
   const sheet = getInquirySheet_();
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h || "").trim());
