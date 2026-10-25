@@ -118,6 +118,10 @@ function doPost(e) {
       return handleGetWorkroomInquiry_(body);
     }
 
+    if (action === "openOrCreateWorkroomTask") {
+      return handleOpenOrCreateWorkroomTask_(body);
+    }
+
     if (action === "ramiReply") {
       return handleWorkroomRamiReply_(body);
     }
@@ -789,6 +793,90 @@ function workroomValidateReply_(text) {
     throw new Error("המענה נראה כמו טקסט בדיקה ולא נשמר");
   }
   return reply;
+}
+
+/**
+ * Opens the workroom item for a delivery note, creating a task-backed row when absent.
+ * Idempotent for already-open tasks: repeated button clicks won't duplicate tasks.
+ */
+function handleOpenOrCreateWorkroomTask_(body) {
+  const noteId = String(body.noteId || body.docNumber || "").trim();
+  if (!noteId) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getInquirySheet_();
+    const cols = workroomColumns_(sheet);
+    const matches = workroomFindRows_(sheet, noteId, cols.headers, cols.docIdx);
+    if (matches.length > 1) {
+      return jsonResponse({ success: false, error: "נמצאו מספר שורות לאותה תעודה; לא נוצרה משימה כדי למנוע כפילות." });
+    }
+
+    let rowNum;
+    let headers = cols.headers;
+    if (matches.length === 1) {
+      rowNum = matches[0].rowNum;
+    } else {
+      const docIdx = ensureHeader_(sheet, headers, ["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"], "מס' תעודת משלוח");
+      const customerIdx = ensureHeader_(sheet, headers, ["שם לקוח", "customer", "customerName"], "שם לקוח");
+      const customerNoIdx = ensureHeader_(sheet, headers, ["מס' לקוח", "מס׳ לקוח", "מספר לקוח", "customerNo"], "מס' לקוח");
+      const addressIdx = ensureHeader_(sheet, headers, ["כתובת אספקה", "כתובת", "address"], "כתובת אספקה");
+      const driverIdx = ensureHeader_(sheet, headers, ["נהג", "driver"], "נהג");
+      const issueIdx = ensureHeader_(sheet, headers, ["תיאור החריגה / הטעות שזוהתה", "תיאור חריגה", "issue"], "תיאור החריגה / הטעות שזוהתה");
+      const analysisIdx = ensureHeader_(sheet, headers, ["ניתוח AI וכתב יד", "ניתוח AI", "aiAnalysis"], "ניתוח AI וכתב יד");
+      const fileIdx = ensureHeader_(sheet, headers, ["מזהה קובץ Drive", "driveFileId", "scanFileId", "fileId"], "מזהה קובץ Drive");
+      const urlIdx = ensureHeader_(sheet, headers, ["כתובת הקובץ (URL)", "driveUrl", "driveLink", "fileUrl"], "כתובת הקובץ (URL)");
+      const row = new Array(sheet.getLastColumn()).fill("");
+      row[docIdx] = noteId;
+      row[customerIdx] = String(body.customer || "");
+      row[customerNoIdx] = String(body.customerNo || "");
+      row[addressIdx] = String(body.address || "");
+      row[driverIdx] = String(body.driver || "");
+      row[issueIdx] = String(body.issue || "נפתחה משימת בירור מתוך תעודת המשלוח");
+      row[analysisIdx] = String(body.aiAnalysis || "");
+      row[fileIdx] = String(body.fileId || "");
+      row[urlIdx] = String(body.driveUrl || "");
+      rowNum = sheet.getLastRow() + 1;
+      sheet.getRange(rowNum, 1, 1, row.length).setValues([row]);
+    }
+
+    // Re-read after any new row/headers so JSON state uses the final column layout.
+    const refreshed = workroomColumns_(sheet);
+    headers = refreshed.headers;
+    const state = workroomGetState_(sheet, rowNum, headers);
+    if (state.task && state.task.status === "open") {
+      invalidateWorkroomSheetCache_();
+      return jsonResponse({ success: true, created: false, noteId: noteId, inquiryId: noteId, task: state.task, status: state.status });
+    }
+
+    const task = {
+      id: "task_" + new Date().getTime() + "_" + Math.random().toString(36).slice(2, 8),
+      inquiryId: noteId,
+      noteId: noteId,
+      status: "open",
+      assignedTo: "rami",
+      createdBy: "harel",
+      reason: String(body.issue || "בדיקה וטיפול בתעודת המשלוח"),
+      dueAt: new Date(Date.now() + 4 * 3600000).toISOString(),
+      nudgeEveryMin: 60,
+      nudgeCount: 0,
+      sourceFileId: String(body.fileId || ""),
+      createdAt: new Date().toISOString()
+    };
+    state.thread.push(workroomMessage_("system", "נפתחה משימה לתעודת משלוח " + noteId + " מתוך מסך התעודה.", "opened"));
+    workroomWriteState_(sheet, rowNum, headers, {
+      thread: state.thread,
+      task: task,
+      status: state.status || "pending_rami"
+    });
+    SpreadsheetApp.flush();
+    invalidateWorkroomSheetCache_();
+    return jsonResponse({ success: true, created: true, noteId: noteId, inquiryId: noteId, task: task, status: state.status || "pending_rami" });
+  } catch (err) {
+    return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleWorkroomRamiReply_(body) {
