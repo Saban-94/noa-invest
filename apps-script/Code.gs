@@ -169,7 +169,7 @@ function handleGetNotes(params) {
   const idxAddress = headerIndex_(headers, ["כתובת אספקה", "כתובת יעד", "כתובת אתר", "כתובת", "address", "siteAddress"]);
   const idxDriver = headerIndex_(headers, ["נהג", "נהג משוייך", "נהג ורכב", "driver"]);
   const idxTruck = headerIndex_(headers, ["רישוי / משאית", "מספר רכב", "משאית", "רכב", "truck"]);
-  const idxLink = headerIndex_(headers, ["קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl"]);
+  const idxLink = headerIndex_(headers, ["כתובת הקובץ (URL)", "driveFileId", "scanFileId", "fileId", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl", "קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ"]);
   const idxItems = headerIndex_(headers, ["פריטים", "פירוט מוצרים ומק״טים", "סחורה מפורטת", "items"]);
   const idxDeposits = headerIndex_(headers, ["פיקדונות", "פקדונות", "בלות פקדון (60002)", "משטחי סבן (60060)", "deposits"]);
   const idxCrane = headerIndex_(headers, ["זמני מנוף / המתנה", "זמני מנוף/פריקה", "זמן פריקה/מנוף", "craneNotes"]);
@@ -185,12 +185,14 @@ function handleGetNotes(params) {
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
     const docNum = String(row[idxDocNum] || "").trim();
-    if (!docNum) continue;
+    if (!docNum || /^(ללא[-_ ]?מספר|לא[-_ ]?מספר|test|ddw)/i.test(docNum)) continue;
 
     const headerLinkValue = idxLink >= 0
       ? driveLinkFromCell_(row[idxLink], formulas[r][idxLink], richTextValues[r][idxLink])
       : "";
-    // Support the actual scan-link locations K and T as read-only fallbacks.
+    const columnLLink = row.length > 11
+      ? driveLinkFromCell_(row[11], formulas[r][11], richTextValues[r][11])
+      : "";
     const columnKLink = row.length > 10
       ? driveLinkFromCell_(row[10], formulas[r][10], richTextValues[r][10])
       : "";
@@ -200,9 +202,9 @@ function handleGetNotes(params) {
     const signedLinkRaw = idxSignedLink >= 0
       ? driveLinkFromCell_(row[idxSignedLink], formulas[r][idxSignedLink], richTextValues[r][idxSignedLink])
       : "";
-    const link = headerLinkValue || columnKLink || columnTLink;
+    const link = headerLinkValue || columnLLink || columnKLink || columnTLink;
     const signedLink = signedLinkRaw;
-    const sourceLink = signedLink || link;
+    const sourceLink = link || signedLink;
     const fileId = extractDriveFileId_(sourceLink);
 
     notes.push({
@@ -218,7 +220,7 @@ function handleGetNotes(params) {
       driver: idxDriver >= 0 ? String(row[idxDriver] || "") : "",
       truck: idxTruck >= 0 ? String(row[idxTruck] || "") : "",
       fileId: fileId,
-      driveUrl: signedLink || link,
+      driveUrl: link || signedLink,
       items: [],
       depositsText: idxDeposits >= 0 ? String(row[idxDeposits] || "") : "",
       craneNotes: idxCrane >= 0 ? String(row[idxCrane] || "") : "",
@@ -227,10 +229,23 @@ function handleGetNotes(params) {
       signedUrl: signedLink,
       ramiApprovedAt: idxRami >= 0 ? String(row[idxRami] || "") : "",
       harelApprovedAt: idxHarel >= 0 ? String(row[idxHarel] || "") : "",
+      _score: [link, signedLink, row[idxCustName], row[idxCustNum], row[idxDateDoc], row[idxItems]].filter(v => v != null && String(v).trim()).length,
     });
   }
 
-  return jsonResponse({ success: true, notes: notes });
+  // Deduplicate display records by stable certificate number; prefer the most complete row.
+  const unique = {};
+  notes.forEach(note => {
+    const key = workroomKey_(note.docNumber);
+    if (!key) return;
+    if (!unique[key] || Number(note._score || 0) > Number(unique[key]._score || 0)) unique[key] = note;
+  });
+  const dedupedNotes = Object.keys(unique).map(key => {
+    const note = unique[key];
+    delete note._score;
+    return note;
+  });
+  return jsonResponse({ success: true, notes: dedupedNotes });
 }
 
 function handleGetFile(fileId) {
