@@ -44,7 +44,7 @@ async function gasRequest(
     method,
     redirect: "follow",
     headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
-    body: method === "POST" ? JSON.stringify({ token: apiToken(), ...body }) : undefined,
+    body: method === "POST" ? JSON.stringify({ action, token: apiToken(), ...body }) : undefined,
   });
   const text = await res.text();
   let data: Record<string, unknown>;
