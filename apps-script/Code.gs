@@ -367,6 +367,67 @@ function getInquirySheet_() {
 }
 
 /**
+ * Read-only pre-cleanup audit. Run manually from the Apps Script editor.
+ * Does not delete rows, edit cells, or alter triggers.
+ */
+function auditInquirySheet() {
+  const sheet = getInquirySheet_();
+  const range = sheet.getDataRange();
+  const values = range.getValues();
+  const formulas = range.getFormulas();
+  const rich = range.getRichTextValues();
+  const headers = values.length ? values[0].map(h => String(h || "").trim()) : [];
+  const docIdx = headerIndex_(headers, ["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
+  if (docIdx < 0) throw new Error("לא נמצאה עמודת מפתח ייחודי; לא בוצע שינוי.");
+  const counts = {};
+  let blankKeyRows = 0;
+  let garbageRows = 0;
+  let validRows = 0;
+  let rowsWithDriveLink = 0;
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const key = String(row[docIdx] || "").trim();
+    if (!key) {
+      blankKeyRows++;
+      continue;
+    }
+    if (/^(ללא[-_ ]?מספר|לא[-_ ]?מספר|test|ddw)/i.test(key)) {
+      garbageRows++;
+      continue;
+    }
+    validRows++;
+    const normalized = workroomKey_(key);
+    counts[normalized] = (counts[normalized] || 0) + 1;
+    const linkFound = [
+      ["כתובת הקובץ (URL)", "driveFileId", "scanFileId", "fileId", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl"],
+      ["קישור חתום", "קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ"]
+    ].some(names => {
+      const i = headerIndex_(headers, names);
+      return i >= 0 && !!driveLinkFromCell_(row[i], formulas[r][i], rich[r][i]);
+    }) || [11, 10, 19].some(i => row.length > i && !!driveLinkFromCell_(row[i], formulas[r][i], rich[r][i]));
+    if (linkFound) rowsWithDriveLink++;
+  }
+  const duplicateKeys = Object.keys(counts).filter(key => counts[key] > 1);
+  const duplicateRows = duplicateKeys.reduce((sum, key) => sum + counts[key] - 1, 0);
+  const report = {
+    sheetName: sheet.getName(),
+    lastRow: sheet.getLastRow(),
+    dataRows: Math.max(0, values.length - 1),
+    blankKeyRows: blankKeyRows,
+    obviousGarbageRows: garbageRows,
+    validRowsIncludingDuplicates: validRows,
+    uniqueCertificateKeys: Object.keys(counts).length,
+    duplicateGroups: duplicateKeys.length,
+    duplicateExtraRows: duplicateRows,
+    rowsWithDriveLink: rowsWithDriveLink,
+    duplicateExamples: duplicateKeys.slice(0, 20).map(key => ({ key: key, rows: counts[key] })),
+    readOnly: true
+  };
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
+/**
  * Resolve a Drive link from a cell's raw value, HYPERLINK formula, or rich-text link.
  * This function only reads the sheet; it never writes or alters cell content.
  */
