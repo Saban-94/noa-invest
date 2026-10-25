@@ -107,6 +107,16 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
 
     if (isTransport) {
       findings.push({
+        id: `${id}:transport-sku-validity`,
+        category: "transport",
+        title: `${title} — תוקף מק״ט הובלה לא אומת`,
+        detail: "אין למערכת קטלוג מק״טים מוסמך זמין להשוואה. מספר שנראה תקין תחבירית אינו הוכחה שהמק״ט פעיל או מתאים לשירות.",
+        expected: sku || "מק״ט הובלה חסר",
+        observed: item.name,
+        sourceRequired: "קטלוג מק״טים/שירותים מאושר של קומקס עם תאריך עדכון",
+        severity: "blocker",
+      });
+      findings.push({
         id: `${id}:transport-proof`,
         category: "transport",
         title: `${title} — אימות ביצוע הובלה`,
@@ -124,6 +134,16 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
     { sku: "60060", label: "משטחי עץ / פיקדון", data: note.deposits?.pallets60060 },
   ];
   deposits.forEach(({ sku, label, data }) => {
+    if (note.live) {
+      findings.push({
+        id: `deposit:${sku}:live-crosscheck`,
+        category: "deposit",
+        title: `${label} (${sku}) — הצלבה עצמאית נדרשת`,
+        detail: "רשומת הגיליון אינה מספקת שתי תנועות עצמאיות של אספקה וחיוב/זיכוי. אין להסיק התאמה מכך ששני הערכים נגזרו מאותו טקסט.",
+        sourceRequired: "תנועת פיקדון באספקה וגם תנועת חיוב/זיכוי ממקור נפרד, שתיהן מקושרות לתעודה",
+        severity: "blocker",
+      });
+    }
     if (!data) {
       findings.push({
         id: `deposit:${sku}:missing`,
