@@ -6,7 +6,7 @@ const DEFAULT_GAS_URL =
 function gasUrl(): string {
   const envUrl = process.env["GAS_URL"];
   // Workflow endpoints added in v6 are not available in the older deployment.
-  if (envUrl && envUrl.includes("AKfycbzojoQ3q4SS-Z8tfHGwQombE491fNnrmXkyz4XdM2-4K5KeSChW7kOppnbpKAHOOTzbvw")) {
+  if (envUrl && envUrl.includes("AKfycbxQOtlX0fipzXXfIccwX1I8_dCgIhg-ZVOCOq0xQH3EKuNkK7c0fE3h3yu4zldHMkVJaQ")) {
     return DEFAULT_GAS_URL;
   }
   return envUrl || DEFAULT_GAS_URL;
