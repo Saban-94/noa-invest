@@ -41,6 +41,7 @@ import {
 
 const DESKTOP_NAV = [
   { to: "/", label: "ראשי הראל", icon: Crown },
+  { to: "/harel", label: "משימות הראל", icon: Crown },
   { to: "/orders", label: "הזמנות בסידור", icon: ClipboardList },
   { to: "/notes", label: "תעודות משלוח", icon: FileText },
   { to: "/canvas", label: "עריכת תעודה (קנבס)", icon: Edit3 },
@@ -65,12 +66,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   
   const [isSidebarActive, setIsSidebarActive] = useState(false);
   
-  // Interaction tracking (mouse/touch)
   useEffect(() => {
     let timeout: NodeJS.Timeout;
     const handleInteraction = () => {
       clearTimeout(timeout);
-      timeout = setTimeout(() => setIsSidebarActive(true), 2000); // 2 seconds delay
+      timeout = setTimeout(() => setIsSidebarActive(true), 2000);
     };
 
     window.addEventListener("mousemove", handleInteraction);
@@ -159,7 +159,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className={`flex min-h-dvh ${isSidebarActive ? "bg-background" : "bg-background"}`}>
-      {/* 1. Desktop Right Sidebar */}
       <aside className={`sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-l border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex transition-all ${isSidebarActive ? "opacity-100" : "opacity-90"}`}>
         <div>
           <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border/40">
@@ -464,13 +463,12 @@ export function StatusPill({ s }: { s: "ok" | "warn" | "fail" }) {
   const m = {
     ok: ["bg-emerald-500/15 text-emerald-700 border border-emerald-500/30", "🟢 מאומת 100%"],
     warn: ["bg-amber-500/20 text-amber-800 border border-amber-500/40", "⚠️ חריגה"],
-    fail: ["bg-destructive/15 text-destructive border border-destructive/30", "🔴 נכשל"],
-  }[s];
+    fail: ["bg-destructive/15 text-destructive border border-destructive/30", "🔴 כשל"],
+  } as const;
+  const [cls, label] = m[s];
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${m[0]}`}
-    >
-      {m[1]}
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${cls}`}>
+      {label}
     </span>
   );
 }
