@@ -361,7 +361,7 @@ function driveLinkFromCell_(value, formula, richText) {
   for (const candidate of candidates) {
     const textValue = String(candidate || "").trim();
     if (/https?:\/\/(?:drive|docs)\.google\.com\//i.test(textValue)) return textValue;
-    if (/^[A-Za-z0-9_-]{25,}$/.test(textValue)) return textValue;
+    if (/^[A-Za-z0-9_-]{25,}$/.test(textValue)) return "https://drive.google.com/file/d/" + textValue + "/view";
   }
   return "";
 }
