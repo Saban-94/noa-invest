@@ -27,6 +27,9 @@ import {
   FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { InquiryThread } from "@/components/InquiryThread";
+import { listWorkroomInquiriesFn, ramiReplyFn } from "@/lib/inquiry-workflow.functions";
+import type { WorkroomInquiry } from "@/lib/inquiry-workflow";
 
 export const Route = createFileRoute("/notes/$id")({
   head: ({ params }) => ({
@@ -48,6 +51,25 @@ function Viewer() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [isApprovingRami, setIsApprovingRami] = useState(false);
   const [isApprovingHarel, setIsApprovingHarel] = useState(false);
+
+  const workroomQuery = useQuery({
+    queryKey: ["workroom", "note-thread", id],
+    queryFn: listWorkroomInquiriesFn,
+    staleTime: 20_000,
+    retry: 1,
+  });
+  const relatedInquiry: WorkroomInquiry | undefined = workroomQuery.data?.inquiries.find(
+    (item) => String(item.docNumber) === String(id) || String(item.id) === String(id) || String(item.task?.noteId || "") === String(id),
+  );
+
+  const handleThreadReply = async (text: string, replyToId?: string) => {
+    if (!relatedInquiry) throw new Error("לא נמצא תיק בירור מקושר לתעודה זו");
+    await ramiReplyFn({
+      data: { inquiryId: relatedInquiry.id, noteId: id, text, replyToId },
+    });
+    await workroomQuery.refetch();
+    toast.success("המענה נשמר בשרשור הבירור");
+  };
 
   // 1. שליפת תעודות חיות מהגיליון לפי מזהה התעודה ללא נתוני דמה
   const {
@@ -410,6 +432,36 @@ function Viewer() {
             </div>
           </aside>
         </div>
+
+        {/* שרשור ראמי ↔ הראל המחובר לנתוני העבודה בשרת */}
+        <section className="rounded-3xl border border-border/70 bg-card p-5 shadow-card space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+            <div>
+              <h2 className="font-display text-base font-extrabold">💬 שרשור בירור · ראמי ↔ הראל</h2>
+              <p className="mt-1 text-xs text-muted-foreground">הודעות נשמרות דרך שרת העבודה ומקושרות לתעודה</p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="gap-2">
+              <Link to="/harel">לוח המשימות של הראל <ArrowRight className="h-3.5 w-3.5" /></Link>
+            </Button>
+          </div>
+          {workroomQuery.isLoading ? (
+            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />טוען שרשור מהשרת...</div>
+          ) : workroomQuery.error ? (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+              <p className="font-bold">לא ניתן לטעון את שרשור הבירור</p>
+              <p className="mt-1 text-xs text-muted-foreground">{workroomQuery.error instanceof Error ? workroomQuery.error.message : "שגיאת חיבור לשרת"}</p>
+              <Button className="mt-3" size="sm" variant="outline" onClick={() => void workroomQuery.refetch()}>נסה שוב</Button>
+            </div>
+          ) : relatedInquiry ? (
+            <InquiryThread messages={relatedInquiry.thread || []} onReply={handleThreadReply} />
+          ) : (
+            <div className="rounded-2xl border border-dashed p-5 text-center">
+              <p className="text-sm font-bold">לא נמצא תיק בירור מקושר לתעודה {n.id}</p>
+              <p className="mt-1 text-xs text-muted-foreground">אפשר לפתוח את לוח המשימות של הראל כדי לאתר או ליצור תיק מקושר.</p>
+              <Button asChild size="sm" className="mt-3"><Link to="/harel">פתיחת לוח משימות</Link></Button>
+            </div>
+          )}
+        </section>
       </div>
     </>
   );
