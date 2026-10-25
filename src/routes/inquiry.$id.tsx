@@ -325,7 +325,7 @@ function RamiInquiryAdvancedView() {
         <FileImage className="mx-auto h-12 w-12 text-muted-foreground" />
         <h2 className="text-lg font-bold">תיק בירור #{id} לא נמצא</h2>
         <p className="text-sm text-muted-foreground">ייתכן שהתיק הוסר או שמספר התעודה שונה.</p>
-        <Link to="/inquiries" className="inline-flex items-center gap-2 text-primary font-bold">
+        <Link to="/inquiry" search={{ tab: "tasks" }} className="inline-flex items-center gap-2 text-primary font-bold">
           <ArrowRight className="h-4 w-4" /> חזרה לרשימת הבירורים
         </Link>
       </div>
@@ -354,7 +354,7 @@ function RamiInquiryAdvancedView() {
                 <ExternalLink className="h-4 w-4" /> מסמך המקור
               </a>
             )}
-            <Link to="/inquiries" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-secondary-foreground hover:opacity-90">
+            <Link to="/inquiry" search={{ tab: "tasks" }} className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-secondary-foreground hover:opacity-90">
               <ArrowRight className="h-4 w-4" /> חזרה לבירורים
             </Link>
           </div>
