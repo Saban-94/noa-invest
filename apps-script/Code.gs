@@ -122,6 +122,10 @@ function doPost(e) {
       return handleWorkroomRamiReply_(body);
     }
 
+    if (action === "harelReply") {
+      return handleWorkroomHarelReply_(body);
+    }
+
     if (action === "harelDecide") {
       return handleWorkroomHarelDecision_(body);
     }
@@ -425,7 +429,7 @@ function workroomHeader_(headers, aliases, preferred) {
 }
 
 function workroomKey_(value) {
-  return String(value == null ? "" : value).trim().replace(/\\s+/g, "");
+  return String(value == null ? "" : value).trim().replace(/\s+/g, "");
 }
 
 function workroomParseJson_(value, fallback) {
@@ -434,14 +438,15 @@ function workroomParseJson_(value, fallback) {
   try { return JSON.parse(value); } catch (_) { return fallback; }
 }
 
-function workroomMessage_(role, text, action, attachments) {
+function workroomMessage_(role, text, action, attachments, replyToId) {
   return {
     id: "msg_" + new Date().getTime() + "_" + Math.random().toString(36).slice(2, 8),
     role: role,
     text: text,
     at: new Date().toISOString(),
     action: action || "replied",
-    attachments: attachments || []
+    attachments: attachments || [],
+    replyToId: replyToId || ""
   };
 }
 
@@ -628,14 +633,39 @@ function handleWorkroomRamiReply_(body) {
     const { headers, docIdx } = workroomColumns_(sheet);
     const rowNum = workroomUniqueRowOrError_(sheet, key, headers, docIdx);
     const state = workroomGetState_(sheet, rowNum, headers);
-    state.thread.push(workroomMessage_("rami", reply, "replied"));
+    state.thread.push(workroomMessage_("rami", reply, "replied", [], String(body.replyToId || "")));
     workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: state.task, status: "pending_harel" });
     const legacyIdx = ensureHeader_(sheet, headers, ["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"], "הסבר ומענה מראמי");
     const prev = String(sheet.getRange(rowNum, legacyIdx + 1).getValue() || "").trim();
     const stamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
-    sheet.getRange(rowNum, legacyIdx + 1).setValue(prev ? prev + "\\n[" + stamp + "] ראמי: " + reply : "[" + stamp + "] ראמי: " + reply);
+    sheet.getRange(rowNum, legacyIdx + 1).setValue(prev ? prev + "\n[" + stamp + "] ראמי: " + reply : "[" + stamp + "] ראמי: " + reply);
     SpreadsheetApp.flush();
     return jsonResponse({ success: true, inquiryId: key, status: "pending_harel" });
+  } catch (err) {
+    return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+function handleWorkroomHarelReply_(body) {
+  const key = String(body.noteId || body.inquiryId || "").trim();
+  let reply;
+  try { reply = workroomValidateReply_(body.text); }
+  catch (err) { return jsonResponse({ success: false, error: String(err.message || err) }); }
+  if (!key) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getInquirySheet_();
+    const { headers, docIdx } = workroomColumns_(sheet);
+    const rowNum = workroomUniqueRowOrError_(sheet, key, headers, docIdx);
+    const state = workroomGetState_(sheet, rowNum, headers);
+    state.thread.push(workroomMessage_("harel", reply, "replied", [], String(body.replyToId || "")));
+    workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: state.task, status: state.status });
+    SpreadsheetApp.flush();
+    return jsonResponse({ success: true, inquiryId: key, status: state.status });
   } catch (err) {
     return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
   } finally {
