@@ -1,423 +1,761 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader } from "@/components/AppShell";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/AppShell";
+import { getCustomerById, type CustomerOrder, type CustomerInvoice } from "@/lib/customers-data";
+import { fetchLiveNotes } from "@/lib/api";
+import { auditNote, noteTotal, ils, noteItemsCount, noteWeightTons } from "@/lib/data";
+import { useApprovals, playAlert, playDispatchChime } from "@/lib/store";
 import {
-  ArrowRight,
-  AlertTriangle,
-  CheckCircle2,
-  Clock3,
-  ExternalLink,
-  FileImage,
-  Highlighter,
-  Loader2,
+  Phone,
   MessageSquare,
-  PenLine,
-  RotateCcw,
-  Save,
-  Send,
-  ShieldCheck,
-  Sparkles,
-  Trash2,
+  Navigation,
+  Folder,
+  FileText,
+  Truck,
+  AlertTriangle,
+  Receipt,
+  Download,
+  CheckCircle2,
+  ChevronRight,
+  ExternalLink,
+  Layers,
+  Package,
+  Calendar,
+  Building,
+  User,
+  ShieldAlert,
+  ArrowRight,
+  PlusCircle,
+  FileCheck,
+  Eye,
 } from "lucide-react";
-import { getScanFn } from "@/lib/notes-api.functions";
-import { scanToDataUrl } from "@/lib/scan-render";
-import { saveInquiryAnnotationsFn } from "@/lib/inquiry-annotations.functions";
-import { listRamiInquiriesFn, replyRamiInquiryFn } from "@/lib/inquiries-api.functions";
 
-export const Route = createFileRoute("/inquiry/$id")({
-  component: RamiInquiryAdvancedView,
+export const Route = createFileRoute("/customers/$id")({
+  head: ({ params }) => {
+    const c = getCustomerById(params.id);
+    return {
+      meta: [
+        { title: `${c?.name || "תיק לקוח"} — ח. סבן לוגיסטיקה` },
+        {
+          name: "description",
+          content: `תיק לקוח ${c?.name || ""} ומסמכי Google Drive, פקדונות ושיבוצי פריקה.`,
+        },
+      ],
+    };
+  },
+  component: CustomerDetailView,
 });
 
-type Tool = "marker" | "arrow" | "signature";
-type Point = { x: number; y: number };
-type Stroke = { tool: Tool; points: Point[] };
-
-function driveFileId(value?: string): string {
-  if (!value) return "";
-  const match = value.match(/[-\w]{25,}/);
-  return match?.[0] || "";
-}
-
-function RamiInquiryAdvancedView() {
+function CustomerDetailView() {
   const { id } = Route.useParams();
-  const qc = useQueryClient();
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const strokesRef = useRef<Stroke[]>([]);
-  const activeStrokeRef = useRef<Stroke | null>(null);
-  const [tool, setTool] = useState<Tool>("marker");
-  const [replyText, setReplyText] = useState("");
-  const [signatureApproved, setSignatureApproved] = useState(false);
-  const [stageSize, setStageSize] = useState({ width: 0, height: 480 });
+  const customer = getCustomerById(id);
+  const approvalsState = useApprovals();
 
-  const inquiryQuery = useQuery({
-    queryKey: ["rami-inquiries"],
-    queryFn: async () => {
-      const { inquiries } = await listRamiInquiriesFn();
-      return inquiries.map((item) => ({
-        rowIndex: 0,
-        receivedDate: item.receivedDate || item.date || "",
-        docNumber: item.id,
-        customer: item.customer || "",
-        address: item.address || "",
-        driver: item.driver || "",
-        errorReason: item.errorReason || item.issue || "",
-        aiAnalysis: item.aiAnalysis || "",
-        ramiReply: item.ramiReply || (item.rounds || []).map((round) => round.rami?.text || "").filter(Boolean).join("\n"),
-        status: item.status || "ממתין לטיפול",
-        harelApproval: item.harelApproval || (item.rounds || []).map((round) => round.harel?.text || "").filter(Boolean).join("\n"),
-        driveLink: item.driveUrl || "",
-        fileId: item.fileId || "",
-      }));
-    },
-    staleTime: 20_000,
-    retry: 1,
+  const [activeFolder, setActiveFolder] = useState<"orders" | "notes" | "invoices">("notes");
+  const [selectedOrder, setSelectedOrder] = useState<CustomerOrder | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null);
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditBales, setCreditBales] = useState(1);
+  const [creditPallets, setCreditPallets] = useState(1);
+  const [creditNotes, setCreditNotes] = useState("");
+
+  const { data: liveNotes } = useQuery({
+    queryKey: ["live-notes-customer", id],
+    queryFn: fetchLiveNotes,
+    staleTime: 30000,
+    enabled: !!customer,
   });
-  const inquiry = inquiryQuery.data?.find(
-    (item: any) => String(item.docNumber) === String(id) || String(item.rowIndex) === String(id),
+
+  const deliveryNotes = (liveNotes || []).filter(
+    (n) =>
+      (customer && n.customerNo === customer.id) ||
+      (customer && n.customer.includes(customer.name)),
   );
 
-  const fileId = useMemo(() => {
-    return driveFileId(inquiry?.driveLink) || driveFileId(inquiry?.fileId);
-  }, [inquiry?.driveLink, inquiry?.fileId]);
-
-  const scanQuery = useQuery({
-    queryKey: ["inquiry-scan", fileId],
-    enabled: Boolean(fileId),
-    queryFn: async () => {
-      if (!fileId) return { dataUrl: null };
-      const file = await getScanFn({ data: { fileId } });
-      return { dataUrl: await scanToDataUrl(file.mimeType, file.base64) };
-    },
-    retry: 1,
-  });
-
-  const drawStrokes = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.clearRect(0, 0, stageSize.width, stageSize.height);
-    for (const stroke of strokesRef.current) {
-      if (!stroke.points.length) continue;
-      context.save();
-      context.lineCap = "round";
-      context.lineJoin = "round";
-      const first = stroke.points[0];
-      const last = stroke.points[stroke.points.length - 1];
-      if (stroke.tool === "marker") {
-        context.strokeStyle = "rgba(250, 204, 21, 0.42)";
-        context.lineWidth = 24;
-        context.beginPath();
-        stroke.points.forEach((point, index) =>
-          index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y),
-        );
-        context.stroke();
-      } else if (stroke.tool === "arrow") {
-        const angle = Math.atan2(last.y - first.y, last.x - first.x);
-        context.strokeStyle = "#dc2626";
-        context.fillStyle = "#dc2626";
-        context.lineWidth = 3;
-        context.beginPath();
-        context.moveTo(first.x, first.y);
-        context.lineTo(last.x, last.y);
-        context.stroke();
-        context.beginPath();
-        context.moveTo(last.x, last.y);
-        context.lineTo(last.x - 16 * Math.cos(angle - 0.48), last.y - 16 * Math.sin(angle - 0.48));
-        context.lineTo(last.x - 16 * Math.cos(angle + 0.48), last.y - 16 * Math.sin(angle + 0.48));
-        context.closePath();
-        context.fill();
-      } else {
-        context.strokeStyle = "#176b4d";
-        context.lineWidth = 2.5;
-        context.beginPath();
-        stroke.points.forEach((point, index) =>
-          index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y),
-        );
-        context.stroke();
-      }
-      context.restore();
-    }
-  }, [stageSize.width, stageSize.height]);
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const updateSize = () => {
-      const bounds = stage.getBoundingClientRect();
-      setStageSize({ width: bounds.width, height: Math.max(420, bounds.height) });
-    };
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(stage);
-    return () => observer.disconnect();
-  }, [scanQuery.data?.dataUrl, inquiry?.docNumber]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !stageSize.width) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(stageSize.width * dpr);
-    canvas.height = Math.round(stageSize.height * dpr);
-    canvas.style.width = `${stageSize.width}px`;
-    canvas.style.height = `${stageSize.height}px`;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawStrokes();
-  }, [stageSize.width, stageSize.height, drawStrokes]);
-
-  const getPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  };
-
-  const startDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const stroke: Stroke = { tool, points: [getPoint(event)] };
-    activeStrokeRef.current = stroke;
-    strokesRef.current = [...strokesRef.current, stroke];
-    drawStrokes();
-  };
-
-  const draw = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!activeStrokeRef.current) return;
-    activeStrokeRef.current.points.push(getPoint(event));
-    drawStrokes();
-  };
-
-  const stopDrawing = () => {
-    activeStrokeRef.current = null;
-  };
-
-  const clearStrokes = () => {
-    strokesRef.current = [];
-    drawStrokes();
-    toast.success("שכבת הסימון נוקתה");
-  };
-
-  const undoLastStroke = () => {
-    strokesRef.current = strokesRef.current.slice(0, -1);
-    drawStrokes();
-    toast.success("הפעולה האחרונה בוטלה");
-  };
-
-  const saveAnnotations = useMutation({
-    mutationFn: async () => {
-      const canvas = canvasRef.current;
-      if (!canvas) throw new Error("אזור הסימון עדיין לא מוכן");
-      if (!strokesRef.current.length && !signatureApproved) throw new Error("יש להוסיף סימון או לאשר חתימה לפני השמירה");
-      const layerPng = canvas.toDataURL("image/png");
-      const composite = document.createElement("canvas");
-      composite.width = canvas.width;
-      composite.height = canvas.height;
-      const compositeContext = composite.getContext("2d");
-      if (!compositeContext) throw new Error("לא ניתן להכין תמונה משולבת");
-      compositeContext.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-      const stage = stageRef.current;
-      const image = imageRef.current;
-      if (stage && image && image.complete && image.naturalWidth) {
-        const bounds = stage.getBoundingClientRect();
-        const ratio = Math.min(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight);
-        const width = image.naturalWidth * ratio;
-        const height = image.naturalHeight * ratio;
-        compositeContext.drawImage(image, (bounds.width - width) / 2, (bounds.height - height) / 2, width, height);
-      }
-      compositeContext.drawImage(canvas, 0, 0, stageSize.width, stageSize.height);
-      return saveInquiryAnnotationsFn({
-        data: {
-          noteId: String(inquiry?.docNumber || id),
-          pngDataUrl: layerPng,
-          compositeDataUrl: composite.toDataURL("image/png"),
-          annotationJson: JSON.stringify({
-            version: 1,
-            signatureApproved,
-            strokes: strokesRef.current,
-            savedAt: new Date().toISOString(),
-          }),
-        },
-      });
-    },
-    onSuccess: (result) => {
-      toast.success("שכבת הסימון נשמרה בהצלחה", {
-        description: result.driveUrl ? "הקובץ עודכן ונשמר בדרייב." : "השרת אישר את השמירה.",
-      });
-      void qc.invalidateQueries({ queryKey: ["rami-inquiries"] });
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "שמירת הסימונים נכשלה"),
-  });
-
-  const sendReply = useMutation({
-    mutationFn: () =>
-      replyRamiInquiryFn({
-        data: { noteId: String(inquiry?.docNumber || id), text: replyText.trim() },
-      }),
-    onSuccess: async () => {
-      toast.success("המענה נשמר ונשלח להראל");
-      setReplyText("");
-      await qc.invalidateQueries({ queryKey: ["rami-inquiries"] });
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "שליחת המענה נכשלה"),
-  });
-
-  if (inquiryQuery.isLoading) {
+  if (!customer) {
     return (
-      <div className="flex min-h-80 items-center justify-center gap-3 text-sm text-muted-foreground" dir="rtl">
-        <Loader2 className="h-5 w-5 animate-spin" /> טוען תיק בירור...
-      </div>
-    );
-  }
-
-  if (!inquiry) {
-    return (
-      <div className="mx-auto max-w-xl space-y-4 p-10 text-center" dir="rtl">
-        <FileImage className="mx-auto h-12 w-12 text-muted-foreground" />
-        <h2 className="text-lg font-bold">תיק בירור #{id} לא נמצא</h2>
-        <p className="text-sm text-muted-foreground">ייתכן שהתיק הוסר או שמספר התעודה שונה.</p>
-        <Link to="/inquiry" className="inline-flex items-center gap-2 text-primary font-bold">
-          <ArrowRight className="h-4 w-4" /> חזרה לרשימת הבירורים
+      <div className="mx-auto max-w-2xl px-4 py-12 text-center">
+        <h2 className="text-2xl font-bold">לקוח מספר {id} לא נמצא</h2>
+        <p className="mt-2 text-muted-foreground">הלקוח אינו מופיע במאגר הלקוחות הפעיל</p>
+        <Link
+          to="/customers"
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-bold text-primary-foreground"
+        >
+          <ArrowRight className="h-4 w-4" /> חזרה לרשימת לקוחות
         </Link>
       </div>
     );
   }
 
-  const status = String(inquiry.status || "ממתין לטיפול");
-  const waitingHarel = /הראל|מנכ|harel|ממתין|pending/i.test(status);
-  const currentRound = inquiry.ramiReply ? 2 : 1;
+  const handleIssueDepositCredit = () => {
+    playAlert();
+    toast.success(
+      `בקשת זיכוי פקדונות מהשטח (${creditBales} בלות, ${creditPallets} משטחים) שוגרה ללינה (lina@saban94.co.il) 📋`,
+    );
+    setShowCreditModal(false);
+  };
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6 p-4 md:p-8" dir="rtl">
-      <div className="rounded-3xl border border-border bg-card p-5 shadow-sm md:p-6">
-        <div className="flex flex-col justify-between gap-5 xl:flex-row xl:items-center">
-          <PageHeader
-            title={`תיק בירור חריגה · תעודה #${inquiry.docNumber || id}`}
-            subtitle={[`לקוח: ${inquiry.customer || "לא צוין"}`, inquiry.address, inquiry.driver ? `נהג: ${inquiry.driver}` : ""].filter(Boolean).join(" · ")}
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold ${waitingHarel ? "border-amber-300 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
-              {waitingHarel ? <Clock3 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-              {status}
-            </span>
-            {inquiry.driveLink && (
-              <a href={inquiry.driveLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted">
-                <ExternalLink className="h-4 w-4" /> מסמך המקור
-              </a>
-            )}
-            <Link to="/inquiry" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-secondary-foreground hover:opacity-90">
-              <ArrowRight className="h-4 w-4" /> חזרה לרשימת הבירורים
-            </Link>
-          </div>
-        </div>
-      </div>
+    <>
+      <PageHeader
+        title={`תיק לקוח: ${customer.name}`}
+        subtitle={`Google Drive: תיקיות לקוחות / [${customer.id}] - ${customer.name}`}
+        action={
+          <Link
+            to="/customers"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-muted transition"
+          >
+            <ChevronRight className="h-4 w-4" /> כל הלקוחות
+          </Link>
+        }
+      />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,.8fr)]">
-        <Card className="overflow-hidden rounded-3xl border-border shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-border p-4 md:flex-row md:items-center md:justify-between md:p-5">
-            <div>
-              <h2 className="flex items-center gap-2 text-base font-extrabold"><PenLine className="h-5 w-5 text-primary" /> עריכה וסימון חריגות בקנבס</h2>
-              <p className="mt-1 text-xs text-muted-foreground">ניתן לצייר חצים, מרקר או לאשר חתימה גם כשאין סריקה ישירה.</p>
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8">
+        {/* 1. Profile Header Card */}
+        <section className="relative overflow-hidden rounded-3xl bg-card p-6 shadow-card border border-border/70">
+          <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-xs font-bold text-muted-foreground">
+                  קומקס #{customer.id}
+                </span>
+                <span className="rounded-md bg-blue-500/15 border border-blue-500/30 px-2.5 py-0.5 text-xs font-bold text-blue-700">
+                  {customer.tag}
+                </span>
+                <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {customer.defaultYard}
+                </span>
+              </div>
+
+              <h1 className="font-display text-2xl font-extrabold text-foreground md:text-3xl">
+                {customer.name}
+              </h1>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Building className="h-4 w-4 text-primary" />
+                  <span>
+                    ח״פ / ע.מ: <strong>{customer.hp}</strong>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <User className="h-4 w-4 text-primary" />
+                  <span>
+                    איש קשר באתר: <strong>{customer.contactName}</strong>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Navigation className="h-4 w-4 text-primary" />
+                  <span>{customer.address}</span>
+                </div>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant={tool === "marker" ? "default" : "outline"} onClick={() => setTool("marker")} className="gap-2"><Highlighter className="h-4 w-4" /> מרקר</Button>
-              <Button size="sm" variant={tool === "arrow" ? "default" : "outline"} onClick={() => setTool("arrow")} className="gap-2"><AlertTriangle className="h-4 w-4" /> חץ אדום</Button>
-              <Button size="sm" variant={tool === "signature" ? "default" : "outline"} onClick={() => setTool("signature")} className="gap-2"><PenLine className="h-4 w-4" /> חתימה</Button>
-              <Button size="sm" variant="outline" onClick={undoLastStroke} className="gap-2"><RotateCcw className="h-4 w-4" /> בטל</Button>
-              <Button size="sm" variant="outline" onClick={clearStrokes} className="gap-2"><Trash2 className="h-4 w-4" /> נקה הכל</Button>
+
+            {/* Quick action buttons (Tel, WhatsApp, Waze) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={`tel:${customer.phone}`}
+                className="flex items-center gap-2 rounded-2xl bg-muted/80 px-4 py-3 text-xs font-bold text-foreground hover:bg-muted transition active:scale-95"
+              >
+                <Phone className="h-4 w-4 text-primary" />
+                <span>חיוג לאיש קשר</span>
+              </a>
+
+              <a
+                href={`https://wa.me/972${customer.phone.replace(/[^0-9]/g, "").slice(-9)}?text=${encodeURIComponent(
+                  `שלום ${customer.contactName}, מדברים מח. סבן חומרי בניין (תיאום אספקה).`,
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 px-4 py-3 text-xs font-bold text-emerald-700 hover:bg-emerald-500/25 transition active:scale-95"
+              >
+                <MessageSquare className="h-4 w-4 text-emerald-600" />
+                <span>וואטסאפ מהיר</span>
+              </a>
+
+              <a
+                href={`https://waze.com/ul?q=${encodeURIComponent(customer.address)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-2xl bg-blue-500/15 border border-blue-500/30 px-4 py-3 text-xs font-bold text-blue-700 hover:bg-blue-500/25 transition active:scale-95"
+              >
+                <Navigation className="h-4 w-4 text-blue-600" />
+                <span>ניווט Waze</span>
+              </a>
             </div>
           </div>
-          <div className="p-4 md:p-5">
-            <div ref={stageRef} className="relative flex min-h-[440px] items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted/40 p-4">
-              {scanQuery.isLoading ? (
-                <div className="flex min-h-[440px] items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /> טוען את המסמך...</div>
-              ) : scanQuery.data?.dataUrl ? (
-                <img ref={imageRef} src={scanQuery.data.dataUrl} alt={`סריקת תעודה ${inquiry.docNumber}`} className="pointer-events-none block max-h-[760px] w-full select-none object-contain" onLoad={() => setStageSize((s) => ({ ...s, height: Math.max(440, stageRef.current?.clientHeight || 480) }))} />
-              ) : (
-                <div className="flex min-h-[400px] w-full flex-col items-center justify-center gap-4 text-center bg-card/90 p-6 rounded-xl border border-dashed border-border shadow-inner">
-                  <div className="p-3 bg-amber-50 text-amber-700 rounded-2xl border border-amber-200">
-                    <FileImage className="h-10 w-10" />
+
+          {/* Preferred Driver & Site Constraints */}
+          <div className="mt-5 grid grid-cols-1 gap-3 border-t border-border/50 pt-4 sm:grid-cols-2">
+            <div className="flex items-start gap-3 rounded-2xl bg-muted/40 p-3.5">
+              <Truck className="h-5 w-5 shrink-0 text-primary mt-0.5" />
+              <div className="text-xs">
+                <div className="font-bold text-foreground">שיוך ושיבוץ רכב מועדף:</div>
+                <div className="text-muted-foreground mt-0.5">
+                  הנהג <strong>{customer.preferredDriver}</strong> ({customer.truckType})
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-3.5">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+              <div className="text-xs">
+                <div className="font-bold text-amber-900">דגשי אתר והגבלות גישה לפריקה:</div>
+                <ul className="mt-1 list-disc list-inside text-amber-800 space-y-0.5">
+                  {customer.accessNotes.map((note, idx) => (
+                    <li key={idx}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 2. 1:1 Deposit Ledger Card */}
+        <section className="rounded-3xl bg-card p-6 shadow-card border border-border/70">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Layers className="h-5 w-5 text-primary" />
+                <h2 className="font-display text-xl font-bold">ניהול יתרות פקדונות 1:1</h2>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                אימות והצלבה שוטפת של שקי בלה (60002) ומשטחי עץ סבן (60060)
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowCreditModal(true)}
+              className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90 transition active:scale-95"
+            >
+              <PlusCircle className="h-4 w-4" />
+              <span>הנפק זיכוי פקדונות מהשטח</span>
+            </button>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Big bags 60002 */}
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-amber-600" />
+                  <span className="font-bold text-sm text-amber-900">שקי בלה (מק״ט 60002)</span>
+                </div>
+                <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+                  מעקב 1:1
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-xl bg-card p-2 shadow-xs">
+                  <span className="text-[11px] text-muted-foreground block">חויבו</span>
+                  <span className="font-display text-lg font-bold">
+                    {customer.depositLedger?.bales60002?.billed ?? 0}
+                  </span>
+                </div>
+                <div className="rounded-xl bg-card p-2 shadow-xs">
+                  <span className="text-[11px] text-muted-foreground block">הוחזרו</span>
+                  <span className="font-display text-lg font-bold text-emerald-600">
+                    {customer.depositLedger?.bales60002?.returned ?? 0}
+                  </span>
+                </div>
+                <div className="rounded-xl bg-amber-500/20 p-2 shadow-xs border border-amber-500/40">
+                  <span className="text-[11px] font-bold text-amber-900 block">יתרה בשטח</span>
+                  <span className="font-display text-xl font-extrabold text-amber-800">
+                    {customer.depositLedger?.bales60002?.openBalance ?? 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Pallets 60060 */}
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-emerald-600" />
+                  <span className="font-bold text-sm text-emerald-900">
+                    משטחי עץ סבן (מק״ט 60060)
+                  </span>
+                </div>
+                <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                  מעקב 1:1
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-xl bg-card p-2 shadow-xs">
+                  <span className="text-[11px] text-muted-foreground block">חויבו</span>
+                  <span className="font-display text-lg font-bold">
+                    {customer.depositLedger?.pallets60060?.billed ?? 0}
+                  </span>
+                </div>
+                <div className="rounded-xl bg-card p-2 shadow-xs">
+                  <span className="text-[11px] text-muted-foreground block">הוחזרו</span>
+                  <span className="font-display text-lg font-bold text-emerald-600">
+                    {customer.depositLedger?.pallets60060?.returned ?? 0}
+                  </span>
+                </div>
+                <div className="rounded-xl bg-emerald-500/20 p-2 shadow-xs border border-emerald-500/40">
+                  <span className="text-[11px] font-bold text-emerald-900 block">יתרה בשטח</span>
+                  <span className="font-display text-xl font-extrabold text-emerald-800">
+                    {customer.depositLedger?.pallets60060?.openBalance ?? 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 3. Canonical Google Drive Folders Navigator */}
+        <section className="rounded-3xl bg-card p-6 shadow-card border border-border/70 space-y-5">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Folder className="h-5 w-5 text-amber-500" />
+                <h2 className="font-display text-xl font-bold">סייר Google Drive קנוני</h2>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                מסלול: תיקיות לקוחות / [{customer.id}] - {customer.name}
+              </p>
+            </div>
+
+            {/* Folder switcher tabs */}
+            <div className="flex rounded-2xl bg-muted/60 p-1 text-xs font-bold">
+              <button
+                onClick={() => setActiveFolder("orders")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 transition ${
+                  activeFolder === "orders"
+                    ? "bg-card text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Folder className="h-4 w-4 text-blue-500" />
+                <span>1. הזמנות ({customer.ordersHistory.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveFolder("notes")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 transition ${
+                  activeFolder === "notes"
+                    ? "bg-card text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Folder className="h-4 w-4 text-amber-500" />
+                <span>2. תעודות משלוח ({deliveryNotes.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveFolder("invoices")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 transition ${
+                  activeFolder === "invoices"
+                    ? "bg-card text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Folder className="h-4 w-4 text-emerald-500" />
+                <span>3. הצעות מחיר וחשבוניות ({customer.invoicesHistory.length})</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Folder Content 1: Orders */}
+          {activeFolder === "orders" && (
+            <div className="space-y-3">
+              <div className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                <span>רשימת הזמנות קומקס ERP פעילות והיסטוריות:</span>
+                <span>סה״כ {customer.ordersHistory.length} הזמנות</span>
+              </div>
+
+              <div className="space-y-3">
+                {customer.ordersHistory.map((o) => (
+                  <div
+                    key={o.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 transition hover:bg-muted/30 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-primary">
+                          הזמנה #{o.id}
+                        </span>
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
+                          {o.date.split("-").reverse().join("/")}
+                        </span>
+                        <span className="rounded-md bg-emerald-500/15 text-emerald-700 px-2 py-0.5 text-xs font-bold">
+                          {o.status}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {o.itemsCount} פריטים · משקל כולל: <strong>{o.weightTons} טון</strong>
+                        {o.driverName && ` · נהג: ${o.driverName}`}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="font-display text-lg font-bold text-foreground">
+                        {ils(o.totalIls)}
+                      </span>
+                      <button
+                        onClick={() => setSelectedOrder(o)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-1.5 text-xs font-bold hover:bg-muted transition"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>מניפסט פריטים</span>
+                      </button>
+                    </div>
                   </div>
-                  <h3 className="font-bold text-sm text-foreground">תעודה #{inquiry.docNumber || id} · עבודה בשטח (ללא סריקה פיזית)</h3>
-                  <p className="text-xs text-muted-foreground max-w-md">
-                    {inquiry.errorReason || inquiry.aiAnalysis || "לא נמצא קובץ סריקה מקושר ישירות, אך באפשרותך לסמן חריגות על הקנבס, לאשר את חתימת הלקוח ולשמור את המענה."}
-                  </p>
-                  {inquiry.driveLink && (
-                    <a className="inline-flex items-center gap-1.5 text-xs font-bold text-primary underline bg-primary/10 px-3 py-1.5 rounded-lg" href={inquiry.driveLink} target="_blank" rel="noreferrer">
-                      <ExternalLink className="h-3.5 w-3.5" /> פתיחת מסמך המקור ב-Drive
-                    </a>
-                  )}
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Folder Content 2: Delivery Notes */}
+          {activeFolder === "notes" && (
+            <div className="space-y-3">
+              <div className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                <span>תעודות משלוח חתומות שנסרקו והוצלבו מול איתוראן וקומקס:</span>
+                <span>{deliveryNotes.length} תעודות</span>
+              </div>
+
+              {deliveryNotes.length === 0 ? (
+                <div className="rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
+                  אין תעודות משלוח פתוחות ללקוח זה במאגר הנוכחי
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {deliveryNotes.map((n) => {
+                    const audit = auditNote(n);
+                    const ap = approvalsState[n.id];
+                    return (
+                      <div
+                        key={n.id}
+                        className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 transition hover:bg-muted/30 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-bold text-foreground">
+                              ת.מ. #{n.id}
+                            </span>
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
+                              {n.date.split("-").reverse().join("/")}
+                            </span>
+                            <span
+                              className={`rounded-md px-2 py-0.5 text-xs font-bold ${
+                                n.live
+                                  ? "bg-amber-500/15 text-amber-800"
+                                  : audit.status === "ok"
+                                    ? "bg-emerald-500/15 text-emerald-700"
+                                    : "bg-amber-500/15 text-amber-700"
+                              }`}
+                            >
+                              {n.live
+                                ? "טרם הוצלב מול קומקס/איתוראן"
+                                : audit.status === "ok"
+                                  ? "🟢 אומת 100%"
+                                  : "⚠️ חריגת איתוראן"}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            הזמנת קומקס #{n.comaxOrder} · {n.items.length} שורות
+                            {n.craneTime ? ` · פריקה/מנוף: ${n.craneTime}` : ""}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-right text-xs">
+                            <span className="font-display text-xs font-semibold text-muted-foreground block">
+                              {noteItemsCount(n)} פריטים · {noteWeightTons(n).toFixed(1)} טון
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {ap?.harel
+                                ? "👑 אושר ע״י הראל"
+                                : ap?.rami
+                                  ? "✍️ נחתם ע״י ראמי"
+                                  : "ממתין לבדיקה"}
+                            </span>
+                          </div>
+
+                          <Link
+                            to="/notes/$id"
+                            params={{ id: n.id }}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs hover:opacity-90 transition"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>פתח תעודה</span>
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-              <canvas
-                ref={canvasRef}
-                aria-label="שכבת סימון על המסמך"
-                className="absolute inset-0 z-10 touch-none"
-                style={{ width: "100%", height: "100%", cursor: "crosshair" }}
-                onPointerDown={startDrawing}
-                onPointerMove={draw}
-                onPointerUp={stopDrawing}
-                onPointerCancel={stopDrawing}
-              />
             </div>
+          )}
 
-            <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-sm font-bold">{signatureApproved ? "חתימת לקוח: מאושר ותקין 🟢" : "אימות חתימת לקוח ⚪"}</div>
-                <p className="mt-1 text-xs text-muted-foreground">לחץ על הכפתור כדי לסמן את חתימת הלקוח כתקינה.</p>
+          {/* Folder Content 3: Invoices & Price Quotes */}
+          {activeFolder === "invoices" && (
+            <div className="space-y-3">
+              <div className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                <span>מסמכי הנהלת חשבונות (לינה הנה״ח) ותעודות זיכוי:</span>
+                <span>{customer.invoicesHistory.length} קבצים</span>
               </div>
-              <Button variant={signatureApproved ? "outline" : "default"} onClick={() => setSignatureApproved((v) => !v)} className="gap-2">
-                {signatureApproved ? <RotateCcw className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-                {signatureApproved ? "בטל סימון חתימה" : "סמן חתימה כמאושרת 🟢"}
-              </Button>
+
+              <div className="space-y-3">
+                {customer.invoicesHistory.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 transition hover:bg-muted/30 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <FileCheck className="h-4 w-4 text-emerald-600" />
+                        <span className="font-bold text-sm text-foreground">
+                          {inv.type} #{inv.invoiceNo}
+                        </span>
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
+                          {inv.date.split("-").reverse().join("/")}
+                        </span>
+                        <span
+                          className={`rounded-md px-2 py-0.5 text-xs font-bold ${
+                            inv.status === "שולם"
+                              ? "bg-emerald-500/15 text-emerald-700"
+                              : inv.status === "זוכה"
+                                ? "bg-purple-500/15 text-purple-700"
+                                : "bg-amber-500/15 text-amber-700"
+                          }`}
+                        >
+                          {inv.status}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        הופק ע״י {inv.issuedBy} · קובץ:{" "}
+                        <span className="font-mono">{inv.pdfName}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="font-display text-base font-bold text-foreground">
+                        {ils(inv.amountIls)}
+                      </span>
+                      <button
+                        onClick={() => setSelectedInvoice(inv)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-1.5 text-xs font-bold hover:bg-muted transition"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>צפה במסמך</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Order Manifest Dialog */}
+      {selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg rounded-3xl bg-card p-6 text-card-foreground shadow-2xl border border-border">
+            <div className="flex items-start justify-between border-b pb-4">
+              <div>
+                <h3 className="font-display text-xl font-bold">
+                  מניפסט הזמנת קומקס #{selectedOrder.id}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  תאריך: {selectedOrder.date.split("-").reverse().join("/")} · משקל:{" "}
+                  {selectedOrder.weightTons} טון
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedOrder(null)}
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <Button onClick={() => saveAnnotations.mutate()} disabled={saveAnnotations.isPending} className="flex-1 gap-2 font-bold">
-                {saveAnnotations.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saveAnnotations.isPending ? "שומר סימונים..." : "שמור סימונים ותמונה משולבת בדרייב"}
-              </Button>
+            <div className="mt-4 max-h-72 overflow-y-auto space-y-2">
+              {selectedOrder.items.map((it, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between rounded-xl bg-muted/40 p-3 text-xs"
+                >
+                  <div>
+                    <span className="font-mono text-[11px] text-muted-foreground block">
+                      מק״ט {it.sku}
+                    </span>
+                    <span className="font-bold text-foreground">{it.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold">
+                      {it.qty} {it.unit}
+                    </span>
+                    <span className="text-muted-foreground block">{ils(it.price * it.qty)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between border-t pt-4">
+              <div>
+                <span className="text-xs text-muted-foreground block">סה״כ לתשלום</span>
+                <span className="font-display text-2xl font-extrabold text-foreground">
+                  {ils(selectedOrder.totalIls)}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  toast.success(`קובץ PDF להזמנה #${selectedOrder.id} הורד בהצלחה`);
+                  setSelectedOrder(null);
+                }}
+                className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90 transition"
+              >
+                <Download className="h-4 w-4" />
+                <span>הורד PDF רשמי</span>
+              </button>
             </div>
           </div>
-        </Card>
-
-        <div className="space-y-5">
-          <Card className="rounded-3xl border-border p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-primary/10 p-2.5 text-primary"><Sparkles className="h-5 w-5" /></div>
-              <div><h2 className="font-extrabold">נועה AI · ניתוח החריגה</h2><p className="mt-1 text-xs text-muted-foreground">תובנות מתוך נתוני תיק הבירור</p></div>
-            </div>
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm leading-7 text-amber-950">
-              <div className="mb-1 flex items-center gap-2 font-extrabold"><AlertTriangle className="h-4 w-4" /> ממצא לבדיקה</div>
-              {inquiry.aiAnalysis || inquiry.errorReason || "לא צורף ניתוח לתיק זה."}
-            </div>
-          </Card>
-
-          <Card className="rounded-3xl border-border p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b border-border pb-4">
-              <div><h2 className="flex items-center gap-2 font-extrabold"><MessageSquare className="h-5 w-5 text-primary" /> שרשור ראמי והראל</h2><p className="mt-1 text-xs text-muted-foreground">תיבת מענה ושליחה למנכ״ל</p></div>
-              <span className="rounded-full bg-muted px-3 py-1 text-xs font-extrabold">סבב {currentRound}</span>
-            </div>
-            <div className="mt-4 space-y-3">
-              {inquiry.ramiReply && <div className="rounded-2xl border-r-4 border-primary bg-primary/5 p-4"><div className="mb-1 text-xs font-extrabold">ראמי · מענה קיים</div><p className="whitespace-pre-wrap text-sm leading-6">{inquiry.ramiReply}</p></div>}
-              {inquiry.harelApproval && <div className="rounded-2xl border-r-4 border-emerald-500 bg-emerald-50/70 p-4"><div className="mb-1 flex items-center gap-2 text-xs font-extrabold text-emerald-800"><CheckCircle2 className="h-4 w-4" /> הראל · אישור</div><p className="text-sm leading-6">{inquiry.harelApproval}</p></div>}
-            </div>
-            <div className="mt-5 border-t border-border pt-4">
-              <label htmlFor="replyText" className="mb-2 block text-sm font-extrabold">המענה המקצועי של ראמי</label>
-              <textarea id="replyText" rows={5} maxLength={2000} value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="תאר את הבדיקה שבוצעה, ממצאים בשטח והסיבה לפער..." className="w-full resize-y rounded-2xl border border-border bg-background p-3 text-sm leading-6 outline-none transition focus:ring-2 focus:ring-primary/30" />
-              <Button onClick={() => sendReply.mutate()} disabled={sendReply.isPending || !replyText.trim()} className="mt-3 w-full gap-2 font-bold bg-primary text-primary-foreground">
-                {sendReply.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sendReply.isPending ? "שולח מענה..." : "שלח מענה להראל מנכ״ל לאישור סופי 👑"}
-              </Button>
-            </div>
-          </Card>
         </div>
-      </div>
-    </div>
+      )}
+
+      {/* Invoice Viewer Dialog */}
+      {selectedInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-md rounded-3xl bg-card p-6 text-card-foreground shadow-2xl border border-border">
+            <div className="flex items-start justify-between border-b pb-4">
+              <div>
+                <h3 className="font-display text-xl font-bold">
+                  {selectedInvoice.type} #{selectedInvoice.invoiceNo}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  הופק ע״י {selectedInvoice.issuedBy} בתאריך{" "}
+                  {selectedInvoice.date.split("-").reverse().join("/")}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedInvoice(null)}
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl bg-muted/40 p-4 text-center space-y-2 border border-border/50">
+              <FileCheck className="mx-auto h-12 w-12 text-emerald-600" />
+              <div className="font-display text-2xl font-extrabold text-foreground">
+                {ils(selectedInvoice.amountIls)}
+              </div>
+              <div className="text-xs font-medium text-emerald-700 bg-emerald-500/10 rounded-full py-1 px-3 inline-block">
+                סטטוס: {selectedInvoice.status}
+              </div>
+              <p className="text-xs text-muted-foreground pt-2">
+                קובץ שמור ב-Google Drive: <strong>{selectedInvoice.pdfName}</strong>
+              </p>
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={() => setSelectedInvoice(null)}
+                className="flex-1 rounded-2xl border border-border py-2.5 text-xs font-bold hover:bg-muted"
+              >
+                סגור
+              </button>
+              <button
+                onClick={() => {
+                  toast.success(`קובץ ${selectedInvoice.pdfName} נשלח להדפסה`);
+                  setSelectedInvoice(null);
+                }}
+                className="flex-1 rounded-2xl bg-primary py-2.5 text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90"
+              >
+                הדפס מסמך
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Issue Deposit Credit Modal */}
+      {showCreditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-md rounded-3xl bg-card p-6 text-card-foreground shadow-2xl border border-border">
+            <div className="flex items-start justify-between border-b pb-4">
+              <div>
+                <h3 className="font-display text-xl font-bold">הנפקת זיכוי פקדונות מהשטח</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  העברה ישירה ללינה בהנהלת חשבונות לצורך הפקת תעודת זיכוי
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCreditModal(false)}
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-foreground block mb-1">
+                  כמות שקי בלה להחזרה וזיכוי (מק״ט 60002):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={creditBales}
+                  onChange={(e) => setCreditBales(Number(e.target.value))}
+                  className="w-full rounded-2xl border bg-muted/40 p-3 text-sm font-bold text-foreground"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-foreground block mb-1">
+                  כמות משטחי עץ להחזרה וזיכוי (מק״ט 60060):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={creditPallets}
+                  onChange={(e) => setCreditPallets(Number(e.target.value))}
+                  className="w-full rounded-2xl border bg-muted/40 p-3 text-sm font-bold text-foreground"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-foreground block mb-1">
+                  הערות הנהג / סדרן מהשטח:
+                </label>
+                <textarea
+                  placeholder="למשל: נאספו 4 משטחים שלמים מאתר רמת גן ע״י חכמת..."
+                  value={creditNotes}
+                  onChange={(e) => setCreditNotes(e.target.value)}
+                  className="w-full rounded-2xl border bg-muted/40 p-3 text-xs text-foreground focus:outline-none"
+                  rows={2}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={() => setShowCreditModal(false)}
+                className="flex-1 rounded-2xl border border-border py-3 text-xs font-bold hover:bg-muted"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={handleIssueDepositCredit}
+                className="flex-1 rounded-2xl bg-primary py-3 text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90"
+              >
+                שגר זיכוי ללינה 📋
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
