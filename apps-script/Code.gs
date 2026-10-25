@@ -249,107 +249,89 @@ function handleGetFile(fileId) {
 
 function handleSubmitApproval(body) {
   const noteId = String(body.noteId || "").trim();
-  const approver = body.approver; // "rami" | "harel"
-  const note = body.note || "";
-
+  const approver = String(body.approver || "");
+  const note = String(body.note || "").trim();
   if (!noteId) return jsonResponse({ success: false, error: "Missing noteId" });
+  if (approver !== "rami" && approver !== "harel") return jsonResponse({ success: false, error: "approver לא תקין" });
 
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
   const sheet = ss.getSheetByName(TAB_GALYA);
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0].map(h => String(h || "").trim());
-
-  const idxDocNum = headers.indexOf("מס' תעודת משלוח");
-  const idxApprovalStatus = headers.indexOf("סטטוס אישור");
-  const idxRami = headers.indexOf("אישור ראמי");
-  const idxHarel = headers.indexOf("אישור הראל");
-  const idxNote = headers.indexOf("הערת אישור");
-
+  if (!sheet) return jsonResponse({ success: false, error: "Sheet tab not found: " + TAB_GALYA });
+  const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+  const docIdx = headerIndex_(headers, ["מס' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח", "מספר ת.מ", "מספר תעודה", "מס׳ תעודה", "docNumber", "noteId", "id"]);
+  if (docIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה" });
+  const rowNum = workroomUniqueRowOrError_(sheet, noteId, headers, docIdx);
+  const statusIdx = ensureHeader_(sheet, headers, ["סטטוס אישור"], "סטטוס אישור");
+  const ramiIdx = ensureHeader_(sheet, headers, ["אישור ראמי"], "אישור ראמי");
+  const harelIdx = ensureHeader_(sheet, headers, ["אישור הראל"], "אישור הראל");
+  const noteIdx = ensureHeader_(sheet, headers, ["הערת אישור"], "הערת אישור");
   const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
 
-  for (let r = 1; r < values.length; r++) {
-    if (String(values[r][idxDocNum] || "").trim() === noteId) {
-      const rowNum = r + 1;
-      if (approver === "rami") {
-        if (idxRami >= 0) sheet.getRange(rowNum, idxRami + 1).setValue(nowStr);
-        if (idxApprovalStatus >= 0) sheet.getRange(rowNum, idxApprovalStatus + 1).setValue("ממתין לאישור מנכ״ל");
-      } else if (approver === "harel") {
-        if (idxHarel >= 0) sheet.getRange(rowNum, idxHarel + 1).setValue(nowStr);
-        if (idxApprovalStatus >= 0) sheet.getRange(rowNum, idxApprovalStatus + 1).setValue("מאושר לחיוב");
-      }
-      if (idxNote >= 0 && note) {
-        const prev = sheet.getRange(rowNum, idxNote + 1).getValue();
-        sheet.getRange(rowNum, idxNote + 1).setValue((prev ? prev + " | " : "") + approver + ": " + note);
-      }
-      SpreadsheetApp.flush();
-      return jsonResponse({ success: true, noteId: noteId, approver: approver });
-    }
+  if (approver === "rami") {
+    sheet.getRange(rowNum, ramiIdx + 1).setValue(nowStr);
+    sheet.getRange(rowNum, statusIdx + 1).setValue("ממתין לאישור מנכ״ל");
+  } else {
+    sheet.getRange(rowNum, harelIdx + 1).setValue(nowStr);
+    sheet.getRange(rowNum, statusIdx + 1).setValue("מאושר לחיוב");
   }
-
-  return jsonResponse({ success: false, error: "Note not found in sheet: " + noteId });
+  if (note) {
+    const prev = String(sheet.getRange(rowNum, noteIdx + 1).getValue() || "").trim();
+    sheet.getRange(rowNum, noteIdx + 1).setValue((prev ? prev + " | " : "") + approver + ": " + note);
+  }
+  SpreadsheetApp.flush();
+  return jsonResponse({ success: true, noteId: noteId, approver: approver });
 }
 
 function handleSaveSignedNote(body) {
   const noteId = String(body.noteId || "").trim();
   const customer = String(body.customer || "").trim();
-  const signedScanDataUrl = body.signedScanDataUrl || "";
-  const statusNote = body.statusNote || "נבדק ונחתם בקנבס";
+  const signedScanDataUrl = String(body.signedScanDataUrl || "");
+  const statusNote = String(body.statusNote || "נבדק ונחתם בקנבס").trim();
 
-  if (!noteId || !signedScanDataUrl) {
-    return jsonResponse({ success: false, error: "Missing noteId or image dataUrl" });
+  if (!noteId || !signedScanDataUrl) return jsonResponse({ success: false, error: "Missing noteId or image dataUrl" });
+  if (!/^data:image\\/\\w+;base64,/.test(signedScanDataUrl) || signedScanDataUrl.length > 25000000) {
+    return jsonResponse({ success: false, error: "תמונת חתימה לא תקינה או גדולה מדי" });
   }
 
-  // חילוץ תמונת ה-PNG
-  const base64Data = signedScanDataUrl.replace(/^data:image\/\w+;base64,/, "");
+  // Resolve the unique destination row before creating a Drive file, so duplicate keys
+  // cannot cause orphaned files or writes to an arbitrary first match.
+  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  const sheet = ss.getSheetByName(TAB_GALYA);
+  if (!sheet) return jsonResponse({ success: false, error: "Sheet tab not found: " + TAB_GALYA });
+  const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+  const docIdx = headerIndex_(headers, ["מס' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח", "מספר ת.מ", "מספר תעודה", "מס׳ תעודה", "docNumber", "noteId", "id"]);
+  if (docIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה" });
+  const rowNum = workroomUniqueRowOrError_(sheet, noteId, headers, docIdx);
+
+  const base64Data = signedScanDataUrl.replace(/^data:image\\/\\w+;base64,/, "");
   const bytes = Utilities.base64Decode(base64Data);
   const blob = Utilities.newBlob(bytes, "image/png", "תעודה_" + noteId + "_חתומה.png");
-
-  // מציאת או יצירת תיקיית לקוח
   let targetFolder = DriveApp.getRootFolder();
   const rootFolders = DriveApp.getFoldersByName("תיקיות לקוחות");
   if (rootFolders.hasNext()) {
     const parentFolder = rootFolders.next();
-    const custFolders = parentFolder.getFoldersByName(customer);
-    targetFolder = custFolders.hasNext() ? custFolders.next() : parentFolder;
-  }
-
-  // שמירה ישירה ל-Drive (ללא צורך ב-DocumentApp ומניעת שגיאות הרשאה)
-  const savedFile = targetFolder.createFile(blob);
-  const fileUrl = savedFile.getUrl();
-
-  // עדכון הגיליון
-  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
-  const sheet = ss.getSheetByName(TAB_GALYA);
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0].map(h => String(h || "").trim());
-
-  const idxDocNum = headers.indexOf("מס' תעודת משלוח");
-  const idxSignedLink = headers.indexOf("קישור חתום");
-  const idxApprovalStatus = headers.indexOf("סטטוס אישור");
-  const idxRami = headers.indexOf("אישור ראמי");
-  const idxNote = headers.indexOf("הערת אישור");
-
-  const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
-
-  for (let r = 1; r < values.length; r++) {
-    if (String(values[r][idxDocNum] || "").trim() === noteId) {
-      const rowNum = r + 1;
-      if (idxSignedLink >= 0) sheet.getRange(rowNum, idxSignedLink + 1).setValue(fileUrl);
-      if (idxRami >= 0) sheet.getRange(rowNum, idxRami + 1).setValue(nowStr);
-      if (idxApprovalStatus >= 0) sheet.getRange(rowNum, idxApprovalStatus + 1).setValue("ממתין לאישור מנכ״ל");
-      if (idxNote >= 0) sheet.getRange(rowNum, idxNote + 1).setValue(statusNote);
-      SpreadsheetApp.flush();
-      break;
+    if (customer) {
+      const custFolders = parentFolder.getFoldersByName(customer);
+      targetFolder = custFolders.hasNext() ? custFolders.next() : parentFolder;
+    } else {
+      targetFolder = parentFolder;
     }
   }
+  const savedFile = targetFolder.createFile(blob);
+  const fileUrl = savedFile.getUrl();
+  const idxSignedLink = ensureHeader_(sheet, headers, ["קישור חתום", "signedUrl", "signedLink"], "קישור חתום");
+  const idxApprovalStatus = ensureHeader_(sheet, headers, ["סטטוס אישור"], "סטטוס אישור");
+  const idxRami = ensureHeader_(sheet, headers, ["אישור ראמי"], "אישור ראמי");
+  const idxNote = ensureHeader_(sheet, headers, ["הערת אישור"], "הערת אישור");
+  const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
+  sheet.getRange(rowNum, idxSignedLink + 1).setValue(fileUrl);
+  sheet.getRange(rowNum, idxRami + 1).setValue(nowStr);
+  sheet.getRange(rowNum, idxApprovalStatus + 1).setValue("ממתין לאישור מנכ״ל");
+  sheet.getRange(rowNum, idxNote + 1).setValue(statusNote);
+  SpreadsheetApp.flush();
 
-  return jsonResponse({
-    success: true,
-    driveUrl: fileUrl,
-    folder: targetFolder.getName(),
-  });
+  return jsonResponse({ success: true, driveUrl: fileUrl, folder: targetFolder.getName() });
 }
-
 
 /* ------------------------------------------------------------------ */
 /* בירור ראמי: שליפה, שמירת מענה ושכבת סימון                             */
