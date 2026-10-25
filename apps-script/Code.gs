@@ -525,8 +525,14 @@ function workroomReadRows_(sheet) {
     // Ignore blank / obvious generated garbage keys. Never delete them here.
     if (!docNumber || /^(ללא[-_ ]?מספר|לא[-_ ]?מספר|test|ddw)/i.test(docNumber)) continue;
     const get = names => {
-      const i = idx(names);
-      return i >= 0 ? String(row[i] == null ? "" : row[i]).trim() : "";
+      for (const name of names) {
+        const i = headers.indexOf(name);
+        if (i >= 0) {
+          const value = String(row[i] == null ? "" : row[i]).trim();
+          if (value) return value;
+        }
+      }
+      return "";
     };
     const threadRaw = get(["threadJson", "היסטוריית בירור JSON"]);
     const taskRaw = get(["taskJson", "משימה JSON"]);
@@ -615,7 +621,6 @@ function workroomGetState_(sheet, rowNum, headers) {
   const values = sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).getValues()[0];
   const threadIdx = headerIndex_(headers, ["threadJson", "היסטוריית בירור JSON"]);
   const taskIdx = headerIndex_(headers, ["taskJson", "משימה JSON"]);
-  const statusIdx = headerIndex_(headers, ["workflowStatus", "סטטוס בירור", "status"]);
   const legacyIdx = headerIndex_(headers, ["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"]);
   let thread = threadIdx >= 0 ? workroomParseJson_(values[threadIdx], []) : [];
   if (!Array.isArray(thread)) thread = [];
@@ -623,8 +628,11 @@ function workroomGetState_(sheet, rowNum, headers) {
     thread = [workroomMessage_("rami", String(values[legacyIdx]), "replied")];
   }
   const task = taskIdx >= 0 ? workroomParseJson_(values[taskIdx], null) : null;
-  const status = statusIdx >= 0 ? String(values[statusIdx] || "").trim() : "";
-  return { thread: thread, task: task && typeof task === "object" && !Array.isArray(task) ? task : null, status: status || "pending_rami" };
+  const status = ["workflowStatus", "סטטוס בירור", "status"].map(name => {
+    const i = headers.indexOf(name);
+    return i >= 0 ? String(values[i] || "").trim() : "";
+  }).find(Boolean) || "pending_rami";
+  return { thread: thread, task: task && typeof task === "object" && !Array.isArray(task) ? task : null, status: status };
 }
 
 function workroomValidateReply_(text) {
