@@ -1,4 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { DeliveryNote } from "@/lib/data";
+import { buildLogisticsFindings } from "@/lib/logistics-audit";
 
 /**
  * גשר שרת ← Google Apps Script (Api.js).
@@ -164,6 +166,38 @@ export type SheetNote = {
 
 type ResolvedFile = { fileId?: string; viewUrl?: string; source?: string };
 
+function auditNoteFromSheet(n: SheetNote): DeliveryNote {
+  const parseDeposit = (code: string): number | null => {
+    const text = String(n.depositsText || "");
+    const match = text.match(new RegExp(`${code}\\\\D{0,25}(\\\\d+)`));
+    return match ? Number.parseInt(match[1], 10) : null;
+  };
+  const bales = parseDeposit("60002");
+  const pallets = parseDeposit("60060");
+  return {
+    id: String(n.id),
+    customer: n.customer || "לא זוהה שם לקוח",
+    date: n.date || "",
+    comaxOrder: n.comaxOrder || undefined,
+    fileId: n.fileId || undefined,
+    driveUrl: n.driveUrl || undefined,
+    driver: [n.driver, n.truck].filter(Boolean).join(" · ") || undefined,
+    items: (n.items || []).map((item) => ({
+      name: String(item.name || ""),
+      sku: item.sku || undefined,
+      qty: Number(item.qty),
+      ordered: Number(item.qty),
+      weightKg: 0,
+      unit: item.unit || "יח׳",
+    })),
+    deposits: {
+      ...(bales !== null ? { bales60002: { delivered: bales, billed: bales } } : {}),
+      ...(pallets !== null ? { pallets60060: { delivered: pallets, billed: pallets } } : {}),
+    },
+    live: true,
+  };
+}
+
 /**
  * תעודות שהגיליון החזיר בלי fileId (לינק חסר, או נוסחת HYPERLINK שנקראה כתווית בלבד):
  * מבקשים מ-Apps Script לאתר את הקובץ (גיליון, טאב בירור, תיקיית הארכיון) ומשלימים.
@@ -250,16 +284,38 @@ export const saveSignedNoteFn = createServerFn({ method: "POST" })
   });
 
 export const approvalFn = createServerFn({ method: "POST" })
-  .inputValidator((d: { noteId: string; approver: "rami" | "harel"; note?: string }) => {
+  .inputValidator((d: {
+    noteId: string;
+    approver: "rami" | "harel";
+    note?: string;
+    auditEvidence?: Record<string, string>;
+  }) => {
     if (!String(d?.noteId || "")) throw new Error("חסר מספר תעודה");
     if (d.approver !== "rami" && d.approver !== "harel") throw new Error("approver לא תקין");
+    if (!d.auditEvidence || typeof d.auditEvidence !== "object") {
+      throw new Error("נדרשת בדיקת לוגיסטיקה ותיעוד אסמכתאות לפני אישור");
+    }
+    const auditEvidence = Object.fromEntries(
+      Object.entries(d.auditEvidence).map(([key, value]) => [String(key), String(value || "").slice(0, 2000)]),
+    );
     return {
       noteId: String(d.noteId),
       approver: d.approver,
       note: String(d.note || "").slice(0, 500),
+      auditEvidence,
     };
   })
   .handler(async ({ data }) => {
+    const response = await gasGet({ action: "getNotes" });
+    const notes = (Array.isArray(response.notes) ? response.notes : []) as SheetNote[];
+    await fillMissingFiles(notes);
+    const source = notes.find((item) => String(item.id) === data.noteId);
+    if (!source) throw new Error("לא ניתן לאמת אישור: התעודה לא נמצאה במקור החי");
+    const findings = buildLogisticsFindings(auditNoteFromSheet(source));
+    const missing = findings.filter((finding) => (data.auditEvidence[finding.id] || "").trim().length < 12);
+    if (missing.length) {
+      throw new Error(`האישור נחסם בשרת: חסרות אסמכתאות ל-${missing.length} בדיקות מתוך ${findings.length}`);
+    }
     await gasPost({ action: "submitApproval", ...data });
     return { success: true as const };
   });
