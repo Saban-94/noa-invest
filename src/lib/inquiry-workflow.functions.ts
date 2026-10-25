@@ -19,7 +19,7 @@ import {
 } from "./inquiry-workflow";
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxQOtlX0fipzXXfIccwX1I8_dCgIhg-ZVOCOq0xQH3EKuNkK7c0fE3h3yu4zldHMkVJaQ/exec";
+  "https://script.google.com/macros/s/AKfycbx9AaPx0do-4UlRwPgnr4oUYrCaMVt_YLXY-nuMK0RTHZJNLZlsXeh12tDw69eqg00Haw/exec";
 
 // Per-warm-instance cache avoids repeating a full Apps Script + Sheets scan on
 // concurrent page loads. Mutations invalidate it immediately after GAS confirms.
@@ -39,7 +39,7 @@ function invalidateWorkroomListCache(): void {
 function gasUrl(): string {
   const envUrl = process.env["GAS_URL"];
   // Workflow endpoints added in v6 are not available in the older deployment.
-  if (envUrl && (envUrl.includes("AKfycbzojoQ3q4SS-Z8tfHGwQombE491fNnrmXkyz4XdM2-4K5KeSChW7kOppnbpKAHOOTzbvw") || envUrl.includes("AKfycbzWxHsWF0QmWa-38-ZpIyWCPOKlmjY088Np5a5wzqTN1oNxXfxrcWYDKgk2UNcKX-ToYg"))) {
+  if (envUrl && (envUrl.includes("AKfycbx9AaPx0do-4UlRwPgnr4oUYrCaMVt_YLXY-nuMK0RTHZJNLZlsXeh12tDw69eqg00Haw") || envUrl.includes("AKfycbx9AaPx0do-4UlRwPgnr4oUYrCaMVt_YLXY-nuMK0RTHZJNLZlsXeh12tDw69eqg00Haw"))) {
     return DEFAULT_GAS_URL;
   }
   return envUrl || DEFAULT_GAS_URL;
