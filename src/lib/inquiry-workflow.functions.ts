@@ -113,6 +113,30 @@ export const getWorkroomInquiryFn = createServerFn({ method: "POST" })
     return { inquiry: normalizeInquiry(res.inquiry) };
   });
 
+export const openOrCreateWorkroomTaskFn = createServerFn({ method: "POST" })
+  .validator((d: {
+    noteId: string;
+    customer?: string;
+    customerNo?: string;
+    address?: string;
+    driver?: string;
+    issue?: string;
+    aiAnalysis?: string;
+    fileId?: string;
+    driveUrl?: string;
+  }) => {
+    if (!String(d.noteId || "").trim()) throw new Error("חסר מספר תעודה");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const result = await gasRequest("openOrCreateWorkroomTask", {
+      ...data,
+      noteId: String(data.noteId).trim(),
+    });
+    invalidateWorkroomListCache();
+    return result;
+  });
+
 export const ramiReplyFn = createServerFn({ method: "POST" })
   .validator((d: { inquiryId: string; text: string; noteId?: string; replyToId?: string }) => {
     if (!d.inquiryId || !String(d.text || "").trim()) {
