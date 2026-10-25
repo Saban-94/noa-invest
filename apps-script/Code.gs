@@ -66,6 +66,10 @@ function doGet(e) {
       return handleGetFile(p.id);
     }
 
+    if (action === "getWorkroomInquiries") {
+      return handleGetWorkroomInquiries_();
+    }
+
     return jsonResponse({ success: false, error: "unknown action: " + action });
   } catch (err) {
     return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
@@ -108,6 +112,22 @@ function doPost(e) {
 
     if (action === "saveSignedNote") {
       return handleSaveSignedNote(body);
+    }
+
+    if (action === "getWorkroomInquiry") {
+      return handleGetWorkroomInquiry_(body);
+    }
+
+    if (action === "ramiReply") {
+      return handleWorkroomRamiReply_(body);
+    }
+
+    if (action === "harelDecide") {
+      return handleWorkroomHarelDecision_(body);
+    }
+
+    if (action === "harelUploadAssign") {
+      return handleWorkroomHarelAssign_(body);
     }
 
     return jsonResponse({ success: false, error: "unknown action: " + action });
@@ -395,6 +415,296 @@ function inquiryRow_(sheet, noteId, headers) {
   return -1;
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Unified workroom API: stable keys, thread/task JSON, guarded writes */
+/* ------------------------------------------------------------------ */
+
+function workroomHeader_(headers, aliases, preferred) {
+  return ensureHeader_(getInquirySheet_(), headers, aliases, preferred);
+}
+
+function workroomKey_(value) {
+  return String(value == null ? "" : value).trim().replace(/\\s+/g, "");
+}
+
+function workroomParseJson_(value, fallback) {
+  if (value && typeof value === "object") return value;
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  try { return JSON.parse(value); } catch (_) { return fallback; }
+}
+
+function workroomMessage_(role, text, action, attachments) {
+  return {
+    id: "msg_" + new Date().getTime() + "_" + Math.random().toString(36).slice(2, 8),
+    role: role,
+    text: text,
+    at: new Date().toISOString(),
+    action: action || "replied",
+    attachments: attachments || []
+  };
+}
+
+function workroomColumns_(sheet) {
+  const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0]
+    .map(h => String(h || "").trim());
+  const docIdx = headerIndex_(headers, ["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
+  if (docIdx < 0) throw new Error("לא נמצאה עמודת מפתח ייחודי למספר תעודה");
+  return { headers: headers, docIdx: docIdx };
+}
+
+function workroomFindRows_(sheet, key, headers, docIdx) {
+  const wanted = workroomKey_(key);
+  if (!wanted) return [];
+  const values = sheet.getDataRange().getValues();
+  const found = [];
+  for (let r = 1; r < values.length; r++) {
+    if (workroomKey_(values[r][docIdx]) === wanted) found.push({ rowNum: r + 1, row: values[r] });
+  }
+  return found;
+}
+
+function workroomBestRow_(matches, headers) {
+  if (!matches.length) return null;
+  const score = (entry) => {
+    const row = entry.row;
+    let n = 0;
+    const idx = (names) => headerIndex_(headers, names);
+    [["threadJson"], ["taskJson"], ["סטטוס בירור", "status"], ["שם לקוח", "customer"], ["מזהה קובץ Drive", "driveFileId"], ["כתובת הקובץ (URL)", "driveUrl"]].forEach(names => {
+      const i = idx(names);
+      if (i >= 0 && String(row[i] || "").trim()) n += 2;
+    });
+    return n;
+  };
+  return matches.slice().sort((a, b) => score(b) - score(a) || b.rowNum - a.rowNum)[0];
+}
+
+function workroomUniqueRowOrError_(sheet, key, headers, docIdx) {
+  const matches = workroomFindRows_(sheet, key, headers, docIdx);
+  if (!matches.length) throw new Error("התעודה לא נמצאה לפי מפתח: " + key);
+  if (matches.length > 1) {
+    throw new Error("נמצאו " + matches.length + " שורות עם אותו מספר תעודה. לא בוצעה כתיבה כדי למנוע עדכון שורה שגויה; יש לבצע איחוד כפילויות לאחר גיבוי.");
+  }
+  return matches[0].rowNum;
+}
+
+function workroomReadRows_(sheet) {
+  const range = sheet.getDataRange();
+  const values = range.getValues();
+  if (values.length <= 1) return [];
+  const formulas = range.getFormulas();
+  const rich = range.getRichTextValues();
+  const headers = values[0].map(h => String(h || "").trim());
+  const idx = names => headerIndex_(headers, names);
+  const docIdx = idx(["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
+  if (docIdx < 0) throw new Error("לא נמצאה עמודת מספר תעודה");
+  const output = [];
+  const grouped = {};
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const docNumber = String(row[docIdx] || "").trim();
+    // Ignore blank / obvious generated garbage keys. Never delete them here.
+    if (!docNumber || /^(ללא[-_ ]?מספר|לא[-_ ]?מספר|test|ddw)/i.test(docNumber)) continue;
+    const get = names => {
+      const i = idx(names);
+      return i >= 0 ? String(row[i] == null ? "" : row[i]).trim() : "";
+    };
+    const threadRaw = get(["threadJson", "היסטוריית בירור JSON"]);
+    const taskRaw = get(["taskJson", "משימה JSON"]);
+    let thread = workroomParseJson_(threadRaw, []);
+    if (!Array.isArray(thread)) thread = [];
+    if (!thread.length) {
+      const legacyReply = get(["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"]);
+      if (legacyReply) thread = [workroomMessage_("rami", legacyReply, "replied")];
+    }
+    let task = workroomParseJson_(taskRaw, null);
+    if (Array.isArray(task)) task = null;
+    const driveCandidates = [];
+    const addDrive = (names) => {
+      const i = idx(names);
+      if (i >= 0) driveCandidates.push(driveLinkFromCell_(row[i], formulas[r][i], rich[r][i]));
+    };
+    addDrive(["מזהה קובץ Drive", "driveFileId", "scanFileId", "fileId"]);
+    addDrive(["כתובת הקובץ (URL)", "driveUrl", "driveLink", "fileUrl"]);
+    addDrive(["קישור חתום", "קישור PDF חתום", "קישור סריקה חתומה", "signedUrl", "signedLink"]);
+    addDrive(["קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ"]);
+    [11, 10, 19].forEach(i => { if (row.length > i) driveCandidates.push(driveLinkFromCell_(row[i], formulas[r][i], rich[r][i])); });
+    const driveUrl = driveCandidates.find(v => v && (/drive\\.google\\.com|docs\\.google\\.com/i.test(v) || /^[A-Za-z0-9_-]{25,}$/.test(v))) || "";
+    const fileId = extractDriveFileId_(driveUrl) || (/^[A-Za-z0-9_-]{25,}$/.test(driveUrl) ? driveUrl : "");
+    const statusRaw = get(["workflowStatus", "סטטוס בירור", "סטטוס אישור", "status"]) || "pending_rami";
+    const raw = {
+      id: docNumber,
+      docNumber: docNumber,
+      customer: get(["שם לקוח", "customer", "customerName"]),
+      customerNo: get(["מס' לקוח", "מס׳ לקוח", "מספר לקוח", "customerNo"]),
+      address: get(["כתובת אספקה", "כתובת", "address"]),
+      driver: get(["נהג", "נהג ורכב", "driver"]),
+      status: statusRaw,
+      issue: get(["תיאור החריגה / הטעות שזוהתה", "תיאור חריגה", "הערת אישור", "errorReason", "issue"]),
+      aiAnalysis: get(["ניתוח AI וכתב יד", "ניתוח AI", "aiAnalysis"]),
+      kind: get(["kind", "סוג בירור"]) || "other",
+      thread: thread,
+      task: task,
+      scanFileId: fileId,
+      fileId: fileId,
+      driveUrl: driveUrl,
+      updatedAt: get(["updatedAt", "עודכן בתאריך"]) || new Date().toISOString(),
+      _rowNum: r + 1,
+      _rowScore: [get(["שם לקוח", "customer"]), get(["תיאור החריגה / הטעות שזוהתה", "issue"]), driveUrl, threadRaw, taskRaw].filter(Boolean).length
+    };
+    const key = workroomKey_(docNumber);
+    const old = grouped[key];
+    if (!old || raw._rowScore > old._rowScore || (raw._rowScore === old._rowScore && raw._rowNum > old._rowNum)) grouped[key] = raw;
+  }
+  Object.keys(grouped).forEach(k => {
+    const item = grouped[k];
+    delete item._rowNum;
+    delete item._rowScore;
+    output.push(item);
+  });
+  return { headers: headers, inquiries: output };
+}
+
+function handleGetWorkroomInquiries_() {
+  const sheet = getInquirySheet_();
+  const result = workroomReadRows_(sheet);
+  return jsonResponse({ success: true, inquiries: result.inquiries });
+}
+
+function handleGetWorkroomInquiry_(body) {
+  const key = String(body.inquiryId || body.id || body.noteId || "").trim();
+  if (!key) return jsonResponse({ success: false, error: "חסר מזהה בירור" });
+  const result = workroomReadRows_(getInquirySheet_());
+  const wanted = workroomKey_(key);
+  const inquiry = result.inquiries.find(i => workroomKey_(i.id) === wanted || workroomKey_(i.docNumber) === wanted) || null;
+  return jsonResponse({ success: true, inquiry: inquiry });
+}
+
+function workroomWriteState_(sheet, rowNum, headers, state) {
+  const threadIdx = ensureHeader_(sheet, headers, ["threadJson", "היסטוריית בירור JSON"], "threadJson");
+  const taskIdx = ensureHeader_(sheet, headers, ["taskJson", "משימה JSON"], "taskJson");
+  const statusIdx = ensureHeader_(sheet, headers, ["workflowStatus", "סטטוס בירור", "status"], "workflowStatus");
+  const updatedIdx = ensureHeader_(sheet, headers, ["updatedAt", "עודכן בתאריך"], "updatedAt");
+  sheet.getRange(rowNum, threadIdx + 1).setValue(JSON.stringify(state.thread || []));
+  sheet.getRange(rowNum, taskIdx + 1).setValue(state.task ? JSON.stringify(state.task) : "");
+  sheet.getRange(rowNum, statusIdx + 1).setValue(state.status || "pending_rami");
+  sheet.getRange(rowNum, updatedIdx + 1).setValue(new Date().toISOString());
+}
+
+function workroomGetState_(sheet, rowNum, headers) {
+  const values = sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const threadIdx = headerIndex_(headers, ["threadJson", "היסטוריית בירור JSON"]);
+  const taskIdx = headerIndex_(headers, ["taskJson", "משימה JSON"]);
+  const statusIdx = headerIndex_(headers, ["workflowStatus", "סטטוס בירור", "status"]);
+  const legacyIdx = headerIndex_(headers, ["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"]);
+  let thread = threadIdx >= 0 ? workroomParseJson_(values[threadIdx], []) : [];
+  if (!Array.isArray(thread)) thread = [];
+  if (!thread.length && legacyIdx >= 0 && String(values[legacyIdx] || "").trim()) {
+    thread = [workroomMessage_("rami", String(values[legacyIdx]), "replied")];
+  }
+  const task = taskIdx >= 0 ? workroomParseJson_(values[taskIdx], null) : null;
+  const status = statusIdx >= 0 ? String(values[statusIdx] || "").trim() : "";
+  return { thread: thread, task: task && typeof task === "object" && !Array.isArray(task) ? task : null, status: status || "pending_rami" };
+}
+
+function workroomValidateReply_(text) {
+  const reply = String(text || "").trim();
+  if (reply.length < 3) throw new Error("המענה קצר מדי");
+  if (reply.length > 2000) throw new Error("המענה ארוך מדי");
+  if (/^ddw+$/i.test(reply) || /^(test|בדיקה בלבד|טסט)$/i.test(reply)) {
+    throw new Error("המענה נראה כמו טקסט בדיקה ולא נשמר");
+  }
+  return reply;
+}
+
+function handleWorkroomRamiReply_(body) {
+  const key = String(body.noteId || body.inquiryId || "").trim();
+  const reply = workroomValidateReply_(body.text);
+  if (!key) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getInquirySheet_();
+    const { headers, docIdx } = workroomColumns_(sheet);
+    const rowNum = workroomUniqueRowOrError_(sheet, key, headers, docIdx);
+    const state = workroomGetState_(sheet, rowNum, headers);
+    state.thread.push(workroomMessage_("rami", reply, "replied"));
+    workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: state.task, status: "pending_harel" });
+    const legacyIdx = ensureHeader_(sheet, headers, ["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"], "הסבר ומענה מראמי");
+    const prev = String(sheet.getRange(rowNum, legacyIdx + 1).getValue() || "").trim();
+    const stamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
+    sheet.getRange(rowNum, legacyIdx + 1).setValue(prev ? prev + "\\n[" + stamp + "] ראמי: " + reply : "[" + stamp + "] ראמי: " + reply);
+    SpreadsheetApp.flush();
+    return jsonResponse({ success: true, inquiryId: key, status: "pending_harel" });
+  } catch (err) {
+    return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleWorkroomHarelDecision_(body) {
+  const key = String(body.noteId || body.inquiryId || "").trim();
+  const decision = String(body.decision || "");
+  if (!key) return jsonResponse({ success: false, error: "חסר מזהה תעודה" });
+  if (["approve", "reject", "return"].indexOf(decision) < 0) return jsonResponse({ success: false, error: "החלטה לא תקינה" });
+  const reason = String(body.reason || "").trim();
+  if (decision === "return" && reason.length < 3) return jsonResponse({ success: false, error: "חובה למלא מה חסר בהחזרה לראמי" });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getInquirySheet_();
+    const { headers, docIdx } = workroomColumns_(sheet);
+    const rowNum = workroomUniqueRowOrError_(sheet, key, headers, docIdx);
+    const state = workroomGetState_(sheet, rowNum, headers);
+    const text = String(body.text || "").trim();
+    let status = "pending_harel";
+    let task = state.task;
+    if (decision === "approve") {
+      status = "approved";
+      if (task && task.status === "open") task.status = "done";
+      state.thread.push(workroomMessage_("harel", text || "התעודה אושרה.", "approved"));
+    } else if (decision === "reject") {
+      status = "rejected";
+      if (task && task.status === "open") task.status = "cancelled";
+      state.thread.push(workroomMessage_("harel", text || reason || "התעודה נדחתה.", "rejected"));
+    } else {
+      status = "returned_to_rami";
+      task = {
+        id: "task_" + new Date().getTime() + "_" + Math.random().toString(36).slice(2, 8),
+        inquiryId: key,
+        noteId: key,
+        status: "open",
+        assignedTo: "rami",
+        createdBy: "harel",
+        reason: reason,
+        dueAt: body.dueAt || new Date(Date.now() + 4 * 3600000).toISOString(),
+        nudgeEveryMin: Math.max(15, Number(body.nudgeEveryMin) || 60),
+        nudgeCount: 0,
+        canvasAnnotationUrl: String(body.annotationUrl || ""),
+        sourceFileId: String(body.fileId || ""),
+        createdAt: new Date().toISOString()
+      };
+      state.thread.push(workroomMessage_("harel", "הוחזר לראמי. מה חסר: " + reason + (text ? "\\n" + text : ""), "returned_to_rami"));
+    }
+    workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: task, status: status });
+    SpreadsheetApp.flush();
+    return jsonResponse({ success: true, inquiryId: key, status: status, task: task });
+  } catch (err) {
+    return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleWorkroomHarelAssign_(body) {
+  const reason = String(body.reason || "").trim();
+  if (reason.length < 3) return jsonResponse({ success: false, error: "חובה למלא מה חסר" });
+  body.decision = "return";
+  body.text = body.text || "נפתחה משימת המשך לראמי";
+  return handleWorkroomHarelDecision_(body);
+}
+
 function handleGetRamiInquiries() {
   const sheet = getInquirySheet_();
   const dataRange = sheet.getDataRange();
@@ -408,7 +718,7 @@ function handleGetRamiInquiries() {
   const idx = (names) => headerIndex_(headers, names);
   const docIdx = idx(["מס' תעודת משלוח", "מס׳ תעודה", "מספר תעודה", "מספר ת.מ", "docNumber", "noteId", "id"]);
   if (docIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה" });
-  const linkIdx = idx(["קישור חתום", "קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl"]);
+  const linkIdx = idx(["כתובת הקובץ (URL)", "driveFileId", "scanFileId", "fileId", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl", "קישור חתום", "קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ"]);
   const signedIdx = idx(["קישור חתום", "קישור PDF חתום", "קישור סריקה חתומה", "signedUrl", "signedLink"]);
   const inquiries = [];
   for (let r = 1; r < values.length; r++) {
@@ -438,7 +748,10 @@ function handleGetRamiInquiries() {
     const columnTLink = row.length > 19
       ? driveLinkFromCell_(row[19], formulas[r][19], richTextValues[r][19])
       : "";
-    const driveUrl = signedLink || headerDriveLink || columnKLink || columnTLink;
+    const columnLLink = row.length > 11
+      ? driveLinkFromCell_(row[11], formulas[r][11], richTextValues[r][11])
+      : "";
+    const driveUrl = headerDriveLink || signedLink || columnLLink || columnKLink || columnTLink;
     const fileId = extractDriveFileId_(driveUrl);
     inquiries.push({
       rowIndex: r + 1,
