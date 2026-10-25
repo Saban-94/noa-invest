@@ -141,6 +141,9 @@ function doPost(e) {
 }
 
 function handleGetNotes(params) {
+  const notesCacheKey = "notes:v1:" + String(params.sheetId || MASTER_SHEET_ID);
+  const cachedNotes = workroomCacheRead_(notesCacheKey);
+  if (cachedNotes) return jsonResponse({ success: true, notes: cachedNotes, cachedForSeconds: WORKROOM_CACHE_TTL_SECONDS });
   const ss = SpreadsheetApp.openById(params.sheetId || MASTER_SHEET_ID);
   const sheet = ss.getSheetByName(TAB_GALYA);
   if (!sheet) {
@@ -249,7 +252,8 @@ function handleGetNotes(params) {
     delete note._score;
     return note;
   });
-  return jsonResponse({ success: true, notes: dedupedNotes });
+  workroomCacheWrite_(notesCacheKey, dedupedNotes);
+  return jsonResponse({ success: true, notes: dedupedNotes, cachedForSeconds: WORKROOM_CACHE_TTL_SECONDS });
 }
 
 function handleGetFile(fileId) {
@@ -710,6 +714,15 @@ function invalidateWorkroomSheetCache_() {
     } catch (err) {}
   }
   cache.remove(baseKey + ":meta");
+  const notesKey = "notes:v1:" + MASTER_SHEET_ID;
+  const notesMeta = cache.get(notesKey + ":meta");
+  if (notesMeta) {
+    try {
+      const meta = JSON.parse(notesMeta);
+      for (let i = 0; i < Number(meta.chunks || 0); i++) cache.remove(notesKey + ":" + i);
+    } catch (err) {}
+  }
+  cache.remove(notesKey + ":meta");
 }
 
 function handleGetWorkroomInquiries_(params) {
