@@ -69,7 +69,6 @@ export const listIturanStopsFn = createServerFn({ method: "GET" }).handler(
   }> => {
     const data = await gasGet({ action: "getIturanStops" });
     const rawStops = Array.isArray(data.stops) ? data.stops : [];
-    // המרה מפורמט GAS (ISO start/end) ל-GpsStop של הדף
     const stops: GpsStop[] = rawStops.map((s: any) => {
       const start = String(s.start || s.arrive || "");
       const end = String(s.end || s.depart || "");
