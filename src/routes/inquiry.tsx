@@ -54,7 +54,8 @@ function InquiryBoard() {
   const q = useQuery({
     queryKey: ["workroom", "inquiry-board"],
     queryFn: () => listWorkroomInquiriesFn(),
-    refetchInterval: 45_000,
+    staleTime: 120_000,
+    refetchInterval: 120_000,
   });
 
   const all = q.data?.inquiries || [];
