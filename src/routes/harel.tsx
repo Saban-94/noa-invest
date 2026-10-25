@@ -34,7 +34,8 @@ function HarelDashboard() {
   const q = useQuery({
     queryKey: ["workroom", "harel"],
     queryFn: () => listWorkroomInquiriesFn(),
-    refetchInterval: 60_000,
+    staleTime: 120_000,
+    refetchInterval: 120_000,
   });
 
   const all = q.data?.inquiries || [];
