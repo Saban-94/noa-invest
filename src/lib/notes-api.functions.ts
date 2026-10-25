@@ -169,7 +169,7 @@ type ResolvedFile = { fileId?: string; viewUrl?: string; source?: string };
 function auditNoteFromSheet(n: SheetNote): DeliveryNote {
   const parseDeposit = (code: string): number | null => {
     const text = String(n.depositsText || "");
-    const match = text.match(new RegExp(`${code}\\\\D{0,25}(\\\\d+)`));
+    const match = text.match(new RegExp(code + "[^0-9]{0,25}([0-9]+)"));
     return match ? Number.parseInt(match[1], 10) : null;
   };
   const bales = parseDeposit("60002");
