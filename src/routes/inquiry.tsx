@@ -75,6 +75,7 @@ function Badge({ kind }: { kind: InquiryKind }) {
   );
 }
 
+
 function ScanPane({ fileId }: { fileId: string }) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["scan", fileId],
