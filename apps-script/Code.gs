@@ -280,6 +280,13 @@ function handleSubmitApproval(body) {
   const note = String(body.note || "").trim();
   if (!noteId) return jsonResponse({ success: false, error: "Missing noteId" });
   if (approver !== "rami" && approver !== "harel") return jsonResponse({ success: false, error: "approver לא תקין" });
+  const auditEvidence = body.auditEvidence && typeof body.auditEvidence === "object" && !Array.isArray(body.auditEvidence)
+    ? body.auditEvidence
+    : null;
+  if (!auditEvidence || Object.keys(auditEvidence).length === 0 ||
+      Object.values(auditEvidence).some(value => String(value || "").trim().length < 12)) {
+    return jsonResponse({ success: false, error: "האישור נחסם: חסרות אסמכתאות בדיקת לוגיסטיקה" });
+  }
 
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
   const sheet = ss.getSheetByName(TAB_GALYA);
@@ -293,6 +300,7 @@ function handleSubmitApproval(body) {
   const harelIdx = ensureHeader_(sheet, headers, ["אישור הראל"], "אישור הראל");
   const noteIdx = ensureHeader_(sheet, headers, ["הערת אישור"], "הערת אישור");
   const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
+  recordLogisticsAuditEvidence_(ss, noteId, approver, auditEvidence, nowStr);
 
   if (approver === "rami") {
     sheet.getRange(rowNum, ramiIdx + 1).setValue(nowStr);
@@ -308,6 +316,28 @@ function handleSubmitApproval(body) {
   SpreadsheetApp.flush();
   invalidateWorkroomSheetCache_();
   return jsonResponse({ success: true, noteId: noteId, approver: approver });
+}
+
+
+/**
+ * Append immutable evidence references for every audit finding before an approval is written.
+ * The application server independently recomputes the expected finding IDs from the live note.
+ */
+function recordLogisticsAuditEvidence_(ss, noteId, approver, auditEvidence, timestamp) {
+  const name = "בקרת_לוגיסטיקה";
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["תאריך", "מספר תעודה", "מאשר", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה"]);
+    sheet.setFrozenRows(1);
+  }
+  const rows = Object.entries(auditEvidence).map(([findingId, evidence]) => {
+    const safeEvidence = String(evidence || "").trim().slice(0, 2000);
+    return [timestamp, noteId, approver, String(findingId).slice(0, 200), safeEvidence];
+  });
+  if (!rows.length) throw new Error("לא התקבלו אסמכתאות לוגיסטיות");
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  SpreadsheetApp.flush();
 }
 
 function handleSaveSignedNote(body) {
