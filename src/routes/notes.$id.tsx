@@ -458,7 +458,7 @@ function Viewer() {
             <div className="rounded-2xl border border-dashed p-5 text-center">
               <p className="text-sm font-bold">לא נמצא תיק בירור מקושר לתעודה {n.id}</p>
               <p className="mt-1 text-xs text-muted-foreground">אפשר לפתוח את לוח המשימות של הראל כדי לאתר או ליצור תיק מקושר.</p>
-              <Button asChild size="sm" className="mt-3"><Link to="/harel">פתיחת לוח משימות</Link></Button>
+              <Button asChild size="sm" className="mt-3"><Link to="/inquiry/$id" params={{ id: relatedInquiry?.docNumber || n.id }}>פתיחת תיק הבירור והמשימה</Link></Button>
             </div>
           )}
         </section>
