@@ -54,6 +54,7 @@ function Viewer() {
   const [isApprovingHarel, setIsApprovingHarel] = useState(false);
   const [isOpeningTask, setIsOpeningTask] = useState(false);
   const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
+  const [auditLoaded, setAuditLoaded] = useState(false);
   const [showAllAuditFindings, setShowAllAuditFindings] = useState(false);
 
   useEffect(() => {
@@ -62,16 +63,19 @@ function Viewer() {
       setAuditEvidence(saved ? JSON.parse(saved) as Record<string, string> : {});
     } catch {
       setAuditEvidence({});
+    } finally {
+      setAuditLoaded(true);
     }
   }, [id]);
 
   useEffect(() => {
+    if (!auditLoaded) return;
     try {
       localStorage.setItem(`noa-logistics-audit:${id}`, JSON.stringify(auditEvidence));
     } catch {
       // Keep the gate active in memory if browser persistence is unavailable.
     }
-  }, [id, auditEvidence]);
+  }, [id, auditEvidence, auditLoaded]);
   const navigate = useNavigate();
 
   const workroomQuery = useQuery({
