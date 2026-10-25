@@ -187,9 +187,13 @@ function handleGetNotes(params) {
     const docNum = String(row[idxDocNum] || "").trim();
     if (!docNum || /^(ללא[-_ ]?מספר|לא[-_ ]?מספר|test|ddw)/i.test(docNum)) continue;
 
-    const headerLinkValue = idxLink >= 0
-      ? driveLinkFromCell_(row[idxLink], formulas[r][idxLink], richTextValues[r][idxLink])
-      : "";
+    const headerLinkValue = [
+      ["כתובת הקובץ (URL)", "driveFileId", "scanFileId", "fileId", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl"],
+      ["קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ"]
+    ].map(names => {
+      const i = headerIndex_(headers, names);
+      return i >= 0 ? driveLinkFromCell_(row[i], formulas[r][i], richTextValues[r][i]) : "";
+    }).find(Boolean) || "";
     const columnLLink = row.length > 11
       ? driveLinkFromCell_(row[11], formulas[r][11], richTextValues[r][11])
       : "";
@@ -776,9 +780,13 @@ function handleGetRamiInquiries() {
       }
       return "";
     };
-    const headerDriveLink = linkIdx >= 0
-      ? driveLinkFromCell_(row[linkIdx], formulas[r][linkIdx], richTextValues[r][linkIdx])
-      : "";
+    const headerDriveLink = [
+      ["כתובת הקובץ (URL)", "driveFileId", "scanFileId", "fileId", "מזהה קובץ Drive", "driveUrl", "driveLink", "fileUrl"],
+      ["קישור לתעודה", "קישור סריקה", "קישור לקובץ סריקה", "קישור קובץ Drive", "קישור דרייב", "קישור לקובץ"]
+    ].map(names => {
+      const i = idx(names);
+      return i >= 0 ? driveLinkFromCell_(row[i], formulas[r][i], richTextValues[r][i]) : "";
+    }).find(Boolean) || "";
     const signedLink = signedIdx >= 0
       ? driveLinkFromCell_(row[signedIdx], formulas[r][signedIdx], richTextValues[r][signedIdx])
       : "";
