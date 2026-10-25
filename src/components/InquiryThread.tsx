@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Bot, Crown, MessageSquare, Send, User } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const ROLE_UI: Record<MessageRole, { label: string; icon: typeof User; bubble: string }> = {
+const ROLE_UI: Record<MessageRole, { label: string; icon: LucideIcon; bubble: string }> = {
   system: { label: "מערכת", icon: MessageSquare, bubble: "border-border bg-muted/50" },
   ai: { label: "נועה AI", icon: Bot, bubble: "border-violet-500/20 bg-violet-500/5" },
   rami: { label: "ראמי", icon: User, bubble: "border-sky-500/20 bg-sky-500/5" },
