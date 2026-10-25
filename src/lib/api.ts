@@ -681,6 +681,7 @@ export async function approveStrict(
   noteId: string,
   approver: "rami" | "harel",
   note?: string,
+  auditEvidence?: Record<string, string>,
 ): Promise<void> {
-  await approvalFn({ data: { noteId, approver, note } });
+  await approvalFn({ data: { noteId, approver, note, auditEvidence } });
 }
