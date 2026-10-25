@@ -14,8 +14,10 @@ export type LogisticsFinding = {
 const normalize = (value: unknown) =>
   String(value ?? "").normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e]/g, "").trim();
 
-function extractSku(name: string): string | undefined {
-  // Prefer an explicit numeric SKU; never treat a guessed text match as an exact SKU.
+function extractSku(name: string, explicitSku?: string): string | undefined {
+  // A separate source-sheet SKU is authoritative; otherwise only accept an explicit numeric token.
+  const supplied = normalize(explicitSku);
+  if (/^\d{4,10}$/.test(supplied)) return supplied;
   return normalize(name).match(/(?:מק["״']?ט\s*)?(\d{5,8})/)?.[1];
 }
 
@@ -57,7 +59,7 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
   }
 
   items.forEach((item, index) => {
-    const sku = extractSku(item.name);
+    const sku = extractSku(item.name, item.sku);
     const title = sku ? `מק״ט ${sku}` : item.name || `שורה ${index + 1}`;
     const safeQty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : null;
     const safeOrdered = Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null;
