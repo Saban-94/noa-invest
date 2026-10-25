@@ -28,6 +28,14 @@ describe("logistics audit", () => {
     expect(findings.some((item) => item.id === "item:70001:transport-proof")).toBe(true);
   });
 
+  it("uses the source-sheet SKU even when the display name omits it", () => {
+    const findings = buildLogisticsFindings({
+      ...baseNote,
+      items: [{ name: "משטח סבן פקדון", sku: "60060", qty: 1, ordered: 1, weightKg: 25, unit: "משטח" }],
+    });
+    expect(findings.some((item) => item.id === "item:60060:sku")).toBe(false);
+  });
+
   it("blocks live records until source cross-check and transport verification are documented", () => {
     const findings = buildLogisticsFindings({ ...baseNote, live: true });
     expect(findings.some((item) => item.id === "source:live")).toBe(true);
