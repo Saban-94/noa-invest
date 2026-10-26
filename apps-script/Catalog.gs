@@ -11,8 +11,9 @@ function getCatalog_() {
   if (values.length < 2) throw new Error('הטאב "מילון_לוגיסטי" ריק');
 
   var headers = values[0].map(function (h) { return String(h || "").trim(); });
-  var required = ['מק"ט (SKU)', 'שם מוצר רשמי (קומקס)', 'קטגוריה לוגיסטית', 'יחידת מידה', 'סלנג ומילות מפתח לנרמול AI', 'סיווג וחישוב פקדונות', 'משקל יח\' (ק"ג)'];
+  var required = ['שם מוצר רשמי (קומקס)', 'קטגוריה לוגיסטית', 'יחידת מידה', 'סלנג ומילות מפתח לנרמול AI', 'סיווג וחישוב פקדונות', 'משקל יח\' (ק"ג)'];
   var missing = required.filter(function (h) { return headers.indexOf(h) === -1; });
+  if (headers.indexOf('מק״ט ראשי (SKU)') === -1 && headers.indexOf('מק"ט (SKU)') === -1) missing.unshift('מק״ט ראשי (SKU) או מק"ט (SKU)');
   if (missing.length) throw new Error("עמודות חסרות בקטלוג: " + missing.join(", "));
 
   var rows = [];
