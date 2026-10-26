@@ -83,7 +83,7 @@ function ChatScreen() {
   const [isLoadingBackend, setIsLoadingBackend] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [chatError, setChatError] = useState("");
-  const restoredHistory = useRef(false);
+  const [historyReady, setHistoryReady] = useState(false);
 
   // Live state from /api/backend?action=bootstrap
   const [liveData, setLiveData] = useState<{
@@ -169,7 +169,7 @@ function ChatScreen() {
                 truck,
                 truckType: d["סוג משאית"] || "לא זמין",
                 date: d["תאריך דיסקית"] || "לא זמין",
-                kmTotal: d['סה"כ ק"מ'] || "140",
+                kmTotal: d['סה"כ ק"מ'] || "לא זמין",
                 driveTime: d["זמן נסיעה"] || "לא זמין",
                 workTime: d["זמן עבודה"] || "לא זמין",
                 ptoTime: d["זמן מנוף"] || "לא זמין",
@@ -211,7 +211,7 @@ function ChatScreen() {
   }, []);
 
   useEffect(() => {
-    if (!restoredHistory.current) return;
+    if (!historyReady) return;
     try {
       localStorage.setItem("noa-chat-history-v1", JSON.stringify(messages.slice(-60)));
     } catch {
@@ -222,7 +222,7 @@ function ChatScreen() {
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, historyReady]);
 
   const handleResolveDiscrepancy = (id: string) => {
     setLiveData((prev) => ({
