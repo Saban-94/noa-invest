@@ -1,6 +1,6 @@
 /**
  * מוסיפים את הפונקציה לפרויקט Apps Script הקיים; לא מחליפים את Code.gs כולו.
- * doGet צריך לנתב action=getCatalog אל handleGetCatalog_ לאחר בדיקת API_TOKEN.
+ * doGet צריך לנתב action=getCatalog אל jsonResponse(getCatalog_()) לאחר בדיקת API_TOKEN.
  */
 function getCatalog_() {
   var ss = SpreadsheetApp.openById("1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw");
