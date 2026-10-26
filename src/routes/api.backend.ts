@@ -47,7 +47,7 @@ export function evaluateDiscrepancies(visits: VisitRecord[]) {
     truck: string;
     driver: string;
     address: string;
-    type: "pto_missing" | "reversed_window" | "time_gap" | "outlier_crane" | "missing_plate";
+    type: "pto_missing" | "reversed_window" | "time_gap" | "pto_time_gap" | "outlier_crane" | "missing_plate";
     severity: "alert" | "warning" | "nominal";
     title: string;
     description: string;
@@ -99,7 +99,38 @@ export function evaluateDiscrepancies(visits: VisitRecord[]) {
       }
     }
 
-    // חריגה 3: דגלי איכות
+    // חריגה 3: השוואת שעות פתיחה/סגירה של PTO מול חלון המנוף בכתב היד.
+    // סף 5 דקות מונע התרעות על עיגול דקות קטן; אין השוואה אם אחד המקורות חסר.
+    if (hasIturan && v.ptoOpenTime && v.ptoCloseTime && v.handwrittenCraneRaw) {
+      const written = String(v.handwrittenCraneRaw).match(/(\\d{1,2}:\\d{2})\\s*עד\\s*(?:שעה\\s*)?(\\d{1,2}:\\d{2})/);
+      const clockMin = (value: string) => {
+        const m = String(value || "").match(/(\\d{1,2}):(\\d{2})/);
+        return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+      };
+      const hwOpen = written ? clockMin(written[1]!) : null;
+      const hwClose = written ? clockMin(written[2]!) : null;
+      const ptoOpen = clockMin(v.ptoOpenTime);
+      const ptoClose = clockMin(v.ptoCloseTime);
+      if (hwOpen !== null && hwClose !== null && ptoOpen !== null && ptoClose !== null) {
+        const openGap = Math.abs(ptoOpen - hwOpen);
+        const closeGap = Math.abs(ptoClose - hwClose);
+        if (openGap > 5 || closeGap > 5) {
+          issues.push({
+            id: `disc-${v.visitKey}-pto-time`,
+            truck: v.truck,
+            driver: v.driver,
+            address: v.fullAddress,
+            type: "pto_time_gap",
+            severity: "warning",
+            title: "אי־התאמה בשעות פתיחת/סגירת מנוף",
+            description: `כתב יד: ${written![1]}–${written![2]} | איתוראן PTO: ${String(v.ptoOpenTime).match(/\\d{1,2}:\\d{2}/)?.[0] || "לא ידוע"}–${String(v.ptoCloseTime).match(/\\d{1,2}:\\d{2}/)?.[0] || "לא ידוע"} | פער פתיחה: ${openGap} דק׳, פער סגירה: ${closeGap} דק׳.`,
+            details: { handwrittenMin: hwMin, ptoOpenGapMin: openGap, ptoCloseGapMin: closeGap },
+          });
+        }
+      }
+    }
+
+    // חריגה 4: דגלי איכות
     for (const flag of v.qualityFlags ?? []) {
       if (flag.includes("הפוך")) {
         issues.push({
