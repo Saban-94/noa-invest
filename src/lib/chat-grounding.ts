@@ -1,6 +1,6 @@
 /**
  * P0 — עזרי grounding לצ׳אט נועה
- * סיוג שאלות, תוויות ראיה, בניית context מאומת בלבד
+ * סיווג שאלות, תוויות ראיה, בניית context מאומת בלבד
  */
 
 export type EvidenceLevel =
@@ -70,11 +70,11 @@ export function describeSources(meta: BackendMeta | null, fetchedAt: string | nu
     "סטטוס מקורות לפי תשובת השרת האחרונה:",
     `• תעודות משלוח: ${meta.notesSource ?? "לא ידוע"}${typeof meta.notesCount === "number" ? ` (${meta.notesCount} רשומות בטווח)` : ""}`,
     `• איתוראן / עצירות GPS בצינור הצ׳אט: ${meta.ituranSource ?? "לא ידוע"}${typeof meta.matchedStops === "number" ? ` · הצלבות: ${meta.matchedStops}` : ""}`,
-    `• ביקורים מחושבים: ${meta.visitsCount ?? "\u2014"}`,
+    `• ביקורים מחושבים: ${meta.visitsCount ?? "—"}`,
   ];
   if (meta.warning) lines.push(`• אזהרה: ${meta.warning}`);
   if (fetchedAt) lines.push(`• נמשך מהשרת ב: ${fetchedAt}`);
-  lines.push("מיקום GPS חי (קואורדינות + מזהה רכב + זמן עדכון) אינו זמין במסלול זה.");
+  lines.push("מיקום GPS חי (קואורדינטות + מזהה רכב + זמן עדכון) אינו זמין במסלול זה.");
   return lines.join("\n");
 }
 
@@ -144,10 +144,11 @@ export function formatNotesSummary(
   notes: Record<string, unknown>[],
   meta: BackendMeta | null,
   fetchedAt: string | null,
+  discrepancyCount?: number,
 ): string {
   if (!meta || meta.notesSource !== "live" || notes.length === 0) {
     return [
-      "אין בידי רשימת תעודות חיה ומאומת מהשרת לשאלה הזו.",
+      "אין בידי רשימת תעודות חיה ומאומתת מהשרת לשאלה הזו.",
       meta?.warning ? `פירוט: ${meta.warning}` : null,
       meta?.notesSource === "unavailable"
         ? "מקור התעודות: לא זמין."
@@ -160,16 +161,27 @@ export function formatNotesSummary(
       .join("\n");
   }
 
-  const lines = [
+  const lines: (string | null)[] = [
     `נמצאו ${notes.length} תעודות בטווח שנטען מהשרת (מקור: live).`,
     fetchedAt ? `זמן משיכה: ${fetchedAt}` : null,
     "דוגמאות (עד 8):",
     ...notes.slice(0, 8).map((n, i) => {
-      const id = String(n.id ?? n.docNumber ?? n["מספר תעודה"] ?? "\u2014");
-      const cust = String(n.customer ?? n.customerName ?? "\u2014");
+      const id = String(n.id ?? n.docNumber ?? n["מספר תעודה"] ?? "—");
+      const cust = String(n.customer ?? n.customerName ?? "—");
       const addr = String(n.siteAddress ?? n.address ?? "");
       return `${i + 1}. ת.מ. ${id} · ${cust}${addr ? ` · ${addr}` : ""}`;
     }),
   ];
-  return lines.filter(Boolean).join("\n");
+
+  if (typeof discrepancyCount === "number" && discrepancyCount > 0) {
+    lines.push(
+      "",
+      `זוהו ${discrepancyCount} חריגות בצינור השרת על הטווח הזה.`,
+      'לפירוט מלא כתבו: "הציגי חריגות מהשרת" — לא מוצג כאן פירוט כדי לא להציף את השיחה.',
+    );
+  } else if (typeof discrepancyCount === "number") {
+    lines.push("", "לא זוהו חריגות בצינור השרת על הטווח הזה.");
+  }
+
+  return lines.filter((x) => x !== null).join("\n");
 }

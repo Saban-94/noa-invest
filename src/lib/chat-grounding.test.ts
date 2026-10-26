@@ -5,6 +5,7 @@ import {
   evidenceFromMeta,
   gpsUnavailableMessage,
   buildNoaContext,
+  formatNotesSummary,
 } from "./chat-grounding";
 
 describe("chat-grounding P0", () => {
@@ -50,5 +51,17 @@ describe("chat-grounding P0", () => {
     expect(ctx.constraints.demoReportsForbidden).toBe(true);
     expect(ctx.constraints.noLiveGps).toBe(true);
     expect(ctx.notesSample[0].id).toBe("1");
+  });
+
+  it("notes summary mentions discrepancy count without listing them", () => {
+    const text = formatNotesSummary(
+      [{ id: "1", customer: "בדיקה" }],
+      { notesSource: "live", notesCount: 1, ituranSource: "none" },
+      "2026-10-26T00:00:00.000Z",
+      12,
+    );
+    expect(text).toMatch(/12 חריגות/);
+    expect(text).toMatch(/לא מוצג כאן פירוט/);
+    expect(text).not.toMatch(/אוסטושינסקי/);
   });
 });
