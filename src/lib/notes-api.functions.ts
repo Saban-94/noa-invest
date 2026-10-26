@@ -71,7 +71,7 @@ async function parseGas(res: Response, attemptedUrl: string): Promise<Record<str
   return data;
 }
 
-async function gasGet(params: Record<string, string>) {
+export async function gasGet(params: Record<string, string>) {
   const primaryUrl = gasUrl();
   const buildUrl = (baseUrl: string) => {
     const u = new URL(baseUrl);
