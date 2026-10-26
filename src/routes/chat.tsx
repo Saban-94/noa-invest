@@ -81,6 +81,7 @@ function ChatScreen() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
   const [activeTruck, setActiveTruck] = useState("");
   const [isLoadingBackend, setIsLoadingBackend] = useState(true);
+  const [backendStatus, setBackendStatus] = useState("טעינת נתונים טרם הסתיימה");
   const [isSending, setIsSending] = useState(false);
   const [chatError, setChatError] = useState("");
   const [historyReady, setHistoryReady] = useState(false);
@@ -127,6 +128,7 @@ function ChatScreen() {
         const res = await fetch("/api/backend?action=bootstrap");
         const json = await res.json();
         if (json.ok && json.data) {
+          setBackendStatus("התקבלה תשובת bootstrap מהשרת; נדרש לאמת מקורות ועדכניות");
           setLiveData({
             deliveryNotes: json.data.deliveryNotes || [],
             visits: json.data.visits || [],
@@ -182,8 +184,11 @@ function ChatScreen() {
             });
             setTruckSummaries(mappedSummaries);
           }
+        } else {
+          setBackendStatus("שגיאה: השרת לא החזיר נתוני bootstrap תקינים");
         }
       } catch (err) {
+        setBackendStatus("שגיאה בטעינת bootstrap; לא ניתן לאמת נתונים ממקורות");
         console.warn("Bootstrap fetch error:", err);
       } finally {
         setIsLoadingBackend(false);
@@ -261,7 +266,7 @@ function ChatScreen() {
     if (!textToSend) setInput("");
 
     const context = JSON.stringify({
-      sourceStatus: isLoadingBackend ? "טעינת נתונים עדיין מתבצעת" : "מצב טעינה הסתיים",
+      sourceStatus: isLoadingBackend ? "טעינת נתונים עדיין מתבצעת" : backendStatus,
       deliveryNotes: liveData.deliveryNotes,
       visits: liveData.visits,
       discs: liveData.discs,
