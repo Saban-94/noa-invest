@@ -9,7 +9,7 @@ import { buildLogisticsFindings } from "@/lib/logistics-audit";
  */
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbx9AaPx0do-4UlRwPgnr4oUYrCaMVt_YLXY-nuMK0RTHZJNLZlsXeh12tDw69eqg00Haw/exec";
+  "https://script.google.com/macros/s/AKfycbwg8KWzcw9QSls0q-892lj2KW1_S1Y9fiEsVGpjObgEqyIjun83pT592wUdcVCN101Agg/exec";
 
 let activeGasUrl: string | null = null;
 
@@ -20,7 +20,7 @@ function gasUrl(): string {
   if (
     envUrl &&
     (envUrl.includes("TwXhw") ||
-      envUrl.includes("AKfycbx9AaPx0do-4UlRwPgnr4oUYrCaMVt_YLXY-nuMK0RTHZJNLZlsXeh12tDw69eqg00Haw"))
+      envUrl.includes("AKfycbwg8KWzcw9QSls0q-892lj2KW1_S1Y9fiEsVGpjObgEqyIjun83pT592wUdcVCN101Agg"))
   ) {
     return DEFAULT_GAS_URL;
   }
