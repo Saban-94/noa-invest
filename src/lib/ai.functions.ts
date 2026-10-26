@@ -1,129 +1,131 @@
 /**
  * ai.functions.ts — שירותי AI וחיבור קונטקסט לצ׳אט נועה (כולל אירועי PTO/מנוף)
  */
+import { createServerFn } from "@tanstack/react-start";
+import { asksCraneOrPto, fetchIturanPtoLive } from "./ituran-live";
 
-export type PtoContextEvent = {
-  truck: string;
-  driver?: string;
-  eventType: string;
-  eventTimeIso: string;
-  address: string;
-  ingestedAt: string;
-};
+type Msg = { role: "user" | "assistant"; content: string };
 
-export type PtoContextResponse = {
-  success: boolean;
-  source: string;
-  events: PtoContextEvent[];
-  meta: {
-    count: number;
-    truckFilter?: string | null;
-    since: string;
-    fetchedAt: string;
-    warning?: string;
-  };
-  error?: string;
-};
+async function callGeminiOrFallback(instructions: string, input: Msg[]): Promise<string> {
+  const geminiKey =
+    process.env["GEMINI_API_KEY"] ||
+    process.env["GEMINI_API_KEYS"]?.split(",")[0]?.trim();
 
-// הגדרת כתובת ה־GAS וטוקן האבטחה (ניתן לקרוא מ־ENV או להגדיר קבוע)
-const ITURAN_GAS_URL =
-  import.meta.env.VITE_ITURAN_GAS_URL ||
-  "https://script.google.com/macros/s/AKfycbx9NpLEnJ5904JqaeeuuR8NslN66F4r6IYddyvr-Q7AeGx5HFHfSAjW8CoP2oT6NoQrvA/exec";
+  if (!geminiKey) {
+    throw new Error("שירות הבינה אינו מוגדר בשרת: חסר GEMINI_API_KEY");
+  }
 
-const ITURAN_TOKEN = import.meta.env.VITE_ITURAN_TOKEN || "saban-ituran-secret-2026";
+  const model = process.env["GEMINI_MODELS"]?.split(",")[0]?.trim() || "gemini-2.5-flash";
+  const contents = input.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
 
-/**
- * זיהוי האם השאלה עוסקת בפתיחת מנוף או אירועי PTO
- */
-export function asksCraneOrPto(query: string): boolean {
-  const q = String(query || "").toLowerCase();
-  const keywords = [
-    "מנוף",
-    "pto",
-    "פתיחת",
-    "סגירת",
-    "חכמת",
-    "עלי",
-    "615",
-    "651",
-    "הרמת סחורה",
-    "זמני מנוף",
-  ];
-  return keywords.some((kw) => q.includes(kw));
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: instructions }] },
+          contents,
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1200 },
+        }),
+      },
+    );
+  } catch {
+    throw new Error("שירות הבינה אינו זמין כרגע; לא נוצר מענה חלופי");
+  }
+
+  if (!res.ok) {
+    throw new Error(`שירות הבינה החזיר שגיאה (${res.status}); לא נוצר מענה חלופי`);
+  }
+
+  const data = await res.json();
+  const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (typeof responseText !== "string" || !responseText.trim()) {
+    throw new Error("שירות הבינה לא החזיר תשובה תקינה");
+  }
+  return responseText.trim();
 }
 
 /**
- * שליפת אירועי PTO והקשר משרת ה־GAS
+ * שליפת אירועי PTO מה־GAS (איתוראן_PTO).
+ * מקור: מאגר אירועים — לא מיקום GPS חי.
  */
-export async function fetchIturanPtoContext(truckFilter?: string): Promise<PtoContextResponse> {
-  try {
-    let url = `${ITURAN_GAS_URL}?action=getIturanPto&token=${encodeURIComponent(ITURAN_TOKEN)}`;
-    if (truckFilter) {
-      url += `&truck=${encodeURIComponent(truckFilter)}`;
-    }
+async function fetchIturanPtoContext(question: string): Promise<string> {
+  const token = process.env["ITURAN_TOKEN"] || "saban-ituran-secret-2026";
+  const truckMatch = question.match(/\d{3}-\d{2}-\d{3}/);
+  const truck = truckMatch?.[0] ?? "615-41-002";
 
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
+  try {
+    const data = await fetchIturanPtoLive(token, truck);
+    const events = Array.isArray(data.pto) ? data.pto : [];
+
+    return JSON.stringify({
+      ituranPto: {
+        available: data.success === true && events.length > 0,
+        truck,
+        evidenceLabelHe: events.length > 0 ? "נמצא במאגר" : "לא זמין / נדרש אימות",
+        source: "ituran_pto_sheet",
+        fetchedAt: data.at ?? new Date().toISOString(),
+        dataType: "pto_events_not_live_gps",
+        events: events.slice(0, 20),
       },
     });
+  } catch (err) {
+    return JSON.stringify({
+      ituranPto: {
+        available: false,
+        truck,
+        error: err instanceof Error ? err.message : String(err),
+        evidenceLabelHe: "לא זמין / נדרש אימות",
+      },
+    });
+  }
+}
 
-    if (!res.ok) {
-      throw new Error(`שגיאת תקשורת מול שרת האיתוראן: ${res.status}`);
+export const askNoa = createServerFn({ method: "POST" })
+  .validator((d: { messages: Msg[]; context: string }) => {
+    if (!Array.isArray(d.messages) || d.messages.length > 40) throw new Error("bad input");
+    return {
+      messages: d.messages
+        .slice(-20)
+        .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) })),
+      context: String(d.context).slice(0, 12000),
+    };
+  })
+  .handler(async ({ data }) => {
+    while (data.messages[0]?.role === "assistant") data.messages.shift();
+    const latestQuestion = [...data.messages].reverse().find((m) => m.role === "user")?.content ?? "";
+
+    const asksCurrentGps =
+      /(?:מיקום|איפה|היכן).{0,45}(?:משאית|רכב).{0,45}(?:כרגע|עכשיו|נוכחי|gps|איתוראן)?|(?:gps|איתוראן).{0,45}(?:מיקום|משאית|כרגע|עכשיו)|(?:משאית|רכב).{0,45}(?:מיקום|gps).{0,45}(?:כרגע|עכשיו)/i.test(latestQuestion);
+    if (asksCurrentGps) {
+      return { text: "אין לי כרגע מיקום GPS חי ומאומת של המשאית. ההקשר שמועבר אליי אינו כולל נתון מיקום חי עם מזהה רכב וזמן עדכון, ולכן איני יכולה לקבוע היכן המשאית נמצאת או לאשר שאיתוראן מחובר." };
     }
 
-    const data = await res.json();
-    return data as PtoContextResponse;
-  } catch (err: any) {
-    console.error("fetchIturanPtoContext error:", err);
-    return {
-      success: false,
-      source: "ituran_pto_sheet",
-      events: [],
-      meta: {
-        count: 0,
-        since: new Date().toISOString(),
-        fetchedAt: new Date().toISOString(),
-        warning: err?.message || String(err),
-      },
-      error: err?.message || String(err),
-    };
-  }
-}
+    let ituranPtoContext = "";
+    if (asksCraneOrPto(latestQuestion)) {
+      ituranPtoContext = await fetchIturanPtoContext(latestQuestion);
+    }
 
-/**
- * הזרקת אירועי ה־PTO להקשר השיחה של נועה AI עם תוויות אינדיקציה ברורות
- */
-export async function injectPtoContextToPrompt(userQuery: string): Promise<{ contextText: string; fetchedAt: string }> {
-  if (!asksCraneOrPto(userQuery)) {
-    return { contextText: "", fetchedAt: new Date().toISOString() };
-  }
+    const instructions = `את נועה, עוזרת לוגיסטית של ח. סבן. עני בעברית, בקצרה ובמקצועיות.
+כללי אמינות מחייבים:
+- השתמשי רק עובדות שמופיעות במפורש בהקשר הנתונים (JSON) ובהודעות השיחה.
+- אין להמציא נהגים, מספרי רכב, תעודות, כמויות, כתובות, זמני GPS/PTO, חתימות, אישורים, סנכרון או פעולות שבוצעו.
+- בשאלות על מיקום נוכחי, GPS או איתוראן, נדרש נתון חי עם מזהה רכב וזמן עדכון. אל תסיקי מיקום מהיסטוריית ביקורים או מתיאור המערכת.
+- אם constraints.noLiveGps=true או notesSource אינו live — אמרי במפורש שאין נתון מאומת; אל תשלימי מזיכרון מודל.
+- בשאלות מנוף/PTO השתמשי רק באירועים שמופיעים ב־ituranPto.events. צייני שמדובר באירועי PTO מהמאגר, ולא במיקום GPS חי.
+- אם ituranPto.available=false אין להמציא אירועים; עני שלא נמצאו אירועי מנוף במאגר או שהמקור אינו זמין.
+- צייני בראש התשובה בקצרה את רמת הראיה לפי evidenceLabelHe בהקשר, כשהמידע תפעולי.
+הקשר שהועבר בפועל מהיישום:
+${data.context}
 
-  // זיהוי משאית מתוך השאלה (למשל 615 או 651)
-  let truckQuery: string | undefined = undefined;
-  if (userQuery.includes("615")) truckQuery = "615-41-002";
-  else if (userQuery.includes("651")) truckQuery = "651-51-701";
+נתוני איתוראן PTO שנשלפו עבור השאלה הנוכחית:
+${ituranPtoContext}`;
 
-  const result = await fetchIturanPtoContext(truckQuery);
-  const fetchedAt = result.meta?.fetchedAt || new Date().toISOString();
-
-  if (!result.success || !result.events || result.events.length === 0) {
-    return {
-      contextText: `\n[מידע מערכת - נמצא במאגר | fetchedAt: ${fetchedAt}]: לא נמצאו אירועי PTO (פתיחת מנוף) רשומים במאגר לתקופה האחרונה.`,
-      fetchedAt,
-    };
-  }
-
-  let snippet = `\n[מידע מערכת - נמצא במאגר | fetchedAt: ${fetchedAt}]:\n`;
-  snippet += `להלן אירועי פתיחה/סגירת מנוף (PTO) מתוך טאב איתוראן_PTO בגיליון:\n`;
-
-  result.events.slice(0, 8).forEach((ev, idx) => {
-    const eventName = ev.eventType === "pto_open" ? "פתיחת מנוף" : ev.eventType === "pto_close" ? "סגירת מנוף" : ev.eventType;
-    snippet += `- אירוע ${idx + 1}: משאית ${ev.truck} | נהג: ${ev.driver || "לא צוין"} | ${eventName} בשעה ${ev.eventTimeIso} | כתובת: ${ev.address || "לא צוינה"}\n`;
+    return { text: await callGeminiOrFallback(instructions, data.messages) };
   });
-
-  snippet += `\nהערה מחייבת: מידע זה מבוסס על התראות PTO במאגר (ולא מעקב GPS חי רציף). שמור על סירוב לבקשות GPS חי.`;
-
-  return { contextText: snippet, fetchedAt };
-}
