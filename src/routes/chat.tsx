@@ -303,6 +303,28 @@ function ChatScreen() {
       return;
     }
 
+    const hasVerifiedContext =
+      (liveData.meta?.notesSource === "live" &&
+        (liveData.deliveryNotes.length > 0 || liveData.discrepancies.length > 0)) ||
+      (Boolean(liveData.meta?.ituranSource) &&
+        liveData.meta?.ituranSource !== "none" &&
+        liveData.meta?.ituranSource !== "sample" &&
+        liveData.visits.length > 0);
+
+    if (!hasVerifiedContext) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `noa-${Date.now()}`,
+          sender: "noa",
+          text: "אין כרגע נתונים תפעוליים ממקור מאומת שרלוונטיים למענה. לא אפעיל מודל ליצירת דוח ללא נתוני מקור, ולא אציג נתוני דוגמה.",
+          time: now(),
+          statusTag: EVIDENCE_LABEL_HE.unavailable,
+        },
+      ]);
+      return;
+    }
+
     try {
       const context = buildNoaContext({
         meta: liveData.meta,
