@@ -206,7 +206,7 @@ function ChatScreen() {
     } catch {
       setChatError("לא ניתן לשחזר היסטוריה מקומית; אפשר להמשיך בשיחה חדשה.");
     } finally {
-      restoredHistory.current = true;
+      setHistoryReady(true);
     }
   }, []);
 
