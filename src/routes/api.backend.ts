@@ -5,6 +5,7 @@ import {
   SAMPLE_ITURAN_ROWS,
 } from "@/lib/smart-dispatch/fixtures";
 import { processIturanRows } from "@/lib/smart-dispatch/ituran-parser";
+import { fetchIturanPto } from "@/lib/ituran-pto";
 import {
   deduplicateAndFilterDeliveryNotes,
   groupNotesIntoVisits,
@@ -253,6 +254,9 @@ async function buildPipeline(opts: { demo: boolean; date: string }) {
   let notesSource: "live" | "sample" | "unavailable";
   let warning: string | undefined;
 
+  // בדיקת מקור PTO במקביל לטעינת התעודות (מגבלת זמן קצרה כדי לא לעכב את ה־bootstrap)
+  const ptoProbe = opts.demo ? null : fetchIturanPto({}, { timeoutMs: 6_000 });
+
   if (opts.demo) {
     notes = [...SAMPLE_GALYA_NOTES];
     notesSource = "sample";
@@ -269,6 +273,21 @@ async function buildPipeline(opts: { demo: boolean; date: string }) {
     : cleanNotes;
 
   const ituran = loadIturanStops(opts.demo);
+  const pto = ptoProbe ? await ptoProbe : null;
+  const ptoMeta = !pto
+    ? { ituranPtoSource: "none" as const }
+    : pto.ok
+      ? {
+          ituranPtoSource: pto.events.length > 0 ? ("live" as const) : ("empty" as const),
+          ituranPtoCount: pto.events.length,
+          ituranPtoFetchedAt: pto.fetchedAt,
+        }
+      : pto.reason === "missing_server_config"
+        ? { ituranPtoSource: "not_configured" as const }
+        : {
+            ituranPtoSource: "error" as const,
+            ituranPtoError: `${pto.reason}${pto.detail ? `: ${pto.detail}` : ""}`,
+          };
   const grouped = groupNotesIntoVisits(scoped);
   const cross = matchVisitsWithIturanStops(grouped, ituran.stops);
   const visits = cross.matchedVisits;
@@ -284,6 +303,7 @@ async function buildPipeline(opts: { demo: boolean; date: string }) {
       duplicateNotes: duplicateIssuesCount,
       visitsCount: visits.length,
       ituranSource: ituran.source,
+      ...ptoMeta,
       matchedStops: cross.matchedStopsCount,
       unmatchedStops: cross.unmatchedStopsCount,
       date: opts.date || null,

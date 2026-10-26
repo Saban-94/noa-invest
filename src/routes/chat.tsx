@@ -226,7 +226,7 @@ function ChatScreen() {
 
     const q = text.trim();
 
-    if (asksCurrentGps(q)) {
+    if (asksCurrentGps(q) && !/מנוף|pto/i.test(q)) {
       setMessages((prev) => [
         ...prev,
         {
@@ -345,7 +345,7 @@ function ChatScreen() {
           sender: "noa",
           text: result.text,
           time: now(),
-          statusTag: EVIDENCE_LABEL_HE[evidenceFromMeta(liveData.meta)],
+          statusTag: result.evidenceLabelHe ?? EVIDENCE_LABEL_HE[evidenceFromMeta(liveData.meta)],
         },
       ]);
     } catch (err) {

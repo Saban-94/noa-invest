@@ -20,6 +20,11 @@ export type BackendMeta = {
   date?: string | null;
   warning?: string;
   duplicateNotes?: number;
+  /** מקור אירועי מנוף (PTO) מגיליון איתוראן_PTO */
+  ituranPtoSource?: "live" | "empty" | "not_configured" | "error" | "none" | string;
+  ituranPtoCount?: number;
+  ituranPtoFetchedAt?: string;
+  ituranPtoError?: string;
 };
 
 export const EVIDENCE_LABEL_HE: Record<EvidenceLevel, string> = {
@@ -62,6 +67,22 @@ export function gpsUnavailableMessage(): string {
   return "אין לי כרגע מיקום GPS חי ומאומת של המשאית. מסך הצ׳אט אינו מקבל נתוני מיקום חיים עם מזהה רכב וזמן עדכון, ולכן איני יכולה לקבוע היכן המשאית נמצאת או לאשר שאיתוראן מחובר.";
 }
 
+function describePtoSource(meta: BackendMeta): string {
+  const base = "• אירועי מנוף (PTO) מאיתוראן_PTO";
+  switch (meta.ituranPtoSource) {
+    case "live":
+      return `${base}: live (${meta.ituranPtoCount ?? 0} אירועים${meta.ituranPtoFetchedAt ? ` · נשלף ${meta.ituranPtoFetchedAt}` : ""})`;
+    case "empty":
+      return `${base}: מחובר · 0 אירועים`;
+    case "not_configured":
+      return `${base}: לא מוגדר בשרת`;
+    case "error":
+      return `${base}: שגיאה${meta.ituranPtoError ? ` (${meta.ituranPtoError})` : ""}`;
+    default:
+      return `${base}: ${meta.ituranPtoSource}`;
+  }
+}
+
 export function describeSources(meta: BackendMeta | null, fetchedAt: string | null): string {
   if (!meta) {
     return "אין עדיין דיווח מאומת מהשרת על מקורות הנתונים. הצגת מסך אינה מוכיחה חיבור למערכת חיצונית. בפרט, אין מיקום GPS חי מאומת.";
@@ -72,6 +93,7 @@ export function describeSources(meta: BackendMeta | null, fetchedAt: string | nu
     `• איתוראן / עצירות GPS בצינור הצ׳אט: ${meta.ituranSource ?? "לא ידוע"}${typeof meta.matchedStops === "number" ? ` · הצלבות: ${meta.matchedStops}` : ""}`,
     `• ביקורים מחושבים: ${meta.visitsCount ?? "\u2014"}`,
   ];
+  if (meta.ituranPtoSource) lines.splice(3, 0, describePtoSource(meta));
   if (meta.warning) lines.push(`• אזהרה: ${meta.warning}`);
   if (fetchedAt) lines.push(`• נמשך מהשרת ב: ${fetchedAt}`);
   lines.push("מיקום GPS חי (קואורדינות + מזהה רכב + זמן עדכון) אינו זמין במסלול זה.");
