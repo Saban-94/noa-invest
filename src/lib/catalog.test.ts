@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildCatalog, expectedDeposits, orderWeight } from "./catalog";
 
 const H = {
-  sku: 'מק"ט (SKU)', name: "שם מוצר רשמי (קומקס)", cat: "קטגוריה לוגיסטית",
+  sku: "מק״ט ראשי (SKU)", name: "שם מוצר רשמי (קומקס)", cat: "קטגוריה לוגיסטית",
   unit: "יחידת מידה", dep: "סיווג וחישוב פקדונות", w: "משקל יח' (ק\"ג)",
   ws: "סטטוס משקל", ds: "סיווג פקדון מאומת",
 };
