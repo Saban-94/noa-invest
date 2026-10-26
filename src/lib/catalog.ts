@@ -33,7 +33,8 @@ export const DEPOSIT_SKU: Record<DepositKind, string> = {
 };
 
 const COL = {
-  sku: 'מק"ט (SKU)',
+  sku: "מק״ט ראשי (SKU)",
+  legacySku: 'מק"ט (SKU)',
   name: "שם מוצר רשמי (קומקס)",
   category: "קטגוריה לוגיסטית",
   unit: "יחידת מידה",
@@ -46,6 +47,7 @@ const COL = {
 } as const;
 
 const s = (v: unknown) => String(v ?? "").trim();
+const rowSku = (row: RawCatalogRow) => s(row[COL.sku]) || s(row[COL.legacySku]);
 const truthyStatus = (v: unknown) => ["מאומת", "verified", "כן", "true", "1"].includes(s(v).toLowerCase());
 
 function parseDeposit(raw: string): { kind: DepositKind | null; perPallet: number | null; issue?: string } {
@@ -75,7 +77,7 @@ function buildOne(row: RawCatalogRow, hasWeightStatusColumn: boolean, hasDeposit
   const rawDeposit = s(row[COL.deposit]);
   const dep = parseDeposit(rawDeposit);
   const category = s(row[COL.category]);
-  const sku = s(row[COL.sku]);
+  const sku = rowSku(row);
   const isDepositSku = category.includes("מק״ט פקדון") || Object.values(DEPOSIT_SKU).includes(sku);
   const wRaw = s(row[COL.weight]);
   const w = Number(wRaw.replace(/,/g, ""));
@@ -120,12 +122,11 @@ export function buildCatalog(rows: RawCatalogRow[]): Catalog {
   const hasDepositStatusColumn = rows.some((r) => Object.prototype.hasOwnProperty.call(r, COL.depositStatus));
 
   for (const row of rows) {
-    const originalSku = s(row[COL.sku]);
-    const primarySku = s(row[COL.primarySku]);
-    const sku = primarySku || originalSku;
+    const originalSku = rowSku(row);
+    const separatePrimarySku = s(row[COL.primarySku]);
+    const sku = separatePrimarySku || originalSku;
     if (!sku) continue;
     const it = buildOne({ ...row, [COL.sku]: sku }, hasWeightStatusColumn, hasDepositStatusColumn);
-    if (!primarySku && originalSku !== sku) it.issues.push("מק״ט ראשי לא מוגדר");
     const prev = items.get(sku);
     if (!prev) {
       items.set(sku, it);
@@ -163,7 +164,6 @@ export function expectedDeposits(lines: OrderLine[], cat: Catalog): DepositCheck
   const add = (k: string, n: number) => (required[k] = (required[k] ?? 0) + n);
 
   for (const l of lines) {
-    // שורות הפקדון עצמן אינן נדרשות לפקדון נוסף.
     if (Object.values(DEPOSIT_SKU).includes(l.sku)) continue;
     const it = cat.items.get(l.sku);
     if (!it) { unresolved.push({ sku: l.sku, reason: "מק״ט לא בקטלוג" }); continue; }
