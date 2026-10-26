@@ -59,7 +59,7 @@ function doGet(e) {
     }
 
     if (action === "getCatalog") {
-      return handleGetCatalog_();
+      return jsonResponse(getCatalog_());
     }
 
     if (action === "getRamiInquiries") {
@@ -85,35 +85,6 @@ function doGet(e) {
  * { action: "saveSignedNote", token, noteId, customer, signedBy, statusNote, signedScanDataUrl }
  * { action: "submitApproval", token, noteId, approver, note }
  */
-/**
- * מחזיר את טאב המילון הלוגיסטי עם מספרי שורות מקוריים.
- * הקריאה מוגנת באותו API_TOKEN כמו יתר פעולות הגיליון.
- */
-function handleGetCatalog_() {
-  var ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
-  var sh = ss.getSheetByName("מילון_לוגיסטי");
-  if (!sh) {
-    return jsonResponse({ success: false, error: 'הטאב "מילון_לוגיסטי" לא נמצא' });
-  }
-  var values = sh.getDataRange().getDisplayValues();
-  if (values.length < 2) {
-    return jsonResponse({ success: false, error: 'הטאב "מילון_לוגיסטי" ריק' });
-  }
-  var headers = values[0].map(function (h) { return String(h || "").trim(); });
-  var required = ['מק"ט (SKU)', 'שם מוצר רשמי (קומקס)', 'קטגוריה לוגיסטית', 'יחידת מידה', 'סלנג ומילות מפתח לנרמול AI', 'סיווג וחישוב פקדונות', 'משקל יח\' (ק"ג)'];
-  var missing = required.filter(function (h) { return headers.indexOf(h) === -1; });
-  if (missing.length) {
-    return jsonResponse({ success: false, error: "עמודות חסרות בקטלוג: " + missing.join(", ") });
-  }
-  var rows = [];
-  for (var i = 1; i < values.length; i++) {
-    var row = { _row: i + 1 };
-    for (var c = 0; c < headers.length; c++) row[headers[c]] = values[i][c];
-    rows.push(row);
-  }
-  return jsonResponse({ success: true, rows: rows, fetchedAt: new Date().toISOString(), totalRows: rows.length });
-}
-
 function doPost(e) {
   try {
     let body = {};
