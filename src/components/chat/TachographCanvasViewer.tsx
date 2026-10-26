@@ -35,12 +35,12 @@ interface TachographCanvasViewerProps {
 }
 
 export function TachographCanvasViewer({
-  imageUrl = tachographDiscImg,
-  driver = "חכמת גאבר",
-  truck = "615-41-002",
-  date = "15/10/2026",
-  kmTotal = "140",
-  ptoHours = "02:15",
+  imageUrl,
+  driver = "לא זמין",
+  truck = "לא זמין",
+  date = "לא זמין",
+  kmTotal = "לא זמין",
+  ptoHours = "לא זמין",
   stops = [],
   height = 360,
   compact = false,
@@ -66,15 +66,20 @@ export function TachographCanvasViewer({
 
   // Load image
   useEffect(() => {
+    setImageLoaded(false);
+    imgRef.current = null;
+    const isUnbuiltSourcePath = Boolean(imageUrl && /(?:^|\/)src\/assets\//i.test(imageUrl));
+    const source = !imageUrl || isUnbuiltSourcePath ? tachographDiscImg : imageUrl;
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = imageUrl || tachographDiscImg;
+    img.src = source;
     img.onload = () => {
       imgRef.current = img;
       setImageLoaded(true);
     };
     img.onerror = () => {
-      // Fallback to local high-res disc scan
+      // Never retry the same missing path; use the bundled asset as a fallback.
+      if (source === tachographDiscImg) return;
       const fallback = new Image();
       fallback.src = tachographDiscImg;
       fallback.onload = () => {
