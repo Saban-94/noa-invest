@@ -11,9 +11,9 @@ import { SAMPLE_STOPS as DEFAULT_GPS_STOPS, type GpsStop } from "./ituran";
 import { listNotesFn, approvalFn, saveSignedNoteFn, type SheetNote } from "./notes-api.functions";
 
 export const API_BASE =
-  "https://script.google.com/macros/s/AKfycbx9AaPx0do-4UlRwPgnr4oUYrCaMVt_YLXY-nuMK0RTHZJNLZlsXeh12tDw69eqg00Haw/exec";
+  "https://script.google.com/macros/s/AKfycbwg8KWzcw9QSls0q-892lj2KW1_S1Y9fiEsVGpjObgEqyIjun83pT592wUdcVCN101Agg/exec";
 
-export const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
+export const MASTER_SHEET_ID = "AKfycbwg8KWzcw9QSls0q-892lj2KW1_S1Y9fiEsVGpjObgEqyIjun83pT592wUdcVCN101Agg";
 
 const CACHE_KEY_NOTES = "saban-live-notes-v4";
 const CACHE_KEY_ORDERS = "saban-live-orders-v4";
