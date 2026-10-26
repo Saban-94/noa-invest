@@ -5,6 +5,7 @@ import {
   SAMPLE_ITURAN_ROWS,
 } from "@/lib/smart-dispatch/fixtures";
 import { processIturanRows } from "@/lib/smart-dispatch/ituran-parser";
+import { loadLiveIturanFromGas } from "@/lib/ituran";
 import {
   deduplicateAndFilterDeliveryNotes,
   groupNotesIntoVisits,
@@ -194,9 +195,16 @@ async function loadLiveNotes(): Promise<NotesResult> {
  * עצירות איתוראן. עדיין אין מקור חי שנשמר בין בקשות (שרת serverless),
  * לכן מחזירים ריק. דוגמה רק במצב demo.
  */
-function loadIturanStops(demo: boolean): { source: "sample" | "none"; stops: IturanStop[] } {
-  if (!demo) return { source: "none", stops: [] };
-  return { source: "sample", stops: processIturanRows(SAMPLE_ITURAN_ROWS).stops };
+async function loadIturanStops(demo: boolean): Promise<{ source: "sample" | "none" | "live"; stops: IturanStop[]; error?: string }> {
+  if (demo) return { source: "sample", stops: processIturanRows(SAMPLE_ITURAN_ROWS).stops };
+
+  let token: string;
+  try {
+    token = getApiToken();
+  } catch (error) {
+    return { source: "none", stops: [], error: error instanceof Error ? error.message : String(error) };
+  }
+  return loadLiveIturanFromGas({ gasUrl: getGasUrl(), token });
 }
 
 const SAMPLE_DISCS = [
@@ -268,7 +276,7 @@ async function buildPipeline(opts: { demo: boolean; date: string }) {
     ? cleanNotes.filter((n) => normalizeDate(n.docDate) === opts.date)
     : cleanNotes;
 
-  const ituran = loadIturanStops(opts.demo);
+  const ituran = await loadIturanStops(opts.demo);
   const grouped = groupNotesIntoVisits(scoped);
   const cross = matchVisitsWithIturanStops(grouped, ituran.stops);
   const visits = cross.matchedVisits;
@@ -284,6 +292,7 @@ async function buildPipeline(opts: { demo: boolean; date: string }) {
       duplicateNotes: duplicateIssuesCount,
       visitsCount: visits.length,
       ituranSource: ituran.source,
+      ...(ituran.error ? { ituranError: ituran.error } : {}),
       matchedStops: cross.matchedStopsCount,
       unmatchedStops: cross.unmatchedStopsCount,
       date: opts.date || null,
