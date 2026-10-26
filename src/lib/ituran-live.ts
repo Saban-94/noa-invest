@@ -184,3 +184,23 @@ function formatIl(iso: string): string {
 export function asksCraneOrPto(q: string): boolean {
   return /מנוף|pto|פתיחת\s*pto|סגירת\s*pto|חכמת|615-41-002|מתי\s+נפתח/i.test(q);
 }
+
+
+
+
+export async function fetchIturanPtoLive(token: string, truck?: string) {
+  const gasUrl =
+    (typeof process !== "undefined" && process.env?.["ITURAN_GAS_URL"]) ||
+    "https://script.google.com/macros/s/AKfycbx9NpLEnJ5904JqaeeuuR8NslN66F4r6IYddyvr-Q7AeGx5HFHfSAjW8CoP2oT6NoQrvA/exec";
+
+  let url = `${gasUrl}?action=getIturanPto&token=${encodeURIComponent(token)}`;
+  if (truck) {
+    url += `&truck=${encodeURIComponent(truck)}`;
+  }
+
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) {
+    throw new Error(`שגיאת תקשורת מול שרת האיתוראן: ${res.status}`);
+  }
+  return await res.json();
+}
