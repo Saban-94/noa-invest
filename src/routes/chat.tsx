@@ -28,6 +28,7 @@ import {
   type DiscrepancyItem,
 } from "@/components/chat/CrossReferenceInspector";
 import { playDispatchChime } from "@/lib/audio-alerts";
+import { askNoa } from "@/lib/ai.functions";
 
 export const Route = createFileRoute("/chat")({
   head: () => ({
@@ -78,8 +79,11 @@ function ChatScreen() {
   const [input, setInput] = useState("");
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
-  const [activeTruck, setActiveTruck] = useState("615-41-002");
+  const [activeTruck, setActiveTruck] = useState("");
   const [isLoadingBackend, setIsLoadingBackend] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [historyReady, setHistoryReady] = useState(false);
 
   // Live state from /api/backend?action=bootstrap
   const [liveData, setLiveData] = useState<{
@@ -94,93 +98,21 @@ function ChatScreen() {
     discrepancies: [],
   });
 
-  const [truckSummaries, setTruckSummaries] = useState<DriverTruckSummary[]>([
-    {
-      driver: "חכמת גאבר",
-      truck: "615-41-002",
-      truckType: "מרצדס מנוף 32 טון",
-      date: "15/10/2026",
-      kmTotal: "140",
-      driveTime: "03:45",
-      workTime: "04:10",
-      ptoTime: "02:15",
-      idleTime: "00:35",
-      discImage: "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-      verifiedStatus: "תקין מול איתוראן",
-      stops: [
-        {
-          id: "s1",
-          label: "א.ערן אזולאי בע״מ (תעודות 6715766, 6715767)",
-          address: "משה שרת 9, הוד השרון",
-          arriveTime: "09:15",
-          departTime: "10:00",
-          ptoOpen: "09:20",
-          ptoClose: "09:58",
-          ptoMin: 38,
-        },
-        {
-          id: "s2",
-          label: "דניה סיבוס בע״מ (תעודה 6715792)",
-          address: "נח 3, תל אביב",
-          arriveTime: "10:40",
-          departTime: "11:30",
-          ptoOpen: "10:45",
-          ptoClose: "11:25",
-          ptoMin: 40,
-        },
-      ],
-    },
-    {
-      driver: "עלי אבו עידה",
-      truck: "651-51-701",
-      truckType: "איסוזו פלטה",
-      date: "15/10/2026",
-      kmTotal: "95",
-      driveTime: "02:20",
-      workTime: "03:30",
-      ptoTime: "00:00",
-      idleTime: "00:40",
-      discImage: "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-      verifiedStatus: "ממתין לבדיקת ראמי",
-      stops: [
-        {
-          id: "s3",
-          label: "רמי ששון תשתיות (תעודה 6715780)",
-          address: "הרקפת 4, הוד השרון",
-          arriveTime: "11:45",
-          departTime: "12:25",
-          ptoMin: 0,
-        },
-        {
-          id: "s4",
-          label: "אספקה כללית (תעודה 6715805)",
-          address: "סוקולוב 22, רמת השרון",
-          arriveTime: "13:00",
-          departTime: "13:40",
-          ptoMin: 0,
-        },
-      ],
-    },
-  ]);
+  const [truckSummaries, setTruckSummaries] = useState<DriverTruckSummary[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Initial welcome message
+  // The conversation is restored from this browser; no server-side conversation store is implied.
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "m0",
       sender: "noa",
-      text: "שלום ראמי והראל! נועה כאן בחמ״ל הלוגיסטי של סבן ❤️\nסנכרנתי בזמן אמת את גיליון תעודות גליה, מערכת איתוראן וארכיון דיסקיות הטכוגרף.\n\nאני מוכנה לפיצוח והצלבת נתוני היום: בדיקת זמני מנוף, זיהוי חריגות שהייה ללא PTO, ופענוח חזותי מלא של חריטות המחט בדיסקית. במה נפתח?",
-      time: "07:30",
-      statusTag: "מחוברת לחמ״ל בזמן אמת",
+      text: "שלום, אני נועה. אוכל לעזור לנתח רק נתונים שסופקו לי ממקור זמין. כרגע אין אישור שכל מערכות GPS או הטכוגרף מחוברות. שאל שאלה או בקש בדיקת נתונים, ואציין במפורש מה חסר.",
+      time: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+      statusTag: "מוכנה · מקור הנתונים טרם אומת",
       quickActions: [
-        { label: "🔍 דוח טכוגרף חכמת (615-41-002)", query: "מה הסטטוס של דיסקית הטכוגרף של חכמת?" },
-        {
-          label: "📍 היסטוריית רקפת 4, הוד השרון",
-          query: "בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון",
-        },
-        { label: "⚠️ בדיקת חריגות והצלבה סגורה", query: "בצעי פיצוח והצלבת חריגות לכלל הצי היום" },
-        { label: "🚚 סטטוס עלי אבו עידה (651-51-701)", query: "מה מצב המשאית של עלי אבו עידה?" },
+        { label: "בדיקת נתונים זמינים", query: "אילו נתונים זמינים לך כרגע ומה מקורם?" },
+        { label: "איתור חריגות בנתונים שהתקבלו", query: "סכמי רק חריגות שמופיעות בנתונים המחוברים." },
       ],
     },
   ]);
@@ -207,22 +139,22 @@ function ChatScreen() {
             const mappedSummaries: DriverTruckSummary[] = (
               json.data.discs as Record<string, unknown>[]
             ).map((d: Record<string, unknown>) => {
-              const driver = String(d["נהג"] || "חכמת גאבר");
-              const truck = String(d["רישוי / משאית"] || "615-41-002");
+              const driver = String(d["נהג"] || "נהג לא מזוהה");
+              const truck = String(d["רישוי / משאית"] || "משאית לא מזוהה");
               const matchedStops: TachographStopOverlay[] = (
                 (json.data.visits || []) as Record<string, unknown>[]
               )
                 .filter((v: Record<string, unknown>) => v.truck === truck)
                 .map((v: Record<string, unknown>, idx: number) => ({
                   id: `v-${idx}`,
-                  label: `${((v.customers as string[]) || []).join(", ") || "לקוח"} (תעודות ${((v.noteIds as string[]) || []).join(", ")})`,
-                  address: String(v.fullAddress || v.streetAndNum || "כתובת"),
+                  label: `${((v.customers as string[]) || []).join(", ") || "לקוח לא מזוהה"} (תעודות ${((v.noteIds as string[]) || []).join(", ")})`,
+                  address: String(v.fullAddress || v.streetAndNum || "כתובת לא זמינה"),
                   arriveTime: v.ituranArriveTime
-                    ? String(v.ituranArriveTime).split(" ")[1]?.slice(0, 5)
-                    : "09:00",
+                    ? String(v.ituranArriveTime).split(" ")[1]?.slice(0, 5) || "לא זמין"
+                    : "לא זמין",
                   departTime: v.ituranDepartTime
-                    ? String(v.ituranDepartTime).split(" ")[1]?.slice(0, 5)
-                    : "09:45",
+                    ? String(v.ituranDepartTime).split(" ")[1]?.slice(0, 5) || "לא זמין"
+                    : "לא זמין",
                   ptoOpen: v.ptoOpenTime
                     ? String(v.ptoOpenTime).split(" ")[1]?.slice(0, 5)
                     : undefined,
@@ -235,16 +167,16 @@ function ChatScreen() {
               return {
                 driver,
                 truck,
-                truckType: d["סוג משאית"] || (truck.includes("615") ? "מרצדס מנוף" : "פלטה"),
-                date: d["תאריך דיסקית"] || "15/10/2026",
-                kmTotal: d['סה"כ ק"מ'] || "140",
-                driveTime: d["זמן נסיעה"] || "03:45",
-                workTime: d["זמן עבודה"] || "04:10",
-                ptoTime: d["זמן מנוף"] || (truck.includes("615") ? "02:15" : "00:00"),
-                idleTime: d["זמן סרק"] || "00:35",
+                truckType: d["סוג משאית"] || "לא זמין",
+                date: d["תאריך דיסקית"] || "לא זמין",
+                kmTotal: d['סה"כ ק"מ'] || "לא זמין",
+                driveTime: d["זמן נסיעה"] || "לא זמין",
+                workTime: d["זמן עבודה"] || "לא זמין",
+                ptoTime: d["זמן מנוף"] || "לא זמין",
+                idleTime: d["זמן סרק"] || "לא זמין",
                 discImage:
-                  d["קישור לדיסקית"] || "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-                verifiedStatus: d["סטטוס אימות"] || "תקין מול איתוראן",
+                  d["קישור לדיסקית"] || "",
+                verifiedStatus: d["סטטוס אימות"] || "לא אומת",
                 stops: matchedStops.length > 0 ? matchedStops : [],
               };
             });
@@ -261,10 +193,36 @@ function ChatScreen() {
     void loadBootstrap();
   }, []);
 
+  // Restore and persist conversation locally in this browser only.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("noa-chat-history-v1");
+      if (saved) {
+        const parsed = JSON.parse(saved) as ChatMessage[];
+        if (Array.isArray(parsed) && parsed.every((m) => m && typeof m.text === "string" && (m.sender === "noa" || m.sender === "user"))) {
+          setMessages(parsed.slice(-60));
+        }
+      }
+    } catch {
+      setChatError("לא ניתן לשחזר היסטוריה מקומית; אפשר להמשיך בשיחה חדשה.");
+    } finally {
+      restoredHistory.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!historyReady) return;
+    try {
+      localStorage.setItem("noa-chat-history-v1", JSON.stringify(messages.slice(-60)));
+    } catch {
+      setChatError("אין אפשרות לשמור היסטוריה בדפדפן זה.");
+    }
+  }, [messages, historyReady]);
+
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, historyReady]);
 
   const handleResolveDiscrepancy = (id: string) => {
     setLiveData((prev) => ({
@@ -279,174 +237,71 @@ function ChatScreen() {
       {
         id: `sys-${Date.now()}`,
         sender: "noa",
-        text: `✓ החריגה סומנה כנבדקה ואושרה ע״י ראמי מסארווה. עודכן ביומן הבקרה ובמערכת.`,
+        text: "החריגה הוסרה מהתצוגה המקומית בלבד. לא נשלח אישור ולא עודכנה מערכת חיצונית.",
         time: now(),
-        statusTag: "אושר ע״י ראמי",
+        statusTag: "שינוי מקומי בלבד · לא נשמר בשרת",
       },
     ]);
   };
 
   const handleSend = async (textToSend?: string) => {
-    const text = textToSend ?? input;
-    if (!text.trim()) return;
+    const text = (textToSend ?? input).trim();
+    if (!text || isSending) return;
 
     if (isSoundEnabled) void playDispatchChime(0.7);
-
+    setChatError("");
+    setIsSending(true);
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: "user",
       text,
       time: now(),
     };
-
     setMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setInput("");
 
-    // Simulate smart dispatcher reasoning
-    const t = text.toLowerCase();
-    let replyText = "";
-    let replyCard: ChatMessage["tachographCard"] = undefined;
-    let replyDiscrepancies: ChatMessage["discrepancyAlerts"] = undefined;
-    let replySite: ChatMessage["siteDetails"] = undefined;
-    let quickActions: ChatMessage["quickActions"] = undefined;
-    let statusTag = "פיצוח נתונים הושלם";
+    const context = JSON.stringify({
+      sourceStatus: isLoadingBackend ? "טעינת נתונים עדיין מתבצעת" : "מצב טעינה הסתיים",
+      deliveryNotes: liveData.deliveryNotes,
+      visits: liveData.visits,
+      discs: liveData.discs,
+      discrepancies: liveData.discrepancies,
+      sourceCounts: {
+        deliveryNotes: liveData.deliveryNotes.length,
+        visits: liveData.visits.length,
+        discs: liveData.discs.length,
+        discrepancies: liveData.discrepancies.length,
+      },
+    });
 
-    // 1. Query: Hekmat / Truck 615-41-002 / Tachograph
-    if (t.includes("חכמת") || t.includes("615") || t.includes("טכוגרף") || t.includes("דיסקית")) {
-      setActiveTruck("615-41-002");
-      setIsInspectorOpen(true);
-      const hekmat = truckSummaries.find((s) => s.truck === "615-41-002") || truckSummaries[0]!;
-
-      replyText = `🚚 **דוח טכוגרף ואימות לולאה סגורה — משאית ${hekmat.truck} (חכמת גאבר):**\n\n• **סה״כ קילומטראז׳ יומי**: **${hekmat.kmTotal} ק״מ** (פתיחה 348,210, סגירה 348,350)\n• **זמן עבודת מנוף PTO מצטבר**: **${hekmat.ptoTime} שעות** (תואם 2 פריקות)\n• **הצלבת תחנות איתוראן מול תעודות גליה**:\n  1. **משה שרת 9, הוד השרון** — פריקת מנוף 38 דק' ב-PTO (תעודות 6715766, 6715767).\n  2. **נח 3, תל אביב** — פריקת מנוף 40 דק' ב-PTO (תעודה 6715792).\n\nהצגתי עבורך את קנבס הדיסקית המלא עם שכבת 24H של איתוראן. חריטות המחט תואמות בדיוק של 2 דקות לשעות ה-PTO!`;
-
-      replyCard = {
-        driver: hekmat.driver,
-        truck: hekmat.truck,
-        date: hekmat.date,
-        kmTotal: hekmat.kmTotal,
-        ptoHours: hekmat.ptoTime,
-        imageUrl: hekmat.discImage,
-        stops: hekmat.stops,
-      };
-
-      quickActions = [
-        { label: "🔍 פתח קנבס במפקח המלא", query: "הציגי במפקח את חריטות המחט של חכמת" },
-        { label: "✍️ אישור דיסקית ראמי", query: "אשר את דיסקית הטכוגרף של חכמת להיום" },
-      ];
+    try {
+      const result = await askNoa({ data: {
+        messages: [...messages.slice(-18).map((m) => ({
+          role: m.sender === "noa" ? "assistant" as const : "user" as const,
+          content: m.text,
+        })), { role: "user" as const, content: text }],
+        context,
+      }});
+      setMessages((prev) => [...prev, {
+        id: `noa-${Date.now()}`,
+        sender: "noa",
+        text: result.text,
+        time: now(),
+        statusTag: "מענה AI · יש לאמת מול מקור",
+      }]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "שירות הצ׳אט אינו זמין כרגע.";
+      setChatError(message);
+      setMessages((prev) => [...prev, {
+        id: `noa-error-${Date.now()}`,
+        sender: "noa",
+        text: `לא הצלחתי להשלים את הבקשה: ${message}\nלא הסקתי מסקנה תפעולית ולא שיניתי נתונים במערכת.`,
+        time: now(),
+        statusTag: "שגיאה · לא בוצע אימות",
+      }]);
+    } finally {
+      setIsSending(false);
     }
-    // 2. Query: Site History - Rakefet 4, Hod HaSharon
-    else if (t.includes("רקפת") || t.includes("הוד השרון") || t.includes("740112")) {
-      setActiveTruck("651-51-701");
-      setIsInspectorOpen(true);
-
-      replyText = `📍 **פיצוח היסטוריית אתר לקוח — הרקפת 4, הוד השרון:**\n\n• **לקוח**: רמי ששון תשתיות (מס' לקוח 740112)\n• **משאית שהוצמדה**: 651-51-701 (עלי אבו עידה, איסוזו פלטה)\n• **תעודת משלוח**: 6715780 (הזמנה 6215985)\n• **פריטים**: 8 בלה חמרה + 2 משטח אקרשטיין\n\n⏱️ **הצלבת זמנים (סגירת מעגל)**:\n• **איתוראן GPS באתר**: 11:45 עד 12:25 (**40 דקות**)\n• **רישום כתב יד בתעודה**: 11:50 עד 12:35 (**45 דקות**)\n• **פער זמנים**: **5 דקות בלבד** — תקין ומאושר בטווח הסבירות!\n• **חציון היסטורי באתר זה**: 38 דק' (התאמה מלאה לממוצע).`;
-
-      replySite = {
-        address: "הרקפת 4, הוד השרון",
-        customer: "רמי ששון תשתיות",
-        notesCount: 1,
-        ituranDuration: "40 דקות",
-        craneDuration: "45 דקות",
-        gapStatus: "תקין (פער 5 דקות)",
-      };
-
-      quickActions = [
-        { label: "🚚 בדוק את המשאית של עלי", query: "מה מצב המשאית של עלי אבו עידה?" },
-        { label: "📄 הצג תעודה 6715780", query: "מה הסטטוס של תעודה 6715780?" },
-      ];
-    }
-    // 3. Query: Ali / 651-51-701
-    else if (t.includes("עלי") || t.includes("651") || t.includes("פלטה")) {
-      setActiveTruck("651-51-701");
-      setIsInspectorOpen(true);
-      const ali = truckSummaries.find((s) => s.truck === "651-51-701") || truckSummaries[1]!;
-
-      replyText = `🚛 **דוח פעילות משאית ${ali.truck} (עלי אבו עידה):**\n\n• **סוג כלי**: איסוזו פלטה (ללא מנוף PTO)\n• **קילומטראז׳ יומי**: **${ali.kmTotal} ק״מ**\n• **ביקורי אתר שבוצעו**:\n  1. הרקפת 4, הוד השרון (רמי ששון תשתיות) — שהייה 40 דק׳.\n  2. סוקולוב 22, רמת השרון (א.ערן אזולאי) — שהייה 35 דק׳.\n• **סטטוס אימות**: ממתין לבדיקת חתימות ראמי. כל העצירות תואמות לאיתוראן.`;
-
-      replyCard = {
-        driver: ali.driver,
-        truck: ali.truck,
-        date: ali.date,
-        kmTotal: ali.kmTotal,
-        ptoHours: ali.ptoTime,
-        imageUrl: ali.discImage,
-        stops: ali.stops,
-      };
-
-      quickActions = [
-        { label: "📍 פרטי עצירה ברקפת 4", query: "בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון" },
-      ];
-    }
-    // 4. Query: Discrepancy flagging / Closed-Loop Engine
-    else if (
-      t.includes("חריג") ||
-      t.includes("הצלבה") ||
-      t.includes("סגור") ||
-      t.includes("בדיק") ||
-      t.includes("פענוח")
-    ) {
-      setIsInspectorOpen(true);
-      const issues =
-        liveData.discrepancies.length > 0
-          ? liveData.discrepancies
-          : [
-              {
-                id: "disc-demo-1",
-                truck: "615-41-002",
-                driver: "חכמת גאבר",
-                address: "אחוזה 120, רעננה",
-                type: "outlier_crane" as const,
-                severity: "warning" as const,
-                title: "משך מנוף חריג מעל 240 דק'",
-                description:
-                  "בתעודה 6715810 נרשמה המתנה משעה 08:00 עד 13:00 (300 דק'). נדרש אימות סיבת עיכוב.",
-              },
-              {
-                id: "disc-demo-2",
-                truck: "651-51-701",
-                driver: "עלי אבו עידה",
-                address: "סוקולוב 22, רמת השרון",
-                type: "reversed_window" as const,
-                severity: "alert" as const,
-                title: "חלון מנוף הפוך בכתב יד",
-                description:
-                  "בתעודה 6715805 נרשם: פריקה מ-09:15 עד 09:00. שעת הסיום קודמת לשעת הפתיחה.",
-              },
-            ];
-
-      replyText = `⚠️ **דוח מנוע הצלבה ופיצוח חריגות (נועה AI Closed-Loop):**\n\nמתוך כלל תעודות גליה ועצירות איתוראן של היום, איתרתי **${issues.length} חריגות הדורשות התייחסות ראמי**:\n\n1. **סוקולוב 22, רמת השרון (משאית 651-51-701)**: חלון מנוף הפוך בכתב יד (09:15 עד 09:00).\n2. **אחוזה 120, רעננה (משאית 615-41-002)**: שהייה/המתנה חריגה של 300 דק' (מעל רף 240 דק').\n\nפתחתי את חלונית המפקח מימין עם פירוט שלבי ההצלבה והאפשרות לאשר או לתקן.`;
-
-      replyDiscrepancies = issues;
-
-      quickActions = [
-        { label: "🔍 פתח מפקח הצלבות", query: "הציגי במפקח את חריטות המחט של חכמת" },
-        { label: "✅ אישור כל החריגות", query: "סמן את כל החריגות כנבדקו" },
-      ];
-    }
-    // 5. Default intelligent assistant reply
-    else {
-      replyText = `קיבלתי ראמי! הבקשה: "${text}".\nכל המידע מחובר ומסונכרן מול גיליון בדיקת תעודות משלוח, איתוראן וארכיון הטכוגרף.\nבאפשרותך לבקש דוח לכל נהג (חכמת / עלי), ניתוח אתר ספציפי (למשל: "רקפת 4, הוד השרון"), או הצלבת דיסקית בקנבס האינטראקטיבי.`;
-      statusTag = "מחובר";
-      quickActions = [
-        { label: "🚚 דוח חכמת (615-41-002)", query: "מה הסטטוס של דיסקית הטכוגרף של חכמת?" },
-        { label: "📍 אתר רקפת 4, הוד השרון", query: "בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון" },
-        { label: "⚠️ בדיקת חריגות", query: "בצעי פיצוח והצלבת חריגות לכלל הצי היום" },
-      ];
-    }
-
-    const noaMsg: ChatMessage = {
-      id: `noa-${Date.now()}`,
-      sender: "noa",
-      text: replyText,
-      time: now(),
-      statusTag,
-      tachographCard: replyCard,
-      discrepancyAlerts: replyDiscrepancies,
-      siteDetails: replySite,
-      quickActions,
-    };
-
-    setMessages((prev) => [...prev, noaMsg]);
   };
 
   return (
@@ -468,11 +323,11 @@ function ChatScreen() {
                 נועה AI — חמ״ל לוגיסטי
               </h1>
               <span className="rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
-                סנכרון מלא 24H
+                AI · אימות מקור נדרש
               </span>
             </div>
             <div className="text-[11px] text-slate-400">
-              בקרת ראמי מסארווה · ח. סבן חומרי בניין (1994) בע״מ
+              ח. סבן חומרי בניין (1994) בע״מ · אין להסתמך על נתון ללא מקור
             </div>
           </div>
         </div>
@@ -518,6 +373,11 @@ function ChatScreen() {
         >
           {/* Messages Scroll Area */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0b1118]">
+            {chatError && (
+              <div role="alert" className="mx-2 rounded-xl border border-amber-500/30 bg-amber-950/30 p-3 text-xs text-amber-200">
+                {chatError}
+              </div>
+            )}
             {messages.map((m) => {
               const isUser = m.sender === "user";
               return (
@@ -629,7 +489,7 @@ function ChatScreen() {
                                 onClick={() => handleResolveDiscrepancy(disc.id)}
                                 className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-semibold transition"
                               >
-                                אשר ובטל חריגה
+                                הסר מהתצוגה
                               </button>
                             </div>
                           </div>
@@ -717,11 +577,11 @@ function ChatScreen() {
             />
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!input.trim() || isSending}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white transition hover:bg-emerald-500 disabled:opacity-40"
-              title="שלח הודעה"
+              title={isSending ? "נועה מעבדת את הבקשה" : "שלח הודעה"}
             >
-              <Send className="h-4 w-4 rotate-180" />
+              {isSending ? <RotateCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 rotate-180" />}
             </button>
           </form>
         </div>

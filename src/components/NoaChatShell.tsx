@@ -3,12 +3,13 @@
  * לשילוב ב-layout או לצד שרשור בירור
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sparkles, Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { askNoa } from "@/lib/ai.functions";
 
 export type NoaPage =
   | "inquiry"
@@ -63,24 +64,7 @@ const PAGE_TITLE: Record<NoaPage, string> = {
   other: "מערכת נועה",
 };
 
-/** תשובת דמו מקומית — להחלפה ב-askNoa server fn */
-function localNoaReply(ctx: NoaContext, q: string): NoaReply {
-  const issue = ctx.issueSummary || q || "לא זוהתה חריגה מפורשת";
-  return {
-    htmlTitle: issue.slice(0, 120),
-    body:
-      ctx.page === "ituran"
-        ? "אפשר להצליב את כתובת התעודה מול עצירות ה-GPS של חכמת/עלי."
-        : ctx.page === "harel"
-          ? "תור האישורים ממתין להחלטה. אפשר להחזיר לראמי עם «מה חסר» ויעד זמן."
-          : "מומלץ לבדוק כתב יד, פקדונות והצלבה לאיתוראן לפני סגירה.",
-    ctas: [
-      { id: "1", label: "שלח לבירור ראמי", action: "send-to-rami" },
-      { id: "2", label: "הצלב מול איתוראן", action: "cross-ituran" },
-      { id: "3", label: "היסטוריית לקוח", action: "customer-history" },
-    ],
-  };
-}
+
 
 export function NoaChatShell({
   context: contextProp,
@@ -97,6 +81,32 @@ export function NoaChatShell({
   const [open, setOpen] = useState(defaultOpen);
   const [input, setInput] = useState("");
   const [replies, setReplies] = useState<{ q: string; r: NoaReply }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [error, setError] = useState("");
+  const historyKey = "noa-chat-shell-v1";
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(historyKey);
+      if (!saved) { setReplies([]); setHistoryReady(true); return; }
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) setReplies(parsed.slice(-40));
+      setHistoryReady(true);
+    } catch {
+      setError("לא ניתן לטעון היסטוריית שיחה מקומית.");
+      setHistoryReady(true);
+    }
+  }, [historyKey]);
+
+  useEffect(() => {
+    if (!historyReady) return;
+    try {
+      localStorage.setItem(historyKey, JSON.stringify(replies.slice(-40)));
+    } catch {
+      setError("לא ניתן לשמור היסטוריית שיחה בדפדפן זה.");
+    }
+  }, [historyKey, replies, historyReady]);
 
   const ctx: NoaContext = useMemo(
     () => ({
@@ -110,12 +120,37 @@ export function NoaChatShell({
     [pathname, contextProp],
   );
 
-  const ask = () => {
+  const ask = async () => {
     const q = input.trim();
-    if (!q) return;
-    const r = localNoaReply(ctx, q);
-    setReplies((prev) => [...prev, { q, r }]);
+    if (!q || busy) return;
     setInput("");
+    setError("");
+    setBusy(true);
+    try {
+      const history = replies.slice(-18).flatMap((item) => [
+        { role: "user" as const, content: item.q },
+        { role: "assistant" as const, content: [item.r.htmlTitle, item.r.body].filter(Boolean).join("\n") },
+      ]);
+      const result = await askNoa({
+        data: {
+          messages: [...history, { role: "user" as const, content: q }].slice(-20),
+          context: JSON.stringify({
+            page: ctx.page,
+            noteId: ctx.noteId || null,
+            inquiryId: ctx.inquiryId || null,
+            customerNo: ctx.customerNo || null,
+            issueSummary: ctx.issueSummary || null,
+            status: ctx.status || null,
+            warning: "הקשר דף בלבד; אין להסיק מכך שנתוני GPS או מסמכים חיצוניים מחוברים.",
+          }),
+        },
+      });
+      setReplies((prev) => [...prev, { q, r: { htmlTitle: "תשובת נועה", body: result.text, ctas: [] } }]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "שירות הצ׳אט אינו זמין כרגע.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -150,6 +185,7 @@ export function NoaChatShell({
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto p-3">
+            {error && <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">{error}</div>}
             {ctx.issueSummary && (
               <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-3">
                 <div className="text-base font-extrabold leading-snug text-violet-950">
@@ -192,18 +228,18 @@ export function NoaChatShell({
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="שאל את נועה על החריגה, איתוראן, לקוח..."
+                placeholder="שאל את נועה על נתונים זמינים..."
                 rows={2}
                 className="min-h-0 resize-none text-sm"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    ask();
+                    void ask();
                   }
                 }}
               />
-              <Button size="icon" className="shrink-0" onClick={ask}>
-                <Send className="h-4 w-4" />
+              <Button size="icon" className="shrink-0" onClick={() => void ask()} disabled={busy || !input.trim()}>
+                {busy ? <Sparkles className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
               </Button>
             </div>
           </div>
