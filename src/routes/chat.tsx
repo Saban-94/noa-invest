@@ -4,16 +4,8 @@ import noa from "@/assets/noa.jpg";
 import {
   Send,
   CheckCheck,
-  Truck,
-  FileText,
-  Gauge,
   AlertTriangle,
-  RotateCw,
-  Search,
   SlidersHorizontal,
-  ChevronRight,
-  ShieldCheck,
-  CheckCircle2,
   RefreshCw,
   Volume2,
   VolumeX,
@@ -28,20 +20,24 @@ import {
   type DiscrepancyItem,
 } from "@/components/chat/CrossReferenceInspector";
 import { playDispatchChime } from "@/lib/audio-alerts";
+import { askNoa } from "@/lib/ai.functions";
+import {
+  asksCurrentGps,
+  asksSourceStatus,
+  buildNoaContext,
+  describeSources,
+  EVIDENCE_LABEL_HE,
+  evidenceFromMeta,
+  formatNotesSummary,
+  gpsUnavailableMessage,
+  type BackendMeta,
+} from "@/lib/chat-grounding";
 
 export const Route = createFileRoute("/chat")({
   head: () => ({
     meta: [
-      { title: "נועה AI — חמ״ל לוגיסטי ודיסקיות טכוגרף | ח. סבן" },
-      {
-        name: "description",
-        content: "חמ״ל צ׳אט ובינה לוגיסטית: הצלבת תעודות משלוח, איתוראן GPS ופענוח דיסקיות טכוגרף.",
-      },
-      { property: "og:title", content: "נועה AI — חמ״ל לוגיסטי ודיסקיות טכוגרף" },
-      {
-        property: "og:description",
-        content: "בקרת ראמי מסארווה, הצלבות איתוראן מול קומקס ודיסקיות טכוגרף 24H.",
-      },
+      { title: "נועה AI — חמ״ל לוגיסטי | ח. סבן" },
+      { name: "description", content: "צ׳אט תפעולי מבוסס מקור — ללא דוחות דמה." },
     ],
   }),
   component: ChatScreen,
@@ -63,205 +59,135 @@ type ChatMessage = {
     stops: TachographStopOverlay[];
   };
   discrepancyAlerts?: DiscrepancyItem[];
-  siteDetails?: {
-    address: string;
-    customer: string;
-    notesCount: number;
-    ituranDuration: string;
-    craneDuration: string;
-    gapStatus: string;
-  };
   quickActions?: { label: string; query: string }[];
 };
+
+function timeOf(raw: unknown): string | undefined {
+  if (raw == null || !String(raw).trim()) return undefined;
+  const s = String(raw).trim();
+  const part = s.includes(" ") ? s.split(" ").pop() : s;
+  return part?.slice(0, 5) || undefined;
+}
 
 function ChatScreen() {
   const [input, setInput] = useState("");
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
-  const [activeTruck, setActiveTruck] = useState("615-41-002");
+  const [activeTruck, setActiveTruck] = useState("");
   const [isLoadingBackend, setIsLoadingBackend] = useState(true);
-
-  // Live state from /api/backend?action=bootstrap
   const [liveData, setLiveData] = useState<{
     deliveryNotes: Record<string, unknown>[];
     visits: Record<string, unknown>[];
     discs: Record<string, unknown>[];
     discrepancies: DiscrepancyItem[];
+    meta: BackendMeta | null;
+    fetchedAt: string | null;
   }>({
     deliveryNotes: [],
     visits: [],
     discs: [],
     discrepancies: [],
+    meta: null,
+    fetchedAt: null,
   });
-
-  const [truckSummaries, setTruckSummaries] = useState<DriverTruckSummary[]>([
-    {
-      driver: "חכמת גאבר",
-      truck: "615-41-002",
-      truckType: "מרצדס מנוף 32 טון",
-      date: "15/10/2026",
-      kmTotal: "140",
-      driveTime: "03:45",
-      workTime: "04:10",
-      ptoTime: "02:15",
-      idleTime: "00:35",
-      discImage: "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-      verifiedStatus: "תקין מול איתוראן",
-      stops: [
-        {
-          id: "s1",
-          label: "א.ערן אזולאי בע״מ (תעודות 6715766, 6715767)",
-          address: "משה שרת 9, הוד השרון",
-          arriveTime: "09:15",
-          departTime: "10:00",
-          ptoOpen: "09:20",
-          ptoClose: "09:58",
-          ptoMin: 38,
-        },
-        {
-          id: "s2",
-          label: "דניה סיבוס בע״מ (תעודה 6715792)",
-          address: "נח 3, תל אביב",
-          arriveTime: "10:40",
-          departTime: "11:30",
-          ptoOpen: "10:45",
-          ptoClose: "11:25",
-          ptoMin: 40,
-        },
-      ],
-    },
-    {
-      driver: "עלי אבו עידה",
-      truck: "651-51-701",
-      truckType: "איסוזו פלטה",
-      date: "15/10/2026",
-      kmTotal: "95",
-      driveTime: "02:20",
-      workTime: "03:30",
-      ptoTime: "00:00",
-      idleTime: "00:40",
-      discImage: "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-      verifiedStatus: "ממתין לבדיקת ראמי",
-      stops: [
-        {
-          id: "s3",
-          label: "רמי ששון תשתיות (תעודה 6715780)",
-          address: "הרקפת 4, הוד השרון",
-          arriveTime: "11:45",
-          departTime: "12:25",
-          ptoMin: 0,
-        },
-        {
-          id: "s4",
-          label: "אספקה כללית (תעודה 6715805)",
-          address: "סוקולוב 22, רמת השרון",
-          arriveTime: "13:00",
-          departTime: "13:40",
-          ptoMin: 0,
-        },
-      ],
-    },
-  ]);
-
+  const [truckSummaries, setTruckSummaries] = useState<DriverTruckSummary[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Initial welcome message
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "m0",
       sender: "noa",
-      text: "שלום ראמי והראל! נועה כאן בחמ״ל הלוגיסטי של סבן ❤️\nסנכרנתי בזמן אמת את גיליון תעודות גליה, מערכת איתוראן וארכיון דיסקיות הטכוגרף.\n\nאני מוכנה לפיצוח והצלבת נתוני היום: בדיקת זמני מנוף, זיהוי חריגות שהייה ללא PTO, ופענוח חזותי מלא של חריטות המחט בדיסקית. במה נפתח?",
+      text: "שלום ראמי והראל. נועה בחמ״ל הלוגיסטי של סבן.\nאענה רק על בסיס מידע שניתן לאמת מול השרת. GPS חי ודוחות דוגמה לא יוצגו כעובדות.\nהיסטוריית השיחה נשמרת בדפדפן בלבד במסך זה.",
       time: "07:30",
-      statusTag: "מחוברת לחמ״ל בזמן אמת",
+      statusTag: EVIDENCE_LABEL_HE.unavailable,
       quickActions: [
-        { label: "🔍 דוח טכוגרף חכמת (615-41-002)", query: "מה הסטטוס של דיסקית הטכוגרף של חכמת?" },
-        {
-          label: "📍 היסטוריית רקפת 4, הוד השרון",
-          query: "בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון",
-        },
-        { label: "⚠️ בדיקת חריגות והצלבה סגורה", query: "בצעי פיצוח והצלבת חריגות לכלל הצי היום" },
-        { label: "🚚 סטטוס עלי אבו עידה (651-51-701)", query: "מה מצב המשאית של עלי אבו עידה?" },
+        { label: "אילו נתונים זמינים?", query: "אילו נתונים זמינים כרגע?" },
+        { label: "סיכום תעודות מהשרת", query: "מה יש בתעודות שנטענו מהשרת?" },
+        { label: "מיקום משאית כרגע", query: "איפה המשאית כרגע?" },
       ],
     },
   ]);
 
-  const now = () => new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  const now = () =>
+    new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
 
-  // Sync data on mount
   useEffect(() => {
     async function loadBootstrap() {
       try {
         setIsLoadingBackend(true);
         const res = await fetch("/api/backend?action=bootstrap");
         const json = await res.json();
-        if (json.ok && json.data) {
-          setLiveData({
-            deliveryNotes: json.data.deliveryNotes || [],
-            visits: json.data.visits || [],
-            discs: json.data.discs || [],
-            discrepancies: json.data.discrepancies || [],
-          });
+        if (!json.ok || !json.data) return;
 
-          // Sync truck summaries if provided
-          if (json.data.discs && json.data.discs.length > 0) {
-            const mappedSummaries: DriverTruckSummary[] = (
-              json.data.discs as Record<string, unknown>[]
-            ).map((d: Record<string, unknown>) => {
-              const driver = String(d["נהג"] || "חכמת גאבר");
-              const truck = String(d["רישוי / משאית"] || "615-41-002");
-              const matchedStops: TachographStopOverlay[] = (
-                (json.data.visits || []) as Record<string, unknown>[]
-              )
-                .filter((v: Record<string, unknown>) => v.truck === truck)
-                .map((v: Record<string, unknown>, idx: number) => ({
+        setLiveData({
+          deliveryNotes: json.data.deliveryNotes || [],
+          visits: json.data.visits || [],
+          discs: json.data.discs || [],
+          discrepancies: json.data.discrepancies || [],
+          meta: json.data.meta || null,
+          fetchedAt: json.data.timestamp || new Date().toISOString(),
+        });
+
+        const discs = (json.data.discs || []) as Record<string, unknown>[];
+        const visits = (json.data.visits || []) as Record<string, unknown>[];
+
+        const mapped: DriverTruckSummary[] = discs
+          .map((d) => {
+            const truck = String(d["רישוי / משאית"] ?? d.truck ?? d.plate ?? "").trim();
+            if (!truck) return null;
+            const driver = String(d["נהג"] ?? d.driver ?? "").trim() || "נהג לא צוין במקור";
+            const matchedStops: TachographStopOverlay[] = visits
+              .filter((v) => String(v.truck || "") === truck)
+              .map((v, idx) => {
+                const customers = ((v.customers as string[]) || []).filter(Boolean);
+                const noteIds = ((v.noteIds as string[]) || []).filter(Boolean);
+                return {
                   id: `v-${idx}`,
-                  label: `${((v.customers as string[]) || []).join(", ") || "לקוח"} (תעודות ${((v.noteIds as string[]) || []).join(", ")})`,
-                  address: String(v.fullAddress || v.streetAndNum || "כתובת"),
-                  arriveTime: v.ituranArriveTime
-                    ? String(v.ituranArriveTime).split(" ")[1]?.slice(0, 5)
-                    : "09:00",
-                  departTime: v.ituranDepartTime
-                    ? String(v.ituranDepartTime).split(" ")[1]?.slice(0, 5)
-                    : "09:45",
-                  ptoOpen: v.ptoOpenTime
-                    ? String(v.ptoOpenTime).split(" ")[1]?.slice(0, 5)
-                    : undefined,
-                  ptoClose: v.ptoCloseTime
-                    ? String(v.ptoCloseTime).split(" ")[1]?.slice(0, 5)
-                    : undefined,
+                  label: [
+                    customers.length ? customers.join(", ") : "לקוח לא צוין",
+                    noteIds.length ? `(תעודות ${noteIds.join(", ")})` : "(ללא מזהה תעודה)",
+                  ].join(" "),
+                  address: String(v.fullAddress || v.streetAndNum || "כתובת לא צוינה במקור"),
+                  arriveTime: timeOf(v.ituranArriveTime) || "—",
+                  departTime: timeOf(v.ituranDepartTime) || "—",
+                  ptoOpen: timeOf(v.ptoOpenTime),
+                  ptoClose: timeOf(v.ptoCloseTime),
                   ptoMin: typeof v.ptoDurationMin === "number" ? v.ptoDurationMin : undefined,
-                }));
+                };
+              });
 
-              return {
-                driver,
-                truck,
-                truckType: d["סוג משאית"] || (truck.includes("615") ? "מרצדס מנוף" : "פלטה"),
-                date: d["תאריך דיסקית"] || "15/10/2026",
-                kmTotal: d['סה"כ ק"מ'] || "140",
-                driveTime: d["זמן נסיעה"] || "03:45",
-                workTime: d["זמן עבודה"] || "04:10",
-                ptoTime: d["זמן מנוף"] || (truck.includes("615") ? "02:15" : "00:00"),
-                idleTime: d["זמן סרק"] || "00:35",
-                discImage:
-                  d["קישור לדיסקית"] || "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-                verifiedStatus: d["סטטוס אימות"] || "תקין מול איתוראן",
-                stops: matchedStops.length > 0 ? matchedStops : [],
-              };
-            });
-            setTruckSummaries(mappedSummaries);
-          }
-        }
+            const field = (a: unknown, b?: unknown) => {
+              const v = a ?? b;
+              return v != null && String(v).trim() ? String(v).trim() : null;
+            };
+
+            return {
+              driver,
+              truck,
+              truckType: field(d["סוג משאית"], d.truckType) || "סוג לא צוין במקור",
+              date: field(d["תאריך דיסקית"], d.date) || "תאריך לא צוין במקור",
+              kmTotal: field(d['סה"כ ק"מ'], d.kmTotal) || "—",
+              driveTime: field(d["זמן נסיעה"]) || "—",
+              workTime: field(d["זמן עבודה"]) || "—",
+              ptoTime: field(d["זמן מנוף"]) || "—",
+              idleTime: field(d["זמן סרק"]) || "—",
+              discImage: field(d["קישור לדיסקית"], d.discImage) || "",
+              verifiedStatus: field(d["סטטוס אימות"], d.verifiedStatus) || "לא אומת מול מקור",
+              stops: matchedStops,
+            } satisfies DriverTruckSummary;
+          })
+          .filter((s): s is DriverTruckSummary => s != null);
+
+        setTruckSummaries(mapped);
+        if (mapped[0]?.truck) setActiveTruck(mapped[0].truck);
       } catch (err) {
         console.warn("Bootstrap fetch error:", err);
       } finally {
         setIsLoadingBackend(false);
       }
     }
-
     void loadBootstrap();
   }, []);
 
-  // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -271,17 +197,15 @@ function ChatScreen() {
       ...prev,
       discrepancies: prev.discrepancies.filter((d) => d.id !== id),
     }));
-
     if (isSoundEnabled) void playDispatchChime(0.6);
-
     setMessages((prev) => [
       ...prev,
       {
         id: `sys-${Date.now()}`,
         sender: "noa",
-        text: `✓ החריגה סומנה כנבדקה ואושרה ע״י ראמי מסארווה. עודכן ביומן הבקרה ובמערכת.`,
+        text: "סימון מקומי במסך בלבד. לא בוצע עדכון בשרת או בגיליון — אין API מורשה לאישור חריגה מכאן.",
         time: now(),
-        statusTag: "אושר ע״י ראמי",
+        statusTag: "פעולה מקומית בלבד",
       },
     ]);
   };
@@ -289,7 +213,6 @@ function ChatScreen() {
   const handleSend = async (textToSend?: string) => {
     const text = textToSend ?? input;
     if (!text.trim()) return;
-
     if (isSoundEnabled) void playDispatchChime(0.7);
 
     const userMsg: ChatMessage = {
@@ -298,466 +221,345 @@ function ChatScreen() {
       text,
       time: now(),
     };
-
     setMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setInput("");
 
-    const normalizedQuestion = text.trim();
-    const asksCurrentGps =
-      /(?:מיקום|איפה|היכן).{0,45}(?:משאית|רכב).{0,45}(?:כרגע|עכשיו|נוכחי|gps|איתוראן)?|(?:gps|איתוראן).{0,45}(?:מיקום|משאית|כרגע|עכשיו)|(?:משאית|רכב).{0,45}(?:מיקום|gps).{0,45}(?:כרגע|עכשיו)/i.test(normalizedQuestion);
-    const asksSourceStatus =
-      /(?:אילו|איזה|מה).{0,45}(?:נתונים|מקורות).{0,45}(?:זמינים|מקור|מחובר|כרגע)?|(?:מה מקורם|אילו נתונים זמינים)/i.test(normalizedQuestion);
+    const q = text.trim();
 
-    if (asksCurrentGps || asksSourceStatus) {
-      const responseText = asksCurrentGps
-        ? "אין לי כרגע מיקום GPS חי ומאומת של המשאית. מסך הצ׳אט אינו מקבל כרגע נתוני מיקום חיים עם מזהה רכב וזמן עדכון, ולכן איני יכולה לקבוע היכן המשאית נמצאת או לאשר שאיתוראן מחובר. כדי למסור מיקום אמיתי צריך לחבר ולבדוק מקור GPS פעיל."
-        : "אין לי כרגע דוח מאומת של מקורות הנתונים וזמני העדכון שלהם. הצגת מסך או נתונים היסטוריים אינה מוכיחה שמערכת חיצונית מחוברת או מסונכרנת. בפרט, אין לי מיקום GPS חי מאומת של המשאית.";
-      const noaMsg: ChatMessage = {
-        id: `noa-${Date.now()}`,
-        sender: "noa",
-        text: responseText,
-        time: now(),
-        statusTag: "נדרש אימות מקור",
-      };
-      setMessages((prev) => [...prev, noaMsg]);
+    if (asksCurrentGps(q)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `noa-${Date.now()}`,
+          sender: "noa",
+          text: gpsUnavailableMessage(),
+          time: now(),
+          statusTag: EVIDENCE_LABEL_HE.unavailable,
+        },
+      ]);
       return;
     }
 
-    // Remaining legacy report paths are unchanged; they must not be treated as live GPS.
-    const t = text.toLowerCase();
-    let replyText = "";
-    let replyCard: ChatMessage["tachographCard"] = undefined;
-    let replyDiscrepancies: ChatMessage["discrepancyAlerts"] = undefined;
-    let replySite: ChatMessage["siteDetails"] = undefined;
-    let quickActions: ChatMessage["quickActions"] = undefined;
-    let statusTag = "פיצוח נתונים הושלם";
-
-    // 1. Query: Hekmat / Truck 615-41-002 / Tachograph
-    if (t.includes("חכמת") || t.includes("615") || t.includes("טכוגרף") || t.includes("דיסקית")) {
-      setActiveTruck("615-41-002");
-      setIsInspectorOpen(true);
-      const hekmat = truckSummaries.find((s) => s.truck === "615-41-002") || truckSummaries[0]!;
-
-      replyText = `🚚 **דוח טכוגרף ואימות לולאה סגורה — משאית ${hekmat.truck} (חכמת גאבר):**\n\n• **סה״כ קילומטראז׳ יומי**: **${hekmat.kmTotal} ק״מ** (פתיחה 348,210, סגירה 348,350)\n• **זמן עבודת מנוף PTO מצטבר**: **${hekmat.ptoTime} שעות** (תואם 2 פריקות)\n• **הצלבת תחנות איתוראן מול תעודות גליה**:\n  1. **משה שרת 9, הוד השרון** — פריקת מנוף 38 דק' ב-PTO (תעודות 6715766, 6715767).\n  2. **נח 3, תל אביב** — פריקת מנוף 40 דק' ב-PTO (תעודה 6715792).\n\nהצגתי עבורך את קנבס הדיסקית המלא עם שכבת 24H של איתוראן. חריטות המחט תואמות בדיוק של 2 דקות לשעות ה-PTO!`;
-
-      replyCard = {
-        driver: hekmat.driver,
-        truck: hekmat.truck,
-        date: hekmat.date,
-        kmTotal: hekmat.kmTotal,
-        ptoHours: hekmat.ptoTime,
-        imageUrl: hekmat.discImage,
-        stops: hekmat.stops,
-      };
-
-      quickActions = [
-        { label: "🔍 פתח קנבס במפקח המלא", query: "הציגי במפקח את חריטות המחט של חכמת" },
-        { label: "✍️ אישור דיסקית ראמי", query: "אשר את דיסקית הטכוגרף של חכמת להיום" },
-      ];
-    }
-    // 2. Query: Site History - Rakefet 4, Hod HaSharon
-    else if (t.includes("רקפת") || t.includes("הוד השרון") || t.includes("740112")) {
-      setActiveTruck("651-51-701");
-      setIsInspectorOpen(true);
-
-      replyText = `📍 **פיצוח היסטוריית אתר לקוח — הרקפת 4, הוד השרון:**\n\n• **לקוח**: רמי ששון תשתיות (מס' לקוח 740112)\n• **משאית שהוצמדה**: 651-51-701 (עלי אבו עידה, איסוזו פלטה)\n• **תעודת משלוח**: 6715780 (הזמנה 6215985)\n• **פריטים**: 8 בלה חמרה + 2 משטח אקרשטיין\n\n⏱️ **הצלבת זמנים (סגירת מעגל)**:\n• **איתוראן GPS באתר**: 11:45 עד 12:25 (**40 דקות**)\n• **רישום כתב יד בתעודה**: 11:50 עד 12:35 (**45 דקות**)\n• **פער זמנים**: **5 דקות בלבד** — תקין ומאושר בטווח הסבירות!\n• **חציון היסטורי באתר זה**: 38 דק' (התאמה מלאה לממוצע).`;
-
-      replySite = {
-        address: "הרקפת 4, הוד השרון",
-        customer: "רמי ששון תשתיות",
-        notesCount: 1,
-        ituranDuration: "40 דקות",
-        craneDuration: "45 דקות",
-        gapStatus: "תקין (פער 5 דקות)",
-      };
-
-      quickActions = [
-        { label: "🚚 בדוק את המשאית של עלי", query: "מה מצב המשאית של עלי אבו עידה?" },
-        { label: "📄 הצג תעודה 6715780", query: "מה הסטטוס של תעודה 6715780?" },
-      ];
-    }
-    // 3. Query: Ali / 651-51-701
-    else if (t.includes("עלי") || t.includes("651") || t.includes("פלטה")) {
-      setActiveTruck("651-51-701");
-      setIsInspectorOpen(true);
-      const ali = truckSummaries.find((s) => s.truck === "651-51-701") || truckSummaries[1]!;
-
-      replyText = `🚛 **דוח פעילות משאית ${ali.truck} (עלי אבו עידה):**\n\n• **סוג כלי**: איסוזו פלטה (ללא מנוף PTO)\n• **קילומטראז׳ יומי**: **${ali.kmTotal} ק״מ**\n• **ביקורי אתר שבוצעו**:\n  1. הרקפת 4, הוד השרון (רמי ששון תשתיות) — שהייה 40 דק׳.\n  2. סוקולוב 22, רמת השרון (א.ערן אזולאי) — שהייה 35 דק׳.\n• **סטטוס אימות**: ממתין לבדיקת חתימות ראמי. כל העצירות תואמות לאיתוראן.`;
-
-      replyCard = {
-        driver: ali.driver,
-        truck: ali.truck,
-        date: ali.date,
-        kmTotal: ali.kmTotal,
-        ptoHours: ali.ptoTime,
-        imageUrl: ali.discImage,
-        stops: ali.stops,
-      };
-
-      quickActions = [
-        { label: "📍 פרטי עצירה ברקפת 4", query: "בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון" },
-      ];
-    }
-    // 4. Query: Discrepancy flagging / Closed-Loop Engine
-    else if (
-      t.includes("חריג") ||
-      t.includes("הצלבה") ||
-      t.includes("סגור") ||
-      t.includes("בדיק") ||
-      t.includes("פענוח")
-    ) {
-      setIsInspectorOpen(true);
-      const issues =
-        liveData.discrepancies.length > 0
-          ? liveData.discrepancies
-          : [
-              {
-                id: "disc-demo-1",
-                truck: "615-41-002",
-                driver: "חכמת גאבר",
-                address: "אחוזה 120, רעננה",
-                type: "outlier_crane" as const,
-                severity: "warning" as const,
-                title: "משך מנוף חריג מעל 240 דק'",
-                description:
-                  "בתעודה 6715810 נרשמה המתנה משעה 08:00 עד 13:00 (300 דק'). נדרש אימות סיבת עיכוב.",
-              },
-              {
-                id: "disc-demo-2",
-                truck: "651-51-701",
-                driver: "עלי אבו עידה",
-                address: "סוקולוב 22, רמת השרון",
-                type: "reversed_window" as const,
-                severity: "alert" as const,
-                title: "חלון מנוף הפוך בכתב יד",
-                description:
-                  "בתעודה 6715805 נרשם: פריקה מ-09:15 עד 09:00. שעת הסיום קודמת לשעת הפתיחה.",
-              },
-            ];
-
-      replyText = `⚠️ **דוח מנוע הצלבה ופיצוח חריגות (נועה AI Closed-Loop):**\n\nמתוך כלל תעודות גליה ועצירות איתוראן של היום, איתרתי **${issues.length} חריגות הדורשות התייחסות ראמי**:\n\n1. **סוקולוב 22, רמת השרון (משאית 651-51-701)**: חלון מנוף הפוך בכתב יד (09:15 עד 09:00).\n2. **אחוזה 120, רעננה (משאית 615-41-002)**: שהייה/המתנה חריגה של 300 דק' (מעל רף 240 דק').\n\nפתחתי את חלונית המפקח מימין עם פירוט שלבי ההצלבה והאפשרות לאשר או לתקן.`;
-
-      replyDiscrepancies = issues;
-
-      quickActions = [
-        { label: "🔍 פתח מפקח הצלבות", query: "הציגי במפקח את חריטות המחט של חכמת" },
-        { label: "✅ אישור כל החריגות", query: "סמן את כל החריגות כנבדקו" },
-      ];
-    }
-    // 5. Default intelligent assistant reply
-    else {
-      replyText = `קיבלתי את הבקשה: "${text}". אין לי כרגע מקור מאומת שמוכיח שכל המערכות מחוברות ומסונכרנות. נתוני GPS חיים, זמני עדכון וחיבורי מערכות חיצוניות יוצגו רק לאחר אימות מול מקור פעיל.`;
-      statusTag = "נדרש אימות מקור";
-      quickActions = [
-        { label: "🚚 דוח חכמת (615-41-002)", query: "מה הסטטוס של דיסקית הטכוגרף של חכמת?" },
-        { label: "📍 אתר רקפת 4, הוד השרון", query: "בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון" },
-        { label: "⚠️ בדיקת חריגות", query: "בצעי פיצוח והצלבת חריגות לכלל הצי היום" },
-      ];
+    if (asksSourceStatus(q)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `noa-${Date.now()}`,
+          sender: "noa",
+          text: describeSources(liveData.meta, liveData.fetchedAt),
+          time: now(),
+          statusTag: EVIDENCE_LABEL_HE[evidenceFromMeta(liveData.meta)],
+        },
+      ]);
+      return;
     }
 
-    const noaMsg: ChatMessage = {
-      id: `noa-${Date.now()}`,
-      sender: "noa",
-      text: replyText,
-      time: now(),
-      statusTag,
-      tachographCard: replyCard,
-      discrepancyAlerts: replyDiscrepancies,
-      siteDetails: replySite,
-      quickActions,
-    };
+    if (/תעודות|מה יש ב|סיכום תעוד/.test(q) && !/חריג|הצלבה|טכוגרף/.test(q)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `noa-${Date.now()}`,
+          sender: "noa",
+          text: formatNotesSummary(liveData.deliveryNotes, liveData.meta, liveData.fetchedAt),
+          time: now(),
+          statusTag: EVIDENCE_LABEL_HE[evidenceFromMeta(liveData.meta)],
+          discrepancyAlerts:
+            liveData.meta?.notesSource === "live" && liveData.discrepancies.length
+              ? liveData.discrepancies.slice(0, 15)
+              : undefined,
+        },
+      ]);
+      return;
+    }
 
-    setMessages((prev) => [...prev, noaMsg]);
+    if (/חריג|הצלבה|פיצוח/.test(q)) {
+      if (liveData.meta?.notesSource === "live" && liveData.discrepancies.length > 0) {
+        const lines = liveData.discrepancies.slice(0, 12).map((d, i) =>
+          `${i + 1}. ${d.title} · משאית ${d.truck} · ${d.address}\n   ${d.description}`,
+        );
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `noa-${Date.now()}`,
+            sender: "noa",
+            text: `חריגות מצינור השרת (${liveData.discrepancies.length}):\n\n${lines.join("\n\n")}\n\nמקור תעודות: ${liveData.meta?.notesSource}. איתוראן בצינור: ${liveData.meta?.ituranSource ?? "לא ידוע"}.`,
+            time: now(),
+            statusTag: EVIDENCE_LABEL_HE.partial,
+            discrepancyAlerts: liveData.discrepancies.slice(0, 15),
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `noa-${Date.now()}`,
+            sender: "noa",
+            text: "אין דוח חריגות מאומת מהשרת. לא מוצגת רשימת דוגמה.",
+            time: now(),
+            statusTag: EVIDENCE_LABEL_HE.unavailable,
+          },
+        ]);
+      }
+      return;
+    }
+
+    const hasVerifiedContext =
+      (liveData.meta?.notesSource === "live" &&
+        (liveData.deliveryNotes.length > 0 || liveData.discrepancies.length > 0)) ||
+      (Boolean(liveData.meta?.ituranSource) &&
+        liveData.meta?.ituranSource !== "none" &&
+        liveData.meta?.ituranSource !== "sample" &&
+        liveData.visits.length > 0);
+
+    if (!hasVerifiedContext) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `noa-${Date.now()}`,
+          sender: "noa",
+          text: "אין כרגע נתונים תפעוליים ממקור מאומת שרלוונטיים למענה. לא אפעיל מודל ליצירת דוח ללא נתוני מקור, ולא אציג נתוני דוגמה.",
+          time: now(),
+          statusTag: EVIDENCE_LABEL_HE.unavailable,
+        },
+      ]);
+      return;
+    }
+
+    try {
+      const context = buildNoaContext({
+        meta: liveData.meta,
+        fetchedAt: liveData.fetchedAt,
+        notes: liveData.deliveryNotes,
+        visits: liveData.visits,
+        discrepancies: liveData.discrepancies,
+        question: q,
+      });
+      const history = messages
+        .filter((m) => m.id !== "m0")
+        .slice(-12)
+        .map((m) => ({
+          role: (m.sender === "user" ? "user" : "assistant") as "user" | "assistant",
+          content: m.text.slice(0, 2000),
+        }));
+      const result = await askNoa({
+        data: {
+          messages: [...history, { role: "user", content: q }],
+          context,
+        },
+      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `noa-${Date.now()}`,
+          sender: "noa",
+          text: result.text,
+          time: now(),
+          statusTag: EVIDENCE_LABEL_HE[evidenceFromMeta(liveData.meta)],
+        },
+      ]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `noa-${Date.now()}`,
+          sender: "noa",
+          text: `לא ניתן לייצר מענה מאומת כרגע.\n${msg}\nלא הוצג דוח דוגמה.`,
+          time: now(),
+          statusTag: EVIDENCE_LABEL_HE.unavailable,
+        },
+      ]);
+    }
   };
 
+  const activeSummary = truckSummaries.find((s) => s.truck === activeTruck) || truckSummaries[0];
+
   return (
-    <div className="flex h-[calc(100vh-65px)] flex-col bg-[#0b1118] text-slate-100 overflow-hidden font-sans">
-      {/* Top Command Bar */}
+    <div className="flex h-[calc(100vh-65px)] flex-col bg-[#0b1118] text-slate-100 overflow-hidden font-sans" dir="rtl">
       <div className="flex items-center justify-between border-b border-[#223246] bg-[#0e1620] px-4 py-2.5">
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <img
-              src={noa}
-              alt="נועה AI"
-              className="h-9 w-9 rounded-xl object-cover ring-1 ring-emerald-500/40"
-            />
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#0e1620]" />
-          </div>
+          <img src={noa} alt="נועה AI" className="h-9 w-9 rounded-xl object-cover ring-1 ring-emerald-500/40" />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold tracking-tight text-white">
-                נועה AI — חמ״ל לוגיסטי
-              </h1>
-              <span className="rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
-                סנכרון מלא 24H
+              <h1 className="text-sm font-bold text-white">נועה AI — חמ״ל לוגיסטי</h1>
+              <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                מענה מבוסס מקור · P0
               </span>
+              {isLoadingBackend && (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-400" />
+              )}
             </div>
             <div className="text-[11px] text-slate-400">
-              בקרת ראמי מסארווה · ח. סבן חומרי בניין (1994) בע״מ
+              מקור תעודות: {liveData.meta?.notesSource ?? "לא נטען"} · איתוראן בצינור:{" "}
+              {liveData.meta?.ituranSource ?? "לא נטען"}
             </div>
           </div>
         </div>
-
         <div className="flex items-center gap-2">
-          {/* Sound Toggle */}
           <button
-            onClick={() => setIsSoundEnabled((prev) => !prev)}
-            className={`p-2 rounded-xl border transition ${
-              isSoundEnabled
-                ? "bg-[#172230] border-[#223246] text-emerald-400"
-                : "bg-[#172230]/50 border-[#223246]/50 text-slate-500"
-            }`}
-            title={isSoundEnabled ? "השתק צלילי חמ״ל" : "הפעל צלילי חמ״ל"}
+            type="button"
+            onClick={() => setIsSoundEnabled((p) => !p)}
+            className="rounded-xl border border-[#223246] bg-[#172230] p-2 text-slate-300"
           >
             {isSoundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </button>
-
-          {/* Toggle Inspector Drawer */}
           <button
-            onClick={() => setIsInspectorOpen((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition ${
-              isInspectorOpen
-                ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
-                : "bg-[#172230] border-[#223246] text-slate-300 hover:text-white"
-            }`}
+            type="button"
+            onClick={() => setIsInspectorOpen((p) => !p)}
+            className="flex items-center gap-1.5 rounded-xl border border-[#223246] bg-[#172230] px-3 py-1.5 text-xs font-semibold text-slate-300"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">
-              {isInspectorOpen ? "הסתר מפקח הצלבות" : "הצג מפקח הצלבות"}
-            </span>
+            מפקח
           </button>
         </div>
       </div>
 
-      {/* Main Dual-Panel Viewport */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-        {/* Left/Main Column: WhatsApp-Style Intelligence Feed (7 or 12 cols) */}
-        <div
-          className={`flex flex-col h-full overflow-hidden border-b lg:border-b-0 border-[#223246] ${
-            isInspectorOpen ? "lg:col-span-7 xl:col-span-8" : "lg:col-span-12"
-          }`}
-        >
-          {/* Messages Scroll Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0b1118]">
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {messages.map((m) => {
               const isUser = m.sender === "user";
               return (
-                <div
-                  key={m.id}
-                  className={`flex flex-col ${isUser ? "items-start" : "items-end"} w-full`}
-                >
+                <div key={m.id} className={`flex ${isUser ? "justify-start" : "justify-end"}`}>
                   <div
-                    className={`relative max-w-[92%] sm:max-w-[85%] rounded-2xl p-4 shadow-sm text-sm leading-relaxed ${
+                    className={`max-w-[min(100%,36rem)] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                       isUser
-                        ? "rounded-tr-none bg-emerald-700 text-white"
-                        : "rounded-tl-none bg-[#131c26] text-slate-200 border border-[#223246]"
+                        ? "bg-emerald-700/80 text-white"
+                        : "border border-[#223246] bg-[#121a24] text-slate-100"
                     }`}
                   >
-                    {/* Header info for Noa messages */}
-                    {!isUser && (
-                      <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-[#223246]/70 text-xs">
-                        <div className="flex items-center gap-1.5 font-bold text-emerald-400">
-                          <img src={noa} alt="" className="h-4 w-4 rounded-full object-cover" />
-                          <span>נועה AI</span>
-                        </div>
-                        {m.statusTag && (
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {m.statusTag}
-                          </span>
-                        )}
-                      </div>
+                    {m.statusTag && (
+                      <div className="mb-1 text-[10px] font-bold text-amber-300/90">{m.statusTag}</div>
                     )}
-
-                    {/* Formatted Text */}
-                    <div className="whitespace-pre-line text-xs sm:text-sm font-normal">
-                      {m.text}
-                    </div>
-
-                    {/* Embedded Site Details Card */}
-                    {m.siteDetails && (
-                      <div className="mt-3 rounded-xl border border-[#223246] bg-[#172230] p-3 text-xs space-y-2">
-                        <div className="flex items-center justify-between font-bold text-white">
-                          <span>📍 {m.siteDetails.address}</span>
-                          <span className="text-emerald-400 text-[11px]">
-                            {m.siteDetails.gapStatus}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300">
-                          <div>
-                            <span className="text-slate-500 block">לקוח:</span>
-                            <b className="text-white">{m.siteDetails.customer}</b>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block">שהייה באיתוראן:</span>
-                            <b className="text-sky-300 font-mono">{m.siteDetails.ituranDuration}</b>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block">רישום כתב יד:</span>
-                            <b className="text-amber-300 font-mono">
-                              {m.siteDetails.craneDuration}
-                            </b>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block">מספר תעודות:</span>
-                            <b className="text-white">{m.siteDetails.notesCount} תעודה חתומה</b>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Embedded Tachograph Canvas Card */}
-                    {m.tachographCard && (
-                      <div className="mt-3">
-                        <TachographCanvasViewer
-                          imageUrl={m.tachographCard.imageUrl}
-                          driver={m.tachographCard.driver}
-                          truck={m.tachographCard.truck}
-                          date={m.tachographCard.date}
-                          kmTotal={m.tachographCard.kmTotal}
-                          ptoHours={m.tachographCard.ptoHours}
-                          stops={m.tachographCard.stops}
-                          height={260}
-                          compact={false}
-                        />
-                      </div>
-                    )}
-
-                    {/* Embedded Discrepancy Alerts */}
+                    <div className="whitespace-pre-wrap">{m.text}</div>
                     {m.discrepancyAlerts && m.discrepancyAlerts.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {m.discrepancyAlerts.map((disc) => (
                           <div
                             key={disc.id}
-                            className={`p-3 rounded-xl border text-xs space-y-1.5 ${
-                              disc.severity === "alert"
-                                ? "bg-red-950/40 border-red-800/50 text-red-200"
-                                : "bg-amber-950/40 border-amber-800/50 text-amber-200"
-                            }`}
+                            className="space-y-1 rounded-xl border border-amber-800/50 bg-amber-950/40 p-3 text-xs text-amber-100"
                           >
-                            <div className="flex items-center justify-between font-bold">
-                              <span className="flex items-center gap-1.5">
-                                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                                <span>{disc.title}</span>
-                              </span>
-                              <span className="text-[10px] opacity-80 font-mono">
-                                משאית {disc.truck}
-                              </span>
+                            <div className="flex items-center gap-1.5 font-bold">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              {disc.title}
                             </div>
-                            <p className="text-[11px] opacity-90">{disc.description}</p>
-                            <div className="flex items-center justify-between pt-1">
-                              <span className="text-[10px] opacity-75">{disc.address}</span>
+                            <p>{disc.description}</p>
+                            <div className="flex justify-between pt-1 text-[10px] opacity-80">
+                              <span>{disc.address}</span>
                               <button
+                                type="button"
                                 onClick={() => handleResolveDiscrepancy(disc.id)}
-                                className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-semibold transition"
+                                className="rounded-md bg-white/10 px-2 py-1 font-semibold"
                               >
-                                אשר ובטל חריגה
+                                הסר מהתצוגה (מקומי)
                               </button>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
-
-                    {/* Message Footer (Time & Checkmarks) */}
-                    <div
-                      className={`mt-2 flex items-center justify-end gap-1 text-[10px] ${
-                        isUser ? "text-emerald-100/80" : "text-slate-400"
-                      }`}
-                    >
-                      <span className="font-mono tabular-nums">{m.time}</span>
+                    <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-slate-400">
+                      <span className="font-mono">{m.time}</span>
                       <CheckCheck className="h-3 w-3 text-emerald-400" />
                     </div>
+                    {m.quickActions && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {m.quickActions.map((qa) => (
+                          <button
+                            key={qa.query}
+                            type="button"
+                            onClick={() => void handleSend(qa.query)}
+                            className="rounded-lg border border-[#223246] bg-[#172230] px-2 py-1 text-[11px] font-semibold text-slate-200"
+                          >
+                            {qa.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-
-                  {/* Interactive Quick-Action Chips */}
-                  {m.quickActions && (
-                    <div className="mt-2 flex flex-wrap gap-1.5 max-w-[92%] sm:max-w-[85%]">
-                      {m.quickActions.map((qa, i) => (
-                        <button
-                          key={i}
-                          onClick={() => void handleSend(qa.query)}
-                          className="flex items-center gap-1 text-xs rounded-xl bg-[#172230] hover:bg-[#223246] border border-[#223246] px-3 py-1.5 text-slate-300 hover:text-white transition shadow-sm active:scale-95"
-                        >
-                          <span>{qa.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Persistent Quick Action Bar */}
-          <div className="flex items-center gap-2 overflow-x-auto border-t border-[#223246] bg-[#0e1620] px-4 py-2 text-xs scrollbar-none">
-            <span className="text-[11px] text-slate-400 font-semibold shrink-0">שאלות מפתח:</span>
-            <button
-              onClick={() => void handleSend("מה הסטטוס של דיסקית הטכוגרף של חכמת?")}
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#172230] hover:bg-[#223246] px-2.5 py-1 text-slate-300 border border-[#223246] transition"
+          <div className="border-t border-[#223246] bg-[#0e1620] p-3">
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleSend();
+              }}
             >
-              <Gauge className="h-3 w-3 text-amber-400" />
-              <span>טכוגרף חכמת</span>
-            </button>
-            <button
-              onClick={() => void handleSend("בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון")}
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#172230] hover:bg-[#223246] px-2.5 py-1 text-slate-300 border border-[#223246] transition"
-            >
-              <FileText className="h-3 w-3 text-emerald-400" />
-              <span>היסטוריית רקפת 4</span>
-            </button>
-            <button
-              onClick={() => void handleSend("בצעי פיצוח והצלבת חריגות לכלל הצי היום")}
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#172230] hover:bg-[#223246] px-2.5 py-1 text-slate-300 border border-[#223246] transition"
-            >
-              <AlertTriangle className="h-3 w-3 text-purple-400" />
-              <span>איתור חריגות צי</span>
-            </button>
-            <button
-              onClick={() => void handleSend("מה מצב המשאית של עלי אבו עידה?")}
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#172230] hover:bg-[#223246] px-2.5 py-1 text-slate-300 border border-[#223246] transition"
-            >
-              <Truck className="h-3 w-3 text-sky-400" />
-              <span>עלי אבו עידה</span>
-            </button>
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="שאלה תפעולית — התשובה רק ממקור מאומת או הצהרת חוסר..."
+                className="flex-1 rounded-xl border border-[#223246] bg-[#121a24] px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-emerald-500/40"
+              />
+              <button
+                type="submit"
+                className="flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white"
+              >
+                <Send className="h-4 w-4" />
+                שלח
+              </button>
+            </form>
           </div>
-
-          {/* Chat Input Field */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleSend();
-            }}
-            className="flex items-center gap-2 border-t border-[#223246] bg-[#131c26] p-3"
-          >
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="שאל את נועה על נהג, משאית, כתובת אתר (לדוגמה 'רקפת 4') או בדיקת דיסקית..."
-              className="flex-1 rounded-xl border border-[#223246] bg-[#0b1118] px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white transition hover:bg-emerald-500 disabled:opacity-40"
-              title="שלח הודעה"
-            >
-              <Send className="h-4 w-4 rotate-180" />
-            </button>
-          </form>
         </div>
 
-        {/* Right/Drawer Panel: Cross-Reference Inspector (5 or 4 cols) */}
         {isInspectorOpen && (
-          <div className="h-full overflow-hidden lg:col-span-5 xl:col-span-4 border-t lg:border-t-0">
-            <CrossReferenceInspector
-              activeTruck={activeTruck}
-              onSelectTruck={(truck) => setActiveTruck(truck)}
-              truckSummaries={truckSummaries}
-              discrepancies={liveData.discrepancies}
-              onResolveDiscrepancy={handleResolveDiscrepancy}
-              onClose={() => setIsInspectorOpen(false)}
-            />
+          <div className="hidden w-[380px] shrink-0 flex-col border-r border-[#223246] bg-[#0e1620] lg:flex">
+            {truckSummaries.length === 0 ? (
+              <div className="p-4 text-xs text-slate-400">
+                אין נתוני דיסקיות מהשרת. לוח ההצלבות יישאר ריק עד שמקור מאומת יספק discs (ללא ערכי ברירת מחדל).
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-1 overflow-x-auto border-b border-[#223246] p-2">
+                  {truckSummaries.map((s) => (
+                    <button
+                      key={s.truck}
+                      type="button"
+                      onClick={() => setActiveTruck(s.truck)}
+                      className={`rounded-lg px-2 py-1 text-[11px] font-bold ${
+                        activeTruck === s.truck
+                          ? "bg-emerald-600 text-white"
+                          : "bg-[#172230] text-slate-300"
+                      }`}
+                    >
+                      {s.truck}
+                    </button>
+                  ))}
+                </div>
+                {activeSummary && (
+                  <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                    <CrossReferenceInspector
+                      truckSummaries={truckSummaries}
+                      activeTruck={activeTruck || activeSummary.truck}
+                      onSelectTruck={setActiveTruck}
+                      discrepancies={liveData.discrepancies}
+                      onResolveDiscrepancy={handleResolveDiscrepancy}
+                    />
+                    {activeSummary.discImage ? (
+                      <div className="mt-3">
+                        <TachographCanvasViewer
+                          imageUrl={activeSummary.discImage}
+                          driver={activeSummary.driver}
+                          truck={activeSummary.truck}
+                          date={activeSummary.date}
+                          kmTotal={activeSummary.kmTotal}
+                          ptoHours={activeSummary.ptoTime}
+                          stops={activeSummary.stops}
+                        />
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-[11px] text-slate-500">אין קישור דיסקית במקור — לא מוצגת תמונת דמה.</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
