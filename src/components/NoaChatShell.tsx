@@ -82,27 +82,31 @@ export function NoaChatShell({
   const [input, setInput] = useState("");
   const [replies, setReplies] = useState<{ q: string; r: NoaReply }[]>([]);
   const [busy, setBusy] = useState(false);
+  const [historyReady, setHistoryReady] = useState(false);
   const [error, setError] = useState("");
   const historyKey = `noa-chat-shell-v1:${pathname}`;
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(historyKey);
-      if (!saved) { setReplies([]); return; }
+      if (!saved) { setReplies([]); setHistoryReady(true); return; }
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) setReplies(parsed.slice(-40));
+      setHistoryReady(true);
     } catch {
       setError("לא ניתן לטעון היסטוריית שיחה מקומית.");
+      setHistoryReady(true);
     }
   }, [historyKey]);
 
   useEffect(() => {
+    if (!historyReady) return;
     try {
       localStorage.setItem(historyKey, JSON.stringify(replies.slice(-40)));
     } catch {
       setError("לא ניתן לשמור היסטוריית שיחה בדפדפן זה.");
     }
-  }, [historyKey, replies]);
+  }, [historyKey, replies, historyReady]);
 
   const ctx: NoaContext = useMemo(
     () => ({
