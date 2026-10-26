@@ -79,7 +79,7 @@ function ChatScreen() {
   const [input, setInput] = useState("");
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
-  const [activeTruck, setActiveTruck] = useState("615-41-002");
+  const [activeTruck, setActiveTruck] = useState("");
   const [isLoadingBackend, setIsLoadingBackend] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [chatError, setChatError] = useState("");
@@ -147,13 +147,13 @@ function ChatScreen() {
                 .filter((v: Record<string, unknown>) => v.truck === truck)
                 .map((v: Record<string, unknown>, idx: number) => ({
                   id: `v-${idx}`,
-                  label: `${((v.customers as string[]) || []).join(", ") || "לקוח"} (תעודות ${((v.noteIds as string[]) || []).join(", ")})`,
-                  address: String(v.fullAddress || v.streetAndNum || "כתובת"),
+                  label: `${((v.customers as string[]) || []).join(", ") || "לקוח לא מזוהה"} (תעודות ${((v.noteIds as string[]) || []).join(", ")})`,
+                  address: String(v.fullAddress || v.streetAndNum || "כתובת לא זמינה"),
                   arriveTime: v.ituranArriveTime
-                    ? String(v.ituranArriveTime).split(" ")[1]?.slice(0, 5)
+                    ? String(v.ituranArriveTime).split(" ")[1]?.slice(0, 5) || "לא זמין"
                     : "לא זמין",
                   departTime: v.ituranDepartTime
-                    ? String(v.ituranDepartTime).split(" ")[1]?.slice(0, 5)
+                    ? String(v.ituranDepartTime).split(" ")[1]?.slice(0, 5) || "לא זמין"
                     : "לא זמין",
                   ptoOpen: v.ptoOpenTime
                     ? String(v.ptoOpenTime).split(" ")[1]?.slice(0, 5)
@@ -489,7 +489,7 @@ function ChatScreen() {
                                 onClick={() => handleResolveDiscrepancy(disc.id)}
                                 className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-semibold transition"
                               >
-                                אשר ובטל חריגה
+                                הסר מהתצוגה
                               </button>
                             </div>
                           </div>
