@@ -98,74 +98,7 @@ function ChatScreen() {
     discrepancies: [],
   });
 
-  const [truckSummaries, setTruckSummaries] = useState<DriverTruckSummary[]>([
-    {
-      driver: "חכמת גאבר",
-      truck: "615-41-002",
-      truckType: "מרצדס מנוף 32 טון",
-      date: "15/10/2026",
-      kmTotal: "140",
-      driveTime: "03:45",
-      workTime: "04:10",
-      ptoTime: "02:15",
-      idleTime: "00:35",
-      discImage: "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-      verifiedStatus: "תקין מול איתוראן",
-      stops: [
-        {
-          id: "s1",
-          label: "א.ערן אזולאי בע״מ (תעודות 6715766, 6715767)",
-          address: "משה שרת 9, הוד השרון",
-          arriveTime: "09:15",
-          departTime: "10:00",
-          ptoOpen: "09:20",
-          ptoClose: "09:58",
-          ptoMin: 38,
-        },
-        {
-          id: "s2",
-          label: "דניה סיבוס בע״מ (תעודה 6715792)",
-          address: "נח 3, תל אביב",
-          arriveTime: "10:40",
-          departTime: "11:30",
-          ptoOpen: "10:45",
-          ptoClose: "11:25",
-          ptoMin: 40,
-        },
-      ],
-    },
-    {
-      driver: "עלי אבו עידה",
-      truck: "651-51-701",
-      truckType: "איסוזו פלטה",
-      date: "15/10/2026",
-      kmTotal: "95",
-      driveTime: "02:20",
-      workTime: "03:30",
-      ptoTime: "00:00",
-      idleTime: "00:40",
-      discImage: "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-      verifiedStatus: "ממתין לבדיקת ראמי",
-      stops: [
-        {
-          id: "s3",
-          label: "רמי ששון תשתיות (תעודה 6715780)",
-          address: "הרקפת 4, הוד השרון",
-          arriveTime: "11:45",
-          departTime: "12:25",
-          ptoMin: 0,
-        },
-        {
-          id: "s4",
-          label: "אספקה כללית (תעודה 6715805)",
-          address: "סוקולוב 22, רמת השרון",
-          arriveTime: "13:00",
-          departTime: "13:40",
-          ptoMin: 0,
-        },
-      ],
-    },
-  ]);
+  const [truckSummaries, setTruckSummaries] = useState<DriverTruckSummary[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -206,8 +139,8 @@ function ChatScreen() {
             const mappedSummaries: DriverTruckSummary[] = (
               json.data.discs as Record<string, unknown>[]
             ).map((d: Record<string, unknown>) => {
-              const driver = String(d["נהג"] || "חכמת גאבר");
-              const truck = String(d["רישוי / משאית"] || "615-41-002");
+              const driver = String(d["נהג"] || "נהג לא מזוהה");
+              const truck = String(d["רישוי / משאית"] || "משאית לא מזוהה");
               const matchedStops: TachographStopOverlay[] = (
                 (json.data.visits || []) as Record<string, unknown>[]
               )
@@ -218,10 +151,10 @@ function ChatScreen() {
                   address: String(v.fullAddress || v.streetAndNum || "כתובת"),
                   arriveTime: v.ituranArriveTime
                     ? String(v.ituranArriveTime).split(" ")[1]?.slice(0, 5)
-                    : "09:00",
+                    : "לא זמין",
                   departTime: v.ituranDepartTime
                     ? String(v.ituranDepartTime).split(" ")[1]?.slice(0, 5)
-                    : "09:45",
+                    : "לא זמין",
                   ptoOpen: v.ptoOpenTime
                     ? String(v.ptoOpenTime).split(" ")[1]?.slice(0, 5)
                     : undefined,
@@ -234,16 +167,16 @@ function ChatScreen() {
               return {
                 driver,
                 truck,
-                truckType: d["סוג משאית"] || (truck.includes("615") ? "מרצדס מנוף" : "פלטה"),
-                date: d["תאריך דיסקית"] || "15/10/2026",
+                truckType: d["סוג משאית"] || "לא זמין",
+                date: d["תאריך דיסקית"] || "לא זמין",
                 kmTotal: d['סה"כ ק"מ'] || "140",
-                driveTime: d["זמן נסיעה"] || "03:45",
-                workTime: d["זמן עבודה"] || "04:10",
-                ptoTime: d["זמן מנוף"] || (truck.includes("615") ? "02:15" : "00:00"),
-                idleTime: d["זמן סרק"] || "00:35",
+                driveTime: d["זמן נסיעה"] || "לא זמין",
+                workTime: d["זמן עבודה"] || "לא זמין",
+                ptoTime: d["זמן מנוף"] || "לא זמין",
+                idleTime: d["זמן סרק"] || "לא זמין",
                 discImage:
-                  d["קישור לדיסקית"] || "/src/assets/images/tachograph_disc_scan_1792629364395.jpg",
-                verifiedStatus: d["סטטוס אימות"] || "תקין מול איתוראן",
+                  d["קישור לדיסקית"] || "",
+                verifiedStatus: d["סטטוס אימות"] || "לא אומת",
                 stops: matchedStops.length > 0 ? matchedStops : [],
               };
             });
@@ -304,9 +237,9 @@ function ChatScreen() {
       {
         id: `sys-${Date.now()}`,
         sender: "noa",
-        text: `✓ החריגה סומנה כנבדקה ואושרה ע״י ראמי מסארווה. עודכן ביומן הבקרה ובמערכת.`,
+        text: "החריגה הוסרה מהתצוגה המקומית בלבד. לא נשלח אישור ולא עודכנה מערכת חיצונית.",
         time: now(),
-        statusTag: "אושר ע״י ראמי",
+        statusTag: "שינוי מקומי בלבד · לא נשמר בשרת",
       },
     ]);
   };
