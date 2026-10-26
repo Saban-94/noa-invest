@@ -84,7 +84,7 @@ export function NoaChatShell({
   const [busy, setBusy] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const [error, setError] = useState("");
-  const historyKey = `noa-chat-shell-v1:${pathname}`;
+  const historyKey = "noa-chat-shell-v1";
 
   useEffect(() => {
     try {
