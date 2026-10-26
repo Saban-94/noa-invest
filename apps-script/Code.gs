@@ -10,7 +10,7 @@
  * 5. לחץ Deploy והעתק את הכתובת שמסתיימת ב-/exec.
  */
 
-const API_VERSION = "2026-10-25-v6-workroom";
+const API_VERSION = "2026-10-26-v7-catalog";
 const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
 const TAB_GALYA = "ארכיון_תעודות_גליה";
 
@@ -56,6 +56,10 @@ function doGet(e) {
 
     if (action === "getNotes") {
       return handleGetNotes(p);
+    }
+
+    if (action === "getCatalog") {
+      return jsonResponse(getCatalog_());
     }
 
     if (action === "getRamiInquiries") {
@@ -320,17 +324,43 @@ function handleSubmitApproval(body) {
 
 
 /**
+ * Run this function once from the Apps Script editor to create the audit tab
+ * before the first approval. It is safe to run repeatedly.
+ */
+function setupLogisticsAuditSheet() {
+  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  const sheet = ensureLogisticsAuditSheet_(ss);
+  SpreadsheetApp.flush();
+  Logger.log("Ready: " + sheet.getName() + " in spreadsheet " + ss.getUrl());
+  return sheet.getName();
+}
+
+function ensureLogisticsAuditSheet_(ss) {
+  const name = "בקרת_לוגיסטיקה";
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  const headers = ["תאריך", "מספר תעודה", "מאשר", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה"];
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    const existing = sheet.getRange(1, 1, 1, Math.max(headers.length, sheet.getLastColumn()))
+      .getValues()[0].map(value => String(value || "").trim());
+    if (headers.some((header, index) => existing[index] !== header)) {
+      throw new Error("לשונית בקרת_לוגיסטיקה קיימת עם כותרות שונות; לא שיניתי נתונים קיימים.");
+    }
+  }
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+  sheet.autoResizeColumns(1, headers.length);
+  return sheet;
+}
+
+/**
  * Append immutable evidence references for every audit finding before an approval is written.
  * The application server independently recomputes the expected finding IDs from the live note.
  */
 function recordLogisticsAuditEvidence_(ss, noteId, approver, auditEvidence, timestamp) {
-  const name = "בקרת_לוגיסטיקה";
-  let sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["תאריך", "מספר תעודה", "מאשר", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה"]);
-    sheet.setFrozenRows(1);
-  }
+  const sheet = ensureLogisticsAuditSheet_(ss);
   const rows = Object.entries(auditEvidence).map(([findingId, evidence]) => {
     const safeEvidence = String(evidence || "").trim().slice(0, 2000);
     return [timestamp, noteId, approver, String(findingId).slice(0, 200), safeEvidence];
