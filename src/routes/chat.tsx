@@ -255,17 +255,24 @@ function ChatScreen() {
     }
 
     if (/תעודות|מה יש ב|סיכום תעוד/.test(q) && !/חריג|הצלבה|טכוגרף/.test(q)) {
+      const discCount =
+        liveData.meta?.notesSource === "live" ? liveData.discrepancies.length : undefined;
       setMessages((prev) => [
         ...prev,
         {
           id: `noa-${Date.now()}`,
           sender: "noa",
-          text: formatNotesSummary(liveData.deliveryNotes, liveData.meta, liveData.fetchedAt),
+          text: formatNotesSummary(
+            liveData.deliveryNotes,
+            liveData.meta,
+            liveData.fetchedAt,
+            discCount,
+          ),
           time: now(),
           statusTag: EVIDENCE_LABEL_HE[evidenceFromMeta(liveData.meta)],
-          discrepancyAlerts:
-            liveData.meta?.notesSource === "live" && liveData.discrepancies.length
-              ? liveData.discrepancies.slice(0, 15)
+          quickActions:
+            typeof discCount === "number" && discCount > 0
+              ? [{ label: `הציגי ${discCount} חריגות`, query: "הציגי חריגות מהשרת אם קיימות" }]
               : undefined,
         },
       ]);
@@ -274,18 +281,24 @@ function ChatScreen() {
 
     if (/חריג|הצלבה|פיצוח/.test(q)) {
       if (liveData.meta?.notesSource === "live" && liveData.discrepancies.length > 0) {
-        const lines = liveData.discrepancies.slice(0, 12).map((d, i) =>
-          `${i + 1}. ${d.title} · משאית ${d.truck} · ${d.address}\n   ${d.description}`,
+        const total = liveData.discrepancies.length;
+        const preview = liveData.discrepancies.slice(0, 5);
+        const lines = preview.map((d, i) =>
+          `${i + 1}. ${d.title} · משאית ${d.truck || "—"} · ${d.address}\n   ${d.description}`,
         );
+        const more =
+          total > 5
+            ? `\n\nמוצגות 5 מתוך ${total} חריגות. אפשר לסנן לפי כתובת או משאית בשאלה הבאה.`
+            : "";
         setMessages((prev) => [
           ...prev,
           {
             id: `noa-${Date.now()}`,
             sender: "noa",
-            text: `חריגות מצינור השרת (${liveData.discrepancies.length}):\n\n${lines.join("\n\n")}\n\nמקור תעודות: ${liveData.meta?.notesSource}. איתוראן בצינור: ${liveData.meta?.ituranSource ?? "לא ידוע"}.`,
+            text: `חריגות מצינור השרת (${total}):\n\n${lines.join("\n\n")}${more}\n\nמקור תעודות: ${liveData.meta?.notesSource}. איתוראן בצינור: ${liveData.meta?.ituranSource ?? "לא ידוע"}.`,
             time: now(),
             statusTag: EVIDENCE_LABEL_HE.partial,
-            discrepancyAlerts: liveData.discrepancies.slice(0, 15),
+            discrepancyAlerts: preview,
           },
         ]);
       } else {
@@ -300,28 +313,6 @@ function ChatScreen() {
           },
         ]);
       }
-      return;
-    }
-
-    const hasVerifiedContext =
-      (liveData.meta?.notesSource === "live" &&
-        (liveData.deliveryNotes.length > 0 || liveData.discrepancies.length > 0)) ||
-      (Boolean(liveData.meta?.ituranSource) &&
-        liveData.meta?.ituranSource !== "none" &&
-        liveData.meta?.ituranSource !== "sample" &&
-        liveData.visits.length > 0);
-
-    if (!hasVerifiedContext) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `noa-${Date.now()}`,
-          sender: "noa",
-          text: "אין כרגע נתונים תפעוליים ממקור מאומת שרלוונטיים למענה. לא אפעיל מודל ליצירת דוח ללא נתוני מקור, ולא אציג נתוני דוגמה.",
-          time: now(),
-          statusTag: EVIDENCE_LABEL_HE.unavailable,
-        },
-      ]);
       return;
     }
 
