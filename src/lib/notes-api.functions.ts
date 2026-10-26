@@ -20,7 +20,7 @@ function gasUrl(): string {
   if (
     envUrl &&
     (envUrl.includes("TwXhw") ||
-      envUrl.includes("AKfycbw1zK4jGU8R9joEIyiCDhngHpI-0GIAyERmXE-hjqwGCAUaGVbUMVNbkHR6WbCVmTwXhw"))
+      envUrl.includes("AKfycbwg8KWzcw9QSls0q-892lj2KW1_S1Y9fiEsVGpjObgEqyIjun83pT592wUdcVCN101Agg"))
   ) {
     return DEFAULT_GAS_URL;
   }
