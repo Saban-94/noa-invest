@@ -63,6 +63,9 @@ export const askNoa = createServerFn({ method: "POST" })
     return { messages, context: String(d.context ?? "").slice(0, 12000) };
   })
   .handler(async ({ data }) => {
+    while (data.messages[0]?.role === "assistant") data.messages.shift();
+    if (data.messages.length === 0) throw new Error("נדרשת הודעת משתמש");
+
     const instructions = `את נועה, עוזרת לוגיסטית של ח. סבן. עני בעברית, בקצרה ובמקצועיות.
 כללי אמינות מחייבים:
 - השתמשי רק בעובדות שמופיעות במפורש בהקשר הנתונים ובהודעות השיחה.
