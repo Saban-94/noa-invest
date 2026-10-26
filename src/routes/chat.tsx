@@ -217,7 +217,7 @@ function ChatScreen() {
     } catch {
       setChatError("אין אפשרות לשמור היסטוריה בדפדפן זה.");
     }
-  }, [messages]);
+  }, [messages, historyReady]);
 
   // Auto scroll to bottom
   useEffect(() => {
