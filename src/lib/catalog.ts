@@ -163,6 +163,8 @@ export function expectedDeposits(lines: OrderLine[], cat: Catalog): DepositCheck
   const add = (k: string, n: number) => (required[k] = (required[k] ?? 0) + n);
 
   for (const l of lines) {
+    // שורות הפקדון עצמן אינן נדרשות לפקדון נוסף.
+    if (Object.values(DEPOSIT_SKU).includes(l.sku)) continue;
     const it = cat.items.get(l.sku);
     if (!it) { unresolved.push({ sku: l.sku, reason: "מק״ט לא בקטלוג" }); continue; }
     if (it.conflict) { unresolved.push({ sku: l.sku, reason: "מק״ט כפול סותר בטאב" }); continue; }
