@@ -5,68 +5,46 @@ type Msg = { role: "user" | "assistant"; content: string };
 async function callGeminiOrFallback(instructions: string, input: Msg[]): Promise<string> {
   const geminiKey =
     process.env["GEMINI_API_KEY"] ||
-    process.env["GEMINI_API_KEYS"]?.split(",")[0]?.trim() ||
-    process.env["VITE_GEMINI_API_KEY"];
+    process.env["GEMINI_API_KEYS"]?.split(",")[0]?.trim();
 
-  const lastUserMessage = [...input].reverse().find((m) => m.role === "user")?.content || "";
-
-  if (geminiKey) {
-    try {
-      const model = process.env["GEMINI_MODELS"]?.split(",")[0]?.trim() || "gemini-2.5-flash";
-      const contents = [
-        ...input.map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        })),
-      ];
-
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: instructions }] },
-            contents,
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: 1200,
-            },
-          }),
-        },
-      );
-
-      if (res.ok) {
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text && typeof text === "string" && text.trim().length > 0) {
-          return text.trim();
-        }
-      }
-    } catch (err) {
-      console.warn("[AI] Gemini request fallback to logistics engine:", err);
-    }
+  if (!geminiKey) {
+    throw new Error("שירות הבינה אינו מוגדר בשרת: חסר GEMINI_API_KEY");
   }
 
-  // אינטליגנציה מקומית לוגיסטית של נועה AI (ללא תלות במפתח חיצוני)
-  const q = lastUserMessage.toLowerCase();
-  if (q.includes("פקדון") || q.includes("בלה") || q.includes("משטח")) {
-    return "ראמי, לפי חוק הפקדונות ונוהל סבן: יש לוודא התאמה 1:1 בין שקי בלה 60002 ומשטחי עץ 60060 שסופקו לאתר לבין מה שחויב. במידה וסופקו בלות והוחזרו בלות ריקות — המאזן מאוזן 1:1 ללא חיוב כספי ✅.";
-  }
-  if (q.includes("חתימה") || q.includes("מי חתם")) {
-    return "התעודה נחתמה ישירות בשטח ע״י מקבל הסחורה עם אישור קבלה מלא. חתימת השטח אותרה ומוצגת על גבי שטר המשלוח.";
-  }
-  if (q.includes("איתוראן") || q.includes("מנוף") || q.includes("זמן")) {
-    return "בקרת איתוראן GPS: המשאית שהתה באתר בטווח הפריקה המאושר. פריקת מנוף PTO ארכה כ-26–40 דק׳ בהתאם לסידור.";
-  }
-  if (q.includes("תיקייה") || q.includes("דרייב") || q.includes("תיוק")) {
-    return "התעודה מסונכרנת לתיקיית הלקוח ב-Google Drive תחת '2. תעודות משלוח'. כל חתימה ועריכה מוזרקת חזרה לגיליון הארכיון בלינק מעודכן 📁.";
-  }
-  if (q.includes("הראל") || q.includes("אשר") || q.includes("שלח")) {
-    return "התעודה אומתה 1:1 ומוכנה לשליחה להראל מנכ״ל! לחץ על כפתור 'שלח להראל מנכ״ל 👑' לשליחה בוואטסאפ ולעדכון הגיליון.";
+  const model = process.env["GEMINI_MODELS"]?.split(",")[0]?.trim() || "gemini-2.5-flash";
+  const contents = input.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: instructions }] },
+          contents,
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1200 },
+        }),
+      },
+    );
+  } catch {
+    throw new Error("שירות הבינה אינו זמין כרגע; לא נוצר מענה חלופי");
   }
 
-  return "שלום ראמי! התעודה נבדקה מול נתוני הגיליון, איתוראן וסריקת השטח. כמויות הפריטים והמשקל המוערך מאומתים ומוכנים לחתימה ושיגור 🚚.";
+  if (!res.ok) {
+    throw new Error(`שירות הבינה החזיר שגיאה (${res.status}); לא נוצר מענה חלופי`);
+  }
+
+  const data = await res.json();
+  const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (typeof responseText !== "string" || !responseText.trim()) {
+    throw new Error("שירות הבינה לא החזיר תשובה תקינה");
+  }
+  return responseText.trim();
 }
 
 export const askNoa = createServerFn({ method: "POST" })
@@ -80,11 +58,22 @@ export const askNoa = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data }) => {
-    const instructions = `את נועה ❤️, סדרנית ויד ימינו של ראמי מסארווה בח. סבן חומרי בניין (1994) בע״מ.
-עני בעברית, קצר, מקצועי ומדויק, בסגנון לוגיסטי. השתמשי ב-**הדגשה** לנתונים חשובים ובאימוג'י סטטוס (🟢 ⚠️ 🔴 🚚).
-ללא אזכור מחירים או כספים — התמקדי אך ורק בכמויות פריטים, משקל מוערך (טון/ק״ג), פקדונות 1:1, חתימות וזמני מנוף באיתוראן.
-נהגים: חכמת (מנוף 615-41-002), עלי (פלטה 651-51-701). מחסנים: 4 החרש 10 (אורן), 1 התלמיד 6 (תמיר).
-נתוני מערכת עדכניים:
+    while (data.messages[0]?.role === "assistant") data.messages.shift();
+    const latestQuestion = [...data.messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    const asksCurrentGps =
+      /(?:מיקום|איפה|היכן).{0,45}(?:משאית|רכב).{0,45}(?:כרגע|עכשיו|נוכחי|gps|איתוראן)?|(?:gps|איתוראן).{0,45}(?:מיקום|משאית|כרגע|עכשיו)|(?:משאית|רכב).{0,45}(?:מיקום|gps).{0,45}(?:כרגע|עכשיו)/i.test(latestQuestion);
+    if (asksCurrentGps) {
+      return { text: "אין לי כרגע מיקום GPS חי ומאומת של המשאית. ההקשר שמועבר אליי אינו כולל נתון מיקום חי עם מזהה רכב וזמן עדכון, ולכן איני יכולה לקבוע היכן המשאית נמצאת או לאשר שאיתוראן מחובר." };
+    }
+
+    const instructions = `את נועה, עוזרת לוגיסטית של ח. סבן. עני בעברית, בקצרה ובמקצועיות.
+כללי אמינות מחייבים:
+- השתמשי רק בעובדות שמופיעות במפורש בהקשר הנתונים ובהודעות השיחה.
+- אין להמציא נהגים, מספרי רכב, תעודות, כמויות, כתובות, זמני GPS/PTO, חתימות, אישורים, סנכרון או פעולות שבוצעו.
+- בשאלות על מיקום נוכחי, GPS או איתוראן, נדרש נתון חי עם מזהה רכב וזמן עדכון. אל תסיקי מיקום מהיסטוריית ביקורים או מתיאור המערכת.
+- אם המקור או הנתון חסרים, אמרי זאת במפורש. אין להשתמש בתשובות דמה או בתשובת fallback שמציגה מידע תפעולי כעובדה.
+- אל תטעני שבוצעה כתיבה למערכת, שליחת הודעה או אישור אלא אם כלי שרת ייעודי אישר זאת.
+הקשר שהועבר בפועל מהיישום (JSON; אינו הוכחה לחיבור למערכת חיצונית):
 ${data.context}`;
     return { text: await callGeminiOrFallback(instructions, data.messages) };
   });

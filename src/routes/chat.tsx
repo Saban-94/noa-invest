@@ -302,7 +302,28 @@ function ChatScreen() {
     setMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setInput("");
 
-    // Simulate smart dispatcher reasoning
+    const normalizedQuestion = text.trim();
+    const asksCurrentGps =
+      /(?:מיקום|איפה|היכן).{0,45}(?:משאית|רכב).{0,45}(?:כרגע|עכשיו|נוכחי|gps|איתוראן)?|(?:gps|איתוראן).{0,45}(?:מיקום|משאית|כרגע|עכשיו)|(?:משאית|רכב).{0,45}(?:מיקום|gps).{0,45}(?:כרגע|עכשיו)/i.test(normalizedQuestion);
+    const asksSourceStatus =
+      /(?:אילו|איזה|מה).{0,45}(?:נתונים|מקורות).{0,45}(?:זמינים|מקור|מחובר|כרגע)?|(?:מה מקורם|אילו נתונים זמינים)/i.test(normalizedQuestion);
+
+    if (asksCurrentGps || asksSourceStatus) {
+      const responseText = asksCurrentGps
+        ? "אין לי כרגע מיקום GPS חי ומאומת של המשאית. מסך הצ׳אט אינו מקבל כרגע נתוני מיקום חיים עם מזהה רכב וזמן עדכון, ולכן איני יכולה לקבוע היכן המשאית נמצאת או לאשר שאיתוראן מחובר. כדי למסור מיקום אמיתי צריך לחבר ולבדוק מקור GPS פעיל."
+        : "אין לי כרגע דוח מאומת של מקורות הנתונים וזמני העדכון שלהם. הצגת מסך או נתונים היסטוריים אינה מוכיחה שמערכת חיצונית מחוברת או מסונכרנת. בפרט, אין לי מיקום GPS חי מאומת של המשאית.";
+      const noaMsg: ChatMessage = {
+        id: `noa-${Date.now()}`,
+        sender: "noa",
+        text: responseText,
+        time: now(),
+        statusTag: "נדרש אימות מקור",
+      };
+      setMessages((prev) => [...prev, noaMsg]);
+      return;
+    }
+
+    // Remaining legacy report paths are unchanged; they must not be treated as live GPS.
     const t = text.toLowerCase();
     let replyText = "";
     let replyCard: ChatMessage["tachographCard"] = undefined;
@@ -425,8 +446,8 @@ function ChatScreen() {
     }
     // 5. Default intelligent assistant reply
     else {
-      replyText = `קיבלתי ראמי! הבקשה: "${text}".\nכל המידע מחובר ומסונכרן מול גיליון בדיקת תעודות משלוח, איתוראן וארכיון הטכוגרף.\nבאפשרותך לבקש דוח לכל נהג (חכמת / עלי), ניתוח אתר ספציפי (למשל: "רקפת 4, הוד השרון"), או הצלבת דיסקית בקנבס האינטראקטיבי.`;
-      statusTag = "מחובר";
+      replyText = `קיבלתי את הבקשה: "${text}". אין לי כרגע מקור מאומת שמוכיח שכל המערכות מחוברות ומסונכרנות. נתוני GPS חיים, זמני עדכון וחיבורי מערכות חיצוניות יוצגו רק לאחר אימות מול מקור פעיל.`;
+      statusTag = "נדרש אימות מקור";
       quickActions = [
         { label: "🚚 דוח חכמת (615-41-002)", query: "מה הסטטוס של דיסקית הטכוגרף של חכמת?" },
         { label: "📍 אתר רקפת 4, הוד השרון", query: "בדקי היסטוריית ביקור באתר רקפת 4, הוד השרון" },
