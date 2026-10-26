@@ -117,6 +117,15 @@ export function buildNoaContext(input: {
     noteIds: v.noteIds,
     ituranArrive: v.ituranArriveTime,
     ituranDepart: v.ituranDepartTime,
+    ituranDurationMin: v.ituranDurationMin,
+    ptoOpenTime: v.ptoOpenTime,
+    ptoCloseTime: v.ptoCloseTime,
+    ptoDurationMin: v.ptoDurationMin,
+    handwrittenCraneRaw: v.handwrittenCraneRaw,
+    handwrittenUnloadMin: v.handwrittenUnloadMin,
+    handwrittenWaitingMin: v.handwrittenWaitingMin,
+    measurementSource: v.measurementSource,
+    qualityFlags: v.qualityFlags,
     customers: v.customers,
   }));
 
