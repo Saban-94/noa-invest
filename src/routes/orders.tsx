@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { listOrdersFn, updateOrderStatusFn } from "@/lib/server/orders";
+import { listOrdersFn, updateOrderStatusFn } from "@/lib/orders.functions";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import {
@@ -129,7 +129,7 @@ const toDeposit = (v: unknown): Deposit => {
   if (["crate", "ארגז", "ארגזים", "מכל"].includes(value)) return "crate";
   return null;
 };
-function normalizeOrder(raw: import("@/lib/server/orders").SheetOrder): Order {
+function normalizeOrder(raw: import("@/lib/orders.functions").SheetOrder): Order {
   const items: OrderItem[] = (Array.isArray(raw.items) ? raw.items : []).map((item, index) => ({
     sku: String(item.sku || `#${index + 1}`),
     name: String(item.catalogName || item.name || ""),
