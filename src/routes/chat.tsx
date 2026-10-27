@@ -350,15 +350,15 @@ function ChatScreen() {
   const isFetching = isFetchingNotes || isFetchingPto;
 
   return (
-    <div className="flex h-[calc(100vh-65px)] flex-col bg-[#0b1118] text-slate-100 overflow-hidden font-sans">
+    <div dir="rtl" className="flex h-[calc(100dvh-65px)] min-h-0 flex-col overflow-hidden bg-[#08111b] font-sans text-slate-100 selection:bg-emerald-400/25">
       {/* Top Command Bar */}
-      <div className="flex items-center justify-between border-b border-[#223246] bg-[#0e1620] px-4 py-2.5">
+      <div className="relative z-10 flex items-center justify-between gap-3 border-b border-white/[0.07] bg-[#0c1722]/95 px-4 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl sm:px-5">
         <div className="flex items-center gap-3">
           <div className="relative">
             <img
               src={noa}
               alt="נועה AI"
-              className="h-9 w-9 rounded-xl object-cover ring-1 ring-emerald-500/40"
+              className="h-10 w-10 rounded-2xl object-cover ring-1 ring-emerald-300/40 shadow-[0_0_24px_rgba(52,211,153,0.12)]"
             />
             <span
               className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0e1620] ${
@@ -368,7 +368,7 @@ function ChatScreen() {
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-sm font-bold tracking-tight text-white">
+              <h1 className="text-sm font-bold tracking-tight text-white sm:text-base">
                 נועה AI — חמ״ל לוגיסטי
               </h1>
               <span
@@ -400,7 +400,7 @@ function ChatScreen() {
           <button
             onClick={refreshAll}
             disabled={isFetching}
-            className="p-2 rounded-xl border bg-[#172230] border-[#223246] text-slate-300 hover:text-white transition disabled:opacity-50"
+            className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-2.5 text-slate-300 transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 disabled:opacity-50"
             title="רענן תעודות ו-PTO"
           >
             <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
@@ -408,7 +408,7 @@ function ChatScreen() {
 
           <button
             onClick={() => setIsSoundEnabled((prev) => !prev)}
-            className={`p-2 rounded-xl border transition ${
+            className={`rounded-xl border p-2.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 ${
               isSoundEnabled
                 ? "bg-[#172230] border-[#223246] text-emerald-400"
                 : "bg-[#172230]/50 border-[#223246]/50 text-slate-500"
@@ -435,29 +435,29 @@ function ChatScreen() {
       </div>
 
       {/* Main Dual-Panel Viewport */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-12">
         <div
-          className={`flex flex-col h-full overflow-hidden border-b lg:border-b-0 border-[#223246] ${
+          className={`flex min-h-0 flex-col overflow-hidden border-b border-white/[0.07] lg:border-b-0 ${
             isInspectorOpen ? "lg:col-span-7 xl:col-span-8" : "lg:col-span-12"
           }`}
         >
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0b1118]">
+          <div className="flex-1 space-y-5 overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.045),transparent_55%)] px-4 py-5 sm:px-6 sm:py-6">
             {messages.map((m) => {
               const isUser = m.sender === "user";
               return (
                 <div
                   key={m.id}
-                  className={`flex flex-col ${isUser ? "items-start" : "items-end"} w-full`}
+                  className={`flex w-full flex-col ${isUser ? "items-start" : "items-end"}`}
                 >
                   <div
-                    className={`relative max-w-[92%] sm:max-w-[85%] rounded-2xl p-4 shadow-sm text-sm leading-relaxed ${
+                    className={`relative max-w-[96%] rounded-2xl p-4 text-sm leading-relaxed shadow-[0_12px_32px_rgba(0,0,0,0.16)] sm:max-w-[88%] lg:max-w-[82%] ${
                       isUser
-                        ? "rounded-tr-none bg-emerald-700 text-white"
-                        : "rounded-tl-none bg-[#131c26] text-slate-200 border border-[#223246]"
+                        ? "rounded-tr-md border border-emerald-300/15 bg-gradient-to-br from-emerald-700 to-emerald-800 text-white"
+                        : "rounded-tl-md border border-white/[0.08] bg-[#111d29] text-slate-200"
                     }`}
                   >
                     {!isUser && (
-                      <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-[#223246]/70 text-xs">
+                      <div className="mb-3 flex items-center justify-between gap-3 border-b border-white/[0.08] pb-2.5 text-xs">
                         <div className="flex items-center gap-1.5 font-bold text-emerald-400">
                           <img src={noa} alt="" className="h-4 w-4 rounded-full object-cover" />
                           <span>נועה AI</span>
@@ -470,7 +470,7 @@ function ChatScreen() {
                       </div>
                     )}
 
-                    <div className="whitespace-pre-line text-xs sm:text-sm font-normal">
+                    <div className="whitespace-pre-line text-[13px] font-normal leading-6 sm:text-sm sm:leading-7">
                       {m.text}
                     </div>
 
@@ -536,12 +536,12 @@ function ChatScreen() {
                   </div>
 
                   {m.quickActions && (
-                    <div className="mt-2 flex flex-wrap gap-1.5 max-w-[92%] sm:max-w-[85%]">
+                    <div className="mt-3 flex max-w-[96%] flex-wrap gap-2 sm:max-w-[88%] lg:max-w-[82%]">
                       {m.quickActions.map((qa, i) => (
                         <button
                           key={i}
                           onClick={() => void handleSend(qa.query)}
-                          className="flex items-center gap-1 text-xs rounded-xl bg-[#172230] hover:bg-[#223246] border border-[#223246] px-3 py-1.5 text-slate-300 hover:text-white transition shadow-sm active:scale-95"
+                          className="flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs text-slate-300 shadow-sm transition hover:border-emerald-300/20 hover:bg-emerald-400/[0.08] hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 active:scale-[0.98]"
                         >
                           <span>{qa.label}</span>
                         </button>
@@ -563,11 +563,11 @@ function ChatScreen() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto border-t border-[#223246] bg-[#0e1620] px-4 py-2 text-xs scrollbar-none">
+          <div className="flex items-center gap-2 overflow-x-auto border-t border-white/[0.07] bg-[#0c1722] px-4 py-3 text-xs scrollbar-none sm:px-5">
             <span className="text-[11px] text-slate-400 font-semibold shrink-0">שאלות מפתח:</span>
             <button
               onClick={() => void handleSend("מה הסטטוס של המנוף של חכמת?")}
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#172230] hover:bg-[#223246] px-2.5 py-1 text-slate-300 border border-[#223246] transition"
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-slate-300 transition hover:border-white/15 hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70"
             >
               <Gauge className="h-3 w-3 text-amber-400" />
               <span>מנוף חכמת</span>
@@ -600,18 +600,18 @@ function ChatScreen() {
               e.preventDefault();
               void handleSend();
             }}
-            className="flex items-center gap-2 border-t border-[#223246] bg-[#131c26] p-3"
+            className="flex items-center gap-2 border-t border-white/[0.08] bg-[#0c1722] p-3 sm:px-5 sm:py-4"
           >
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="שאל את נועה: מספר תעודה, לקוח, נהג, פקדונות, חריגות..."
-              className="flex-1 rounded-xl border border-[#223246] bg-[#0b1118] px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              className="min-w-0 flex-1 rounded-2xl border border-white/[0.09] bg-[#08111b] px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-emerald-400/50 focus:ring-2 focus:ring-emerald-400/15"
             />
             <button
               type="submit"
               disabled={!input.trim() || isThinking}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white transition hover:bg-emerald-500 disabled:opacity-40"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-[#04130d] shadow-[0_6px_20px_rgba(16,185,129,0.2)] transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c1722] disabled:cursor-not-allowed disabled:opacity-40"
               title="שלח הודעה"
             >
               <Send className="h-4 w-4 rotate-180" />
@@ -620,7 +620,7 @@ function ChatScreen() {
         </div>
 
         {isInspectorOpen && (
-          <div className="h-full overflow-hidden lg:col-span-5 xl:col-span-4 border-t lg:border-t-0">
+          <div className="min-h-0 overflow-hidden border-t border-white/[0.07] lg:col-span-5 lg:border-t-0 xl:col-span-4">
             <CrossReferenceInspector
               activeTruck={activeTruck}
               onSelectTruck={(truck) => setActiveTruck(truck)}
