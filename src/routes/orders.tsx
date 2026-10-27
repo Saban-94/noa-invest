@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { listOrdersFn, updateOrderStatusFn } from "@/lib/server/orders";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import {
@@ -111,149 +112,44 @@ const nextStatus = (s: Status): Status | null => {
 };
 
 /* ───────────────────────── Google Sheets sync layer ─────────────────────────
- * Expects an Apps Script web app (VITE_SHEETS_ORDERS_URL):
- *   GET  ?action=orders            → { orders: RawOrder[] }
- *   POST {action:"updateStatus", id, status} (text/plain body) → { ok: true }
- * When the variable is not set the page runs in local demo mode.
+ * All requests go through server functions. No local demo orders are used.
  */
-
-const SHEETS_URL: string = (import.meta.env?.VITE_SHEETS_ORDERS_URL as string | undefined) ?? "";
 const POLL_MS = 30_000;
-
 const toNum = (v: unknown, fallback = 0): number => {
   const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : fallback;
 };
-
 const toStatus = (v: unknown): Status => {
-  const s = String(v ?? "").trim();
-  return (STATUSES as readonly string[]).includes(s) ? (s as Status) : "פתוחה";
+  const value = String(v ?? "").trim();
+  return (STATUSES as readonly string[]).includes(value) ? (value as Status) : "פתוחה";
 };
-
 const toDeposit = (v: unknown): Deposit => {
-  const s = String(v ?? "").trim().toLowerCase();
-  if (["pallet", "משטח", "משטחים"].includes(s)) return "pallet";
-  if (["crate", "ארגז", "ארגזים", "מכל"].includes(s)) return "crate";
+  const value = String(v ?? "").trim().toLowerCase();
+  if (["pallet", "משטח", "משטחים"].includes(value)) return "pallet";
+  if (["crate", "ארגז", "ארגזים", "מכל"].includes(value)) return "crate";
   return null;
 };
-
-function normalizeOrder(raw: Record<string, unknown>): Order | null {
-  const id = String(raw.id ?? "").trim();
-  if (!id) return null;
-  let rawItems: unknown = raw.items;
-  if (typeof rawItems === "string") {
-    try {
-      rawItems = JSON.parse(rawItems);
-    } catch {
-      rawItems = [];
-    }
+function normalizeOrder(raw: import("@/lib/server/orders").SheetOrder): Order {
+  const items: OrderItem[] = (Array.isArray(raw.items) ? raw.items : []).map((item, index) => ({
+    sku: String(item.sku || `#${index + 1}`),
+    name: String(item.catalogName || item.name || ""),
+    qty: toNum(item.qty),
+    unit: String(item.unit || "יח׳"),
+    unitWeightKg: toNum(item.weightKg),
+    deposit: toDeposit(item.name),
+  }));
+  let updatedAt = new Date().toISOString();
+  if (raw.date) {
+    const parsedDate = new Date(raw.date);
+    if (!Number.isNaN(parsedDate.getTime())) updatedAt = parsedDate.toISOString();
   }
-  const items: OrderItem[] = (Array.isArray(rawItems) ? rawItems : []).map((it, i) => {
-    const r = (it ?? {}) as Record<string, unknown>;
-    return {
-      sku: String(r.sku ?? `#${i + 1}`),
-      name: String(r.name ?? ""),
-      qty: toNum(r.qty, 0),
-      unit: String(r.unit ?? "יח׳"),
-      unitWeightKg: toNum(r.unitWeightKg, 0),
-      deposit: toDeposit(r.deposit),
-    };
-  });
   return {
-    id,
-    customerId: String(raw.customerId ?? ""),
-    customer: String(raw.customer ?? "לקוח ללא שם"),
-    address: String(raw.address ?? ""),
-    phone: String(raw.phone ?? ""),
-    yard: String(raw.yard ?? ""),
-    status: toStatus(raw.status),
-    updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
-    items,
+    id: String(raw.id), customerId: "", customer: String(raw.customer || "לקוח ללא שם"),
+    address: String(raw.address || ""), phone: String(raw.phone || ""), yard: String(raw.yard || ""),
+    status: toStatus(raw.status), updatedAt, items,
   };
 }
-
-async function fetchOrdersFromSheet(signal: AbortSignal): Promise<Order[]> {
-  const res = await fetch(`${SHEETS_URL}?action=orders`, { signal });
-  if (!res.ok) throw new Error(`שגיאת שרת ${res.status}`);
-  const json = (await res.json()) as { orders?: Record<string, unknown>[] };
-  return (json.orders ?? []).map(normalizeOrder).filter((o): o is Order => o !== null);
-}
-
-async function pushStatusToSheet(id: string, status: Status): Promise<void> {
-  const res = await fetch(SHEETS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ action: "updateStatus", id, status }),
-  });
-  if (!res.ok) throw new Error(`שגיאת שרת ${res.status}`);
-  const json = (await res.json().catch(() => ({ ok: true }))) as { ok?: boolean };
-  if (json.ok === false) throw new Error("העדכון נדחה על ידי הגיליון");
-}
-
-/* Local demo dataset, used only when no Sheets endpoint is configured. */
-const DEMO_ORDERS: Order[] = [
-  {
-    id: "SB-48213",
-    customerId: "c-1021",
-    customer: "אלון בנייה ופיתוח",
-    address: "הברזל 14, תל אביב",
-    phone: "0501234567",
-    yard: "חצר החרש",
-    status: "בהעמסה",
-    updatedAt: new Date(Date.now() - 9 * 60_000).toISOString(),
-    items: [
-      { sku: "CM-1001", name: "מלט פורטלנד 50 ק״ג", qty: 40, unit: "שק", unitWeightKg: 50, deposit: "pallet" },
-      { sku: "CM-2210", name: "בלוק 20 מ״מ", qty: 120, unit: "יח׳", unitWeightKg: 17, deposit: "pallet" },
-      { sku: "CM-3305", name: "חול מנופה", qty: 2, unit: "ביג־בג", unitWeightKg: 1000, deposit: null },
-    ],
-  },
-  {
-    id: "SB-48214",
-    customerId: "c-0877",
-    customer: "דורון שיפוצים",
-    address: "הנחל 7, כפר סבא",
-    phone: "0527654321",
-    yard: "חצר התלמיד",
-    status: "בדרך",
-    updatedAt: new Date(Date.now() - 31 * 60_000).toISOString(),
-    items: [
-      { sku: "CM-4120", name: "דבק קרמיקה 25 ק״ג", qty: 30, unit: "שק", unitWeightKg: 25, deposit: null },
-      { sku: "CM-5002", name: "רשת פיברגלס", qty: 12, unit: "גליל", unitWeightKg: 4, deposit: "crate" },
-    ],
-  },
-  {
-    id: "SB-48215",
-    customerId: "c-1344",
-    customer: "נתיב ים קבלנות",
-    address: "הרצל 102, הוד השרון",
-    phone: "0545551212",
-    yard: "חצר החרש",
-    status: "פתוחה",
-    updatedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
-    items: [
-      { sku: "CM-6100", name: "ברזל זיון 12 מ״מ", qty: 60, unit: "מוט", unitWeightKg: 10.7, deposit: null },
-      { sku: "CM-1001", name: "מלט פורטלנד 50 ק״ג", qty: 20, unit: "שק", unitWeightKg: 50, deposit: "pallet" },
-    ],
-  },
-  {
-    id: "SB-48209",
-    customerId: "c-0455",
-    customer: "גנדלמן ובניו",
-    address: "אילת 3, רעננה",
-    phone: "0586667788",
-    yard: "חצר התלמיד",
-    status: "סופק",
-    updatedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
-    items: [
-      { sku: "CM-7010", name: "טיח מכונה 30 ק״ג", qty: 50, unit: "שק", unitWeightKg: 30, deposit: "pallet" },
-    ],
-  },
-];
-
-/* ───────────────────────────── Data hook ───────────────────────────── */
-
-type SyncState = "loading" | "live" | "demo" | "error";
-
+type SyncState = "loading" | "live" | "error";
 function useOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [sync, setSync] = useState<SyncState>("loading");
@@ -262,74 +158,45 @@ function useOrders() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
   const pendingRef = useRef<Set<string>>(new Set());
-
   const load = useCallback(async (signal?: AbortSignal) => {
-    if (!SHEETS_URL) {
-      setOrders((prev) => (prev.length ? prev : DEMO_ORDERS));
-      setSync("demo");
-      setLastSync(new Date());
-      return;
-    }
+    if (signal?.aborted) return;
     setRefreshing(true);
     try {
-      const fresh = await fetchOrdersFromSheet(signal ?? new AbortController().signal);
-      // keep optimistic values for rows with an in-flight write
-      setOrders((prev) =>
-        fresh.map((o) => (pendingRef.current.has(o.id) ? (prev.find((p) => p.id === o.id) ?? o) : o)),
-      );
-      setSync("live");
-      setError(null);
-      setLastSync(new Date());
-    } catch (e) {
-      if ((e as Error).name === "AbortError") return;
-      setSync("error");
-      setError((e as Error).message || "שגיאת סנכרון");
+      const result = await listOrdersFn();
+      if (signal?.aborted) return;
+      const fresh = result.orders.map(normalizeOrder);
+      setOrders((previous) => fresh.map((order) =>
+        pendingRef.current.has(order.id) ? (previous.find((old) => old.id === order.id) ?? order) : order));
+      setSync("live"); setError(null); setLastSync(new Date());
+    } catch (cause) {
+      if ((cause as Error).name === "AbortError" || signal?.aborted) return;
+      setSync("error"); setError((cause as Error).message || "שגיאת סנכרון מול גיליון ההזמנות");
     } finally {
-      setRefreshing(false);
+      if (!signal?.aborted) setRefreshing(false);
     }
   }, []);
-
   useEffect(() => {
-    const ctrl = new AbortController();
-    void load(ctrl.signal);
-    if (!SHEETS_URL) return () => ctrl.abort();
+    const controller = new AbortController();
+    void load(controller.signal);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load(ctrl.signal);
+      if (document.visibilityState === "visible") void load(controller.signal);
     }, POLL_MS);
-    return () => {
-      ctrl.abort();
-      window.clearInterval(timer);
-    };
+    return () => { controller.abort(); window.clearInterval(timer); };
   }, [load]);
-
   const setStatus = useCallback(async (id: string, status: Status) => {
-    let previous: Status | null = null;
-    const stamp = new Date().toISOString();
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== id) return o;
-        previous = o.status;
-        return { ...o, status, updatedAt: stamp };
-      }),
-    );
-    if (previous === null || previous === status) return;
-    if (!SHEETS_URL) return;
-
-    pendingRef.current.add(id);
-    setBusyIds(new Set(pendingRef.current));
+    const previous = orders.find((order) => order.id === id)?.status;
+    if (!previous || previous === status) return;
+    setOrders((current) => current.map((order) => order.id === id ? { ...order, status, updatedAt: new Date().toISOString() } : order));
+    pendingRef.current.add(id); setBusyIds(new Set(pendingRef.current));
     try {
-      await pushStatusToSheet(id, status);
-      setError(null);
-    } catch (e) {
-      const back = previous as Status;
-      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: back } : o)));
-      setError(`לא ניתן היה לעדכן את ${id}: ${(e as Error).message}`);
+      await updateOrderStatusFn({ data: { id, status } }); setError(null);
+    } catch (cause) {
+      setOrders((current) => current.map((order) => order.id === id ? { ...order, status: previous } : order));
+      setError(`לא ניתן היה לעדכן את ${id}: ${(cause as Error).message}`);
     } finally {
-      pendingRef.current.delete(id);
-      setBusyIds(new Set(pendingRef.current));
+      pendingRef.current.delete(id); setBusyIds(new Set(pendingRef.current));
     }
-  }, []);
-
+  }, [orders]);
   return { orders, sync, error, lastSync, refreshing, busyIds, reload: () => load(), setStatus, dismissError: () => setError(null) };
 }
 
@@ -879,11 +746,9 @@ function OrdersPage() {
   const syncLabel =
     sync === "live"
       ? "מסונכרן עם Google Sheets"
-      : sync === "demo"
-        ? "מצב הדגמה מקומי"
-        : sync === "error"
-          ? "הסנכרון נכשל"
-          : "טוען נתונים…";
+      : sync === "error"
+        ? "הסנכרון נכשל"
+        : "טוען נתונים…";
 
   return (
     <div
@@ -908,7 +773,7 @@ function OrdersPage() {
                     : "bg-slate-100 text-slate-700 ring-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-600"
               }`}
             >
-              {sync === "demo" || sync === "error" ? <WifiOff className="h-4 w-4" aria-hidden /> : <span className={`h-2 w-2 rounded-full ${sync === "live" ? "animate-pulse bg-emerald-500" : "bg-slate-400"}`} aria-hidden />}
+              {sync === "error" ? <WifiOff className="h-4 w-4" aria-hidden /> : <span className={`h-2 w-2 rounded-full ${sync === "live" ? "animate-pulse bg-emerald-500" : "bg-slate-400"}`} aria-hidden />}
               {syncLabel}
               {lastSync && sync !== "loading" && (
                 <span className="font-normal opacity-80" dir="ltr">
