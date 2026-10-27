@@ -38,46 +38,99 @@ function checkAuth(token) {
 function doGet(e) {
   try {
     const p = e && e.parameter ? e.parameter : {};
-    const action = p.action || "ping";
-    const token = p.token || "";
+    const action = String(p.action || "ping").trim();
+    const token = String(p.token || "").trim();
 
     if (action === "ping") {
       return jsonResponse({
         success: true,
         version: API_VERSION,
-        sheetId: MASTER_SHEET_ID,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString()
       });
     }
 
+    // אין לבטל אימות עבור נתוני לקוחות והזמנות.
     if (!checkAuth(token)) {
-      return jsonResponse({ success: false, error: "unauthorized" });
+      return jsonResponse({
+        success: false,
+        error: "unauthorized",
+        action: action
+      });
     }
 
-    if (action === "getOrders") {
-      return handleGetOrders(p);
-    }
+    switch (action) {
+      case "getOrders":
+        return handleGetOrders_(p);
 
-    if (action === "getNotes") {
-      return handleGetNotes(p);
-    }
+      case "getNotes":
+        return handleGetNotes(p);
 
-    if (action === "getRamiInquiries") {
-      return handleGetRamiInquiries();
-    }
+      case "getCatalog":
+        return jsonResponse(getCatalog_());
 
-    if (action === "getFile") {
-      return handleGetFile(p.id);
-    }
+      case "getRamiInquiries":
+        return handleGetRamiInquiries();
 
-    if (action === "getWorkroomInquiries") {
-      return handleGetWorkroomInquiries_(p);
-    }
+      case "getFile":
+        return handleGetFile(p.id);
 
-    return jsonResponse({ success: false, error: "unknown action: " + action });
+      case "getWorkroomInquiries":
+        return handleGetWorkroomInquiries_(p);
+
+      case "resolveNoteFiles":
+        return handleResolveNoteFiles(p);
+
+      case "getIturanPto":
+        if (typeof handleGetIturanPto !== "function") {
+          return jsonResponse({
+            success: false,
+            error: "missing_handler",
+            message: "יש לוודא שפונקציית איתוראן קיימת בפרויקט"
+          });
+        }
+        return jsonResponse(handleGetIturanPto(p));
+
+      default:
+        return jsonResponse({
+          success: false,
+          error: "unknown_action",
+          action: action
+        });
+    }
   } catch (err) {
-    return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
+    return jsonResponse({
+      success: false,
+      error: String(err && err.message ? err.message : err)
+    });
   }
+}
+
+/**
+ * מטפל בשליפת הזמנות עבור הממשק
+ */
+function handleGetOrders_(params) {
+  const ss = SpreadsheetApp.openById(params.sheetId || MASTER_SHEET_ID);
+  const sheet = ss.getSheetByName("הזמנות"); 
+  if (!sheet) {
+    return jsonResponse({ success: false, error: "לא נמצא טאב 'הזמנות'" });
+  }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) {
+    return jsonResponse({ success: true, orders: [] });
+  }
+
+  const headers = values[0].map(h => String(h || "").trim());
+  
+  const orders = values.slice(1).map((row) => {
+    const order = {};
+    headers.forEach((h, i) => {
+      order[h] = row[i];
+    });
+    return order;
+  });
+
+  return jsonResponse({ success: true, orders: orders });
 }
 
 /**
