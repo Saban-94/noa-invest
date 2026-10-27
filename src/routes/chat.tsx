@@ -447,7 +447,7 @@ function ChatScreen() {
               return (
                 <div
                   key={m.id}
-                  className={`flex w-full flex-col ${isUser ? "items-end" : "items-start"}`}
+                  className={`flex w-full flex-col ${isUser ? "items-start" : "items-end"}`}
                 >
                   <div
                     className={`relative max-w-[96%] rounded-2xl p-4 text-sm leading-relaxed shadow-[0_12px_32px_rgba(0,0,0,0.16)] sm:max-w-[88%] lg:max-w-[82%] ${
