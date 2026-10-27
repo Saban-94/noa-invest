@@ -1,75 +1,87 @@
-import { ORDERS, type Order } from "@/lib/data";
+import { ORDERS, type Order } from "./data";
 
-// This URL was supplied by the user. Override it in Vercel if the deployment URL changes.
-const endpoint = (
-  import.meta.env.VITE_NOA_ORDERS_API_URL as string | undefined
-)?.trim() || "https://script.google.com/macros/s/AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw/exec";
-export const hasLiveOrdersEndpoint = Boolean(endpoint);
+// כתובת ה-Apps Script המוגדרת במשתני הסביבה (Vite)
+export const VITE_NOA_ORDERS_API_URL = import.meta.env.VITE_NOA_ORDERS_API_URL || "";
+export const ITURAN_TOKEN = import.meta.env.VITE_ITURAN_TOKEN || import.meta.env.ITURAN_TOKEN || "saban-ituran-secret-2026";
 
-function pick(raw: Record<string, any>, ...keys: string[]): any {
-  for (const key of keys) if (raw[key] !== undefined && raw[key] !== null && raw[key] !== "") return raw[key];
-  const normalized = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.trim().toLowerCase().replace(/[׳״']/g, ""), v]));
-  for (const key of keys) {
-    const value = normalized[key.trim().toLowerCase().replace(/[׳״']/g, "")];
-    if (value !== undefined && value !== null && value !== "") return value;
-  }
-  return "";
-}
-function normalizeStatus(value: unknown): Order["status"] {
-  const s = String(value ?? "").trim();
-  if (/סופק|הושלם|נמסר|נמסרה/.test(s)) return "סופק";
-  if (/בדרך|בנסיעה|יצאה/.test(s)) return "בדרך";
-  if (/העמסה|בהכנה|מעמיסים|בביצוע/.test(s)) return "בהעמסה";
-  return "פתוחה";
-}
-function normalizeOrder(raw: Record<string, any>): Order | null {
-  const id = String(pick(raw, "id", "orderId", "orderNumber", "מספר הזמנה", "מס' הזמנה", "מס הזמנה")).trim();
-  if (!id) return null;
-  const sourceItems = Array.isArray(raw.items) ? raw.items : Array.isArray(raw["פריטים"]) ? raw["פריטים"] : [];
-  const items = sourceItems.map((item: any) => ({
-    name: String(item?.name ?? item?.product ?? item?.["שם פריט"] ?? "פריט ללא שם"),
-    qty: Math.max(0, Number(item?.qty ?? item?.quantity ?? item?.["כמות"] ?? 0) || 0),
-    unit: String(item?.unit ?? item?.["יחידה"] ?? "יח׳"),
-    weightKg: Math.max(0, Number(item?.weightKg ?? item?.weight_kg ?? 0) || 0),
-    ...(item?.deposit ? { deposit: Number(item.deposit) || 0 } : {}),
-  }));
-  const manifest = String(pick(raw, "פירוט מוצרים", "פירוט פריטים", "מניפסט", "itemsText", "products") || "").trim();
-  if (!items.length && manifest) {
-    // Keep the source manifest verbatim; do not fabricate individual quantities or weights.
-    const totalTons = Number(String(pick(raw, "משקל (טון)", "משקל טון", "משקל")).replace(/,/g, "")) || 0;
-    items.push({ name: manifest, qty: 1, unit: "פירוט הזמנה", weightKg: totalTons * 1000 });
-  }
-  const yardRaw = String(pick(raw, "yard", "warehouse", "מחסן מוצא", "מחסן") || "מחסן 4 החרש 10");
-  const yard: Order["yard"] = /התלמיד|מחסן\s*1/.test(yardRaw) ? "מחסן 1 התלמיד 6" : "מחסן 4 החרש 10";
-  const dateValue = pick(raw, "date", "deliveryDate", "תאריך אספקה", "תאריך");
-  const date = dateValue ? String(dateValue).slice(0, 10) : new Date().toISOString().slice(0, 10);
-  const driver = String(pick(raw, "driver", "driverName", "נהג / משאית", "נהג", "נהג משובץ"));
-  const phoneRaw = String(pick(raw, "phone", "customerPhone", "טלפון", "איש קשר וטלפון"));
-  const phoneMatch = phoneRaw.match(/(?:0\d[-\s]?\d{7,8})/);
-  return {
-    id,
-    customer: String(pick(raw, "customer", "customerName", "שם לקוח", "לקוח") || "לקוח לא מזוהה"),
-    phone: phoneMatch?.[0] ?? phoneRaw,
-    address: String(pick(raw, "address", "deliveryAddress", "כתובת אספקה", "כתובת") || ""),
-    date,
-    window: String(pick(raw, "window", "deliveryWindow", "שעה", "חלון אספקה", "שעת אספקה") || "לא הוגדרה שעה"),
-    yard,
-    driverId: /עלי/i.test(driver) ? "ali" : /חכמת|מנוף/i.test(driver) ? "hikmat" : null,
-    status: normalizeStatus(pick(raw, "status", "deliveryStatus", "סטטוס סידור", "סטטוס הזמנה", "סטטוס")),
-    items,
-  };
-}
+export const hasLiveOrdersEndpoint = Boolean(VITE_NOA_ORDERS_API_URL.trim());
+
+/**
+ * פונקציה לשליפה חיה של טאב "הזמנות" מתוך Google Apps Script / Google Sheets
+ */
 export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
-  const url = new URL(endpoint);
-  url.searchParams.set("action", "getOrders");
-  url.searchParams.set("sheetId", "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw");
-  url.searchParams.set("tab", "הזמנות");
-  const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
-  if (!response.ok) throw new Error(`Google Sheets API returned HTTP ${response.status}`);
-  const payload = await response.json();
-  const rows = Array.isArray(payload) ? payload : payload?.orders ?? payload?.data ?? payload?.rows;
-  if (!Array.isArray(rows)) throw new Error(payload?.error || "השרת לא החזיר רשימת הזמנות. יש לוודא שתומך ב-action=getOrders.");
-  const orders = rows.map((row: Record<string, any>) => normalizeOrder(row)).filter(Boolean) as Order[];
-  if (payload?.success === false) throw new Error(payload?.error || "השרת דיווח על כשל בקריאת ההזמנות.");
-  return orders;
+  if (!hasLiveOrdersEndpoint) {
+    console.info("מצב הדגמה: VITE_NOA_ORDERS_API_URL אינו מוגדר. טוען נתונים סטטיים.");
+    return ORDERS;
+  }
+
+  try {
+    const separator = VITE_NOA_ORDERS_API_URL.includes("?") ? "&" : "?";
+    const url = `${VITE_NOA_ORDERS_API_URL}${separator}action=getOrders&token=${encodeURIComponent(ITURAN_TOKEN)}`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`שגיאת שרת בקבלת ההזמנות (${res.status})`);
+    }
+
+    const data = await res.json();
+
+    if (!data.success || !Array.isArray(data.orders)) {
+      throw new Error(data.error || "מבנה הנתונים שהתקבל מהשרת אינו תקין");
+    }
+
+    // מיפוי נתוני הגיליון הגולמיים למבנה הטיפוס Order במערכת
+    return data.orders.map((item: any, idx: number) => {
+      const orderId = String(item["מס' הזמנה"] || item["מספר הזמנה"] || `ord_${idx + 1}`).trim();
+      const customerName = String(item["שם לקוח"] || "לקוח מזדמן").trim();
+      const address = String(item["כתובת אספקה"] || "").trim();
+      const yard = String(item["מחסן מוצא"] || "4 (החרש 10)").trim();
+      const status = String(item["סטטוס סידור"] || "פתוחה").trim();
+      const date = String(item["תאריך אספקה"] || new Date().toISOString().split("T")[0]).trim();
+      const time = String(item["שעה"] || "08:00").trim();
+      const phone = String(item["איש קשר וטלפון"] || "").replace(/[^\d-]/g, "");
+      const driverStr = String(item["נהג / משאית"] || "").trim();
+      const rawItems = String(item["פירוט מוצרים"] || "").trim();
+
+      // פיצול שורות מוצרים גולמיות ממחרוזת הגיליון למבנה מניפסט
+      const parsedItems = rawItems
+        ? rawItems.split(/[,;]/).map((part, pIdx) => {
+            const trimmed = part.trim();
+            const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(יח'|שק|בלות|לוח|דלי|מטר)?\s*(.+)$/);
+            return {
+              name: match ? match[3].trim() : trimmed,
+              qty: match ? parseFloat(match[1]) : 1,
+              unit: match && match[2] ? match[2] : "יח'",
+              weightKg: 50, // משקל ברירת מחדל לשורה אם לא צוין אחרת
+              deposit: /בלות|פקדון|משטחים/i.test(trimmed),
+            };
+          })
+        : [{ name: "סחורה כללית לפי תעודה", qty: 1, unit: "מנה", weightKg: 100, deposit: false }];
+
+      return {
+        id: orderId,
+        customer: customerName,
+        customerNo: String(item["מס' לקוח"] || ""),
+        address: address,
+        yard: yard,
+        status: status.includes("סופק") ? "סופק" : status.includes("בהעמסה") ? "בהעמסה" : status.includes("בדרך") ? "בדרך" : "פתוחה",
+        date: date,
+        window: time,
+        phone: phone,
+        driverId: driverStr.includes("חכמת") ? "driver_1" : driverStr.includes("עלי") ? "driver_2" : null,
+        driverName: driverStr,
+        items: parsedItems,
+        notes: String(item["הערות"] || ""),
+      };
+    });
+  } catch (err) {
+    console.error("שגיאה בסנכרון ההזמנות מול Google Sheets:", err);
+    throw err;
+  }
 }
