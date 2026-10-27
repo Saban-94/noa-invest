@@ -16,14 +16,14 @@ import type { GalyaDeliveryNote, IturanStop, VisitRecord } from "@/lib/smart-dis
 import type { SheetNote } from "@/lib/notes-api.functions";
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxp3CnxhBb2vpcV_fiIBKIxIaGtsD1mYE-tpBApVCWRU4i7kcGDy4csBv2JOKfBi_pI/exec";
+  "https://script.google.com/macros/s/AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw/exec";
 
 function getGasUrl(): string {
   const envUrl = process.env["GAS_URL"];
   if (
     envUrl &&
     (envUrl.includes("TwXhw") ||
-      envUrl.includes("AKfycbw1zK4jGU8R9joEIyiCDhngHpI-0GIAyERmXE-hjqwGCAUaGVbUMVNbkHR6WbCVmTwXhw"))
+      envUrl.includes("AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw"))
   ) {
     return DEFAULT_GAS_URL;
   }
