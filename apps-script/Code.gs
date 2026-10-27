@@ -54,6 +54,10 @@ function doGet(e) {
       return jsonResponse({ success: false, error: "unauthorized" });
     }
 
+    if (action === "getOrders") {
+      return handleGetOrders(p);
+    }
+
     if (action === "getNotes") {
       return handleGetNotes(p);
     }
@@ -258,6 +262,31 @@ function handleGetNotes(params) {
   });
   workroomCacheWrite_(notesCacheKey, dedupedNotes);
   return jsonResponse({ success: true, notes: dedupedNotes, cachedForSeconds: WORKROOM_CACHE_TTL_SECONDS });
+}
+
+function handleGetOrders(params) {
+  const ss = SpreadsheetApp.openById(params.sheetId || MASTER_SHEET_ID);
+  const sheet = ss.getSheetByName("הזמנות"); 
+  if (!sheet) {
+    return jsonResponse({ success: false, error: "לא נמצא טאב 'הזמנות'" });
+  }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) {
+    return jsonResponse({ success: true, orders: [] });
+  }
+
+  const headers = values[0].map(h => String(h || "").trim());
+  
+  const orders = values.slice(1).map((row, idx) => {
+    const order = {};
+    headers.forEach((h, i) => {
+      order[h] = row[i];
+    });
+    return order;
+  });
+
+  return jsonResponse({ success: true, orders: orders });
 }
 
 function handleGetFile(fileId) {
