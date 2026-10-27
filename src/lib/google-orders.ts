@@ -1,7 +1,7 @@
 import { ORDERS, type Order } from "./data";
 
 // כתובת ה-Apps Script המוגדרת במשתני הסביבה (Vite)
-export const ORDERS_API_URL = import.meta.env.ORDERS_API_URL || "";
+export const ORDERS_API_URL = import.meta.env.VITE_ORDERS_API_URL || "";
 export const ITURAN_TOKEN = import.meta.env.ITURAN_TOKEN || import.meta.env.ITURAN_TOKEN || "saban-ituran-secret-2026";
 
 export const hasLiveOrdersEndpoint = Boolean(ORDERS_API_URL.trim());
