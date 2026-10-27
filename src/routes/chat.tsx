@@ -636,4 +636,3 @@ function ChatScreen() {
   );
 }
 
-
