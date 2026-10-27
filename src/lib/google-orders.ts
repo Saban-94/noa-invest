@@ -1,8 +1,8 @@
 import { ORDERS, type Order } from "./data";
 
 // כתובת ה-Apps Script המוגדרת במשתני הסביבה (Vite)
-export const VITE_NOA_ORDERS_API_URL = import.meta.env.VITE_NOA_ORDERS_API_URL || "";
-export const ITURAN_TOKEN = import.meta.env.VITE_ITURAN_TOKEN || import.meta.env.ITURAN_TOKEN || "saban-ituran-secret-2026";
+export const VITE_NOA_ORDERS_API_URL = import.meta.env.ORDERS_API_URL || "";
+export const ITURAN_TOKEN = import.meta.env.ITURAN_TOKEN || import.meta.env.ITURAN_TOKEN || "saban-ituran-secret-2026";
 
 export const hasLiveOrdersEndpoint = Boolean(VITE_NOA_ORDERS_API_URL.trim());
 
@@ -11,7 +11,7 @@ export const hasLiveOrdersEndpoint = Boolean(VITE_NOA_ORDERS_API_URL.trim());
  */
 export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
   if (!hasLiveOrdersEndpoint) {
-    console.info("מצב הדגמה: VITE_NOA_ORDERS_API_URL אינו מוגדר. טוען נתונים סטטיים.");
+    console.info("מצב הדגמה: NOA_ORDERS_API_URL אינו מוגדר. טוען נתונים סטטיים.");
     return ORDERS;
   }
 
