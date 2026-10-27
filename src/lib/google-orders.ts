@@ -85,3 +85,27 @@ export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
     throw err;
   }
 }
+
+/**
+ * עדכון סטטוס הזמנה בגיליון
+ */
+export async function updateOrderStatus(orderId: string, status: string): Promise<{ success: boolean; error?: string }> {
+  if (!hasLiveOrdersEndpoint) {
+    console.info("מצב הדגמה: לא ניתן לעדכן סטטוס הזמנה.");
+    return { success: true };
+  }
+
+  try {
+    const separator = VITE_NOA_ORDERS_API_URL.includes("?") ? "&" : "?";
+    const url = `${VITE_NOA_ORDERS_API_URL}${separator}action=updateOrderStatus&orderId=${encodeURIComponent(orderId)}&status=${encodeURIComponent(status)}&token=${encodeURIComponent(ITURAN_TOKEN)}`;
+
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) throw new Error("שגיאת שרת בעדכון הסטטוס");
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "עדכון הסטטוס נכשל");
+    return { success: true };
+  } catch (err) {
+    console.error("שגיאה בעדכון הסטטוס:", err);
+    return { success: false, error: String(err) };
+  }
+}
