@@ -59,7 +59,7 @@ export type Order = {
   window: string;
   yard: Yard;
   driverId: string | null;
-  status: "פתוחה" | "בהעמסה" | "בדרך";
+  status: "פתוחה" | "בהעמסה" | "בדרך" | "סופק";
   items: { name: string; qty: number; unit: string; weightKg: number; deposit?: number }[];
 };
 
