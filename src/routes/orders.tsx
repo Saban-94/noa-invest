@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
 import { type Order } from "@/lib/data";
@@ -49,6 +49,12 @@ function LiveOrdersPage() {
     staleTime: 30000,
   });
 
+  // Sync on mount
+  useEffect(() => {
+    console.log("[Sync] Triggering initial sync on mount");
+    refetch().catch(err => console.error("[Sync] Failed on mount:", err));
+  }, [refetch]);
+
   const updateMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: string }) => updateOrderStatus(orderId, status),
     onSuccess: () => {
@@ -57,6 +63,22 @@ function LiveOrdersPage() {
     },
     onError: () => toast.error("שגיאה בעדכון הסטטוס"),
   });
+
+  const handleRefresh = async () => {
+    console.log("[Sync] Manual refresh triggered");
+    try {
+      const res = await refetch();
+      if (res.isSuccess) {
+        toast.success("נתונים מעודכנים");
+      } else {
+        console.error("[Sync] Refresh failed:", res.error);
+        toast.error("שגיאת סנכרון — בדוק קונסול");
+      }
+    } catch (err) {
+      console.error("[Sync] Exception during refresh:", err);
+      toast.error("שגיאה קריטית בסנכרון");
+    }
+  };
 
   const filtered = orders.filter((o) => {
     const query = q.trim().toLowerCase();
