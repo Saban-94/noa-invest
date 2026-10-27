@@ -1,354 +1,1100 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { PageHeader } from "@/components/AppShell";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { listOrdersFn, type SheetOrder } from "@/lib/orders-api.functions";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import {
-  Truck,
-  Search,
-  RefreshCw,
-  Phone,
-  Navigation,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  MapPin,
   AlertTriangle,
-  Loader2,
+  Boxes,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Clock,
+  ExternalLink,
+  Layers,
+  MapPin,
+  Minus,
+  Navigation,
+  PackageSearch,
+  Phone,
+  RefreshCw,
+  Scale,
+  Search,
+  Timer,
+  TrendingDown,
+  TrendingUp,
+  Truck,
+  Warehouse,
+  WifiOff,
+  X,
+  type LucideIcon,
 } from "lucide-react";
-import { toast } from "sonner";
 
 export const Route = createFileRoute("/orders")({
-  head: () => ({
-    meta: [
-      { title: "הזמנות חיות — נועה ח. סבן" },
-      {
-        name: "description",
-        content: "לוח הזמנות חיות מגיליון נועה, מניפסט פריטים נפתח, שיוך נהגים וניווט Waze ישיר.",
-      },
-      { property: "og:title", content: "הזמנות חיות — ח. סבן" },
-      { property: "og:description", content: "ניהול סידור עבודה והזמנות לוגיסטיקה." },
-    ],
-  }),
-  component: LiveOrdersPage,
+  component: OrdersPage,
 });
 
-type StatusKey = "פתוחה" | "בהעמסה" | "בדרך";
+/* ────────────────────────────── Types ────────────────────────────── */
 
-function normStatus(raw: string): StatusKey {
-  if (raw.includes("בהעמסה") || raw.includes("העמסה")) return "בהעמסה";
-  if (raw.includes("בדרך") || raw.includes("יצא")) return "בדרך";
-  return "פתוחה";
+const STATUSES = ["פתוחה", "בהעמסה", "בדרך", "סופק"] as const;
+type Status = (typeof STATUSES)[number];
+type Filter = "הכל" | Status;
+type Deposit = "pallet" | "crate" | null;
+
+interface OrderItem {
+  sku: string;
+  name: string;
+  qty: number;
+  unit: string;
+  unitWeightKg: number;
+  deposit: Deposit;
 }
 
-const fmtDate = (d: string) => (d ? d.split("-").reverse().join("/") : "—");
-
-function orderWeightTons(o: SheetOrder): number {
-  return o.items.reduce((s, i) => s + (i.weightKg || 0) * (i.qty || 0), 0) / 1000;
+interface Order {
+  id: string;
+  customerId: string;
+  customer: string;
+  address: string;
+  phone: string;
+  yard: string;
+  status: Status;
+  updatedAt: string;
+  items: OrderItem[];
 }
 
-function LiveOrdersPage() {
-  const [q, setQ] = useState("");
-  const [filterStatus, setFilterStatus] = useState<string>("הכל");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+/* ───────────────────────── Status presentation ───────────────────────── */
 
-  const { data, isLoading, isFetching, error, refetch } = useQuery({
-    queryKey: ["live-orders"],
-    queryFn: () => listOrdersFn(),
-    staleTime: 30_000,
-    retry: 1,
+interface StatusStyle {
+  icon: LucideIcon;
+  border: string;
+  glow: string;
+  badge: string;
+  dot: string;
+}
+
+const STATUS_STYLE: Record<Status, StatusStyle> = {
+  פתוחה: {
+    icon: Timer,
+    border: "border-amber-500",
+    glow: "from-amber-500/10",
+    badge:
+      "bg-amber-50 text-amber-900 ring-amber-300 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-500/40",
+    dot: "bg-amber-500",
+  },
+  בהעמסה: {
+    icon: Boxes,
+    border: "border-orange-500",
+    glow: "from-orange-500/10",
+    badge:
+      "bg-orange-50 text-orange-900 ring-orange-300 dark:bg-orange-500/15 dark:text-orange-200 dark:ring-orange-500/40",
+    dot: "bg-orange-500",
+  },
+  בדרך: {
+    icon: Truck,
+    border: "border-blue-600",
+    glow: "from-blue-600/10",
+    badge:
+      "bg-blue-50 text-blue-900 ring-blue-300 dark:bg-blue-500/15 dark:text-blue-200 dark:ring-blue-500/40",
+    dot: "bg-blue-600",
+  },
+  סופק: {
+    icon: CheckCircle2,
+    border: "border-emerald-600",
+    glow: "from-transparent",
+    badge:
+      "bg-emerald-50 text-emerald-900 ring-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/40",
+    dot: "bg-emerald-600",
+  },
+};
+
+const nextStatus = (s: Status): Status | null => {
+  const i = STATUSES.indexOf(s);
+  return i >= 0 && i < STATUSES.length - 1 ? STATUSES[i + 1] : null;
+};
+
+/* ───────────────────────── Google Sheets sync layer ─────────────────────────
+ * Expects an Apps Script web app (VITE_SHEETS_ORDERS_URL):
+ *   GET  ?action=orders            → { orders: RawOrder[] }
+ *   POST {action:"updateStatus", id, status} (text/plain body) → { ok: true }
+ * When the variable is not set the page runs in local demo mode.
+ */
+
+const SHEETS_URL: string = (import.meta.env?.VITE_SHEETS_ORDERS_URL as string | undefined) ?? "";
+const POLL_MS = 30_000;
+
+const toNum = (v: unknown, fallback = 0): number => {
+  const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const toStatus = (v: unknown): Status => {
+  const s = String(v ?? "").trim();
+  return (STATUSES as readonly string[]).includes(s) ? (s as Status) : "פתוחה";
+};
+
+const toDeposit = (v: unknown): Deposit => {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (["pallet", "משטח", "משטחים"].includes(s)) return "pallet";
+  if (["crate", "ארגז", "ארגזים", "מכל"].includes(s)) return "crate";
+  return null;
+};
+
+function normalizeOrder(raw: Record<string, unknown>): Order | null {
+  const id = String(raw.id ?? "").trim();
+  if (!id) return null;
+  let rawItems: unknown = raw.items;
+  if (typeof rawItems === "string") {
+    try {
+      rawItems = JSON.parse(rawItems);
+    } catch {
+      rawItems = [];
+    }
+  }
+  const items: OrderItem[] = (Array.isArray(rawItems) ? rawItems : []).map((it, i) => {
+    const r = (it ?? {}) as Record<string, unknown>;
+    return {
+      sku: String(r.sku ?? `#${i + 1}`),
+      name: String(r.name ?? ""),
+      qty: toNum(r.qty, 0),
+      unit: String(r.unit ?? "יח׳"),
+      unitWeightKg: toNum(r.unitWeightKg, 0),
+      deposit: toDeposit(r.deposit),
+    };
   });
-
-  const orders = useMemo(() => data?.orders ?? [], [data]);
-
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    return orders.filter((o) => {
-      const matchQuery =
-        !query ||
-        [o.customer, o.id, o.address, o.yard, o.driver]
-          .join(" ")
-          .toLowerCase()
-          .includes(query);
-      const matchStatus = filterStatus === "הכל" || normStatus(o.status) === filterStatus;
-      return matchQuery && matchStatus;
-    });
-  }, [orders, q, filterStatus]);
-
-  const handleRefresh = async () => {
-    const res = await refetch();
-    if (res.isSuccess) toast.success("לוח ההזמנות סונכרן מהגיליון 🚚");
+  return {
+    id,
+    customerId: String(raw.customerId ?? ""),
+    customer: String(raw.customer ?? "לקוח ללא שם"),
+    address: String(raw.address ?? ""),
+    phone: String(raw.phone ?? ""),
+    yard: String(raw.yard ?? ""),
+    status: toStatus(raw.status),
+    updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
+    items,
   };
+}
 
-  const header = (
-    <PageHeader
-      title="לוח הזמנות חיות"
-      subtitle={
-        data?.tab
-          ? `מקור: טאב "${data.tab}" · ${orders.length} הזמנות`
-          : "סנכרון חי מול גיליון ההזמנות"
-      }
-      action={
-        <button
-          onClick={handleRefresh}
-          disabled={isFetching}
-          className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition active:scale-95 disabled:opacity-50"
-          title="סנכרן הזמנות מול Google Sheets"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 text-primary ${isFetching ? "animate-spin" : ""}`} />
-          <span>{isFetching ? "מסנכרן..." : "סנכרון גיליון"}</span>
-        </button>
-      }
-    />
-  );
+async function fetchOrdersFromSheet(signal: AbortSignal): Promise<Order[]> {
+  const res = await fetch(`${SHEETS_URL}?action=orders`, { signal });
+  if (!res.ok) throw new Error(`שגיאת שרת ${res.status}`);
+  const json = (await res.json()) as { orders?: Record<string, unknown>[] };
+  return (json.orders ?? []).map(normalizeOrder).filter((o): o is Order => o !== null);
+}
 
-  if (isLoading) {
-    return (
-      <>
-        {header}
-        <div className="mx-auto max-w-4xl p-12 text-center text-sm text-muted-foreground" dir="rtl">
-          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
-          טוען הזמנות מהגיליון...
-        </div>
-      </>
+async function pushStatusToSheet(id: string, status: Status): Promise<void> {
+  const res = await fetch(SHEETS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action: "updateStatus", id, status }),
+  });
+  if (!res.ok) throw new Error(`שגיאת שרת ${res.status}`);
+  const json = (await res.json().catch(() => ({ ok: true }))) as { ok?: boolean };
+  if (json.ok === false) throw new Error("העדכון נדחה על ידי הגיליון");
+}
+
+/* Local demo dataset, used only when no Sheets endpoint is configured. */
+const DEMO_ORDERS: Order[] = [
+  {
+    id: "SB-48213",
+    customerId: "c-1021",
+    customer: "אלון בנייה ופיתוח",
+    address: "הברזל 14, תל אביב",
+    phone: "0501234567",
+    yard: "חצר החרש",
+    status: "בהעמסה",
+    updatedAt: new Date(Date.now() - 9 * 60_000).toISOString(),
+    items: [
+      { sku: "CM-1001", name: "מלט פורטלנד 50 ק״ג", qty: 40, unit: "שק", unitWeightKg: 50, deposit: "pallet" },
+      { sku: "CM-2210", name: "בלוק 20 מ״מ", qty: 120, unit: "יח׳", unitWeightKg: 17, deposit: "pallet" },
+      { sku: "CM-3305", name: "חול מנופה", qty: 2, unit: "ביג־בג", unitWeightKg: 1000, deposit: null },
+    ],
+  },
+  {
+    id: "SB-48214",
+    customerId: "c-0877",
+    customer: "דורון שיפוצים",
+    address: "הנחל 7, כפר סבא",
+    phone: "0527654321",
+    yard: "חצר התלמיד",
+    status: "בדרך",
+    updatedAt: new Date(Date.now() - 31 * 60_000).toISOString(),
+    items: [
+      { sku: "CM-4120", name: "דבק קרמיקה 25 ק״ג", qty: 30, unit: "שק", unitWeightKg: 25, deposit: null },
+      { sku: "CM-5002", name: "רשת פיברגלס", qty: 12, unit: "גליל", unitWeightKg: 4, deposit: "crate" },
+    ],
+  },
+  {
+    id: "SB-48215",
+    customerId: "c-1344",
+    customer: "נתיב ים קבלנות",
+    address: "הרצל 102, הוד השרון",
+    phone: "0545551212",
+    yard: "חצר החרש",
+    status: "פתוחה",
+    updatedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+    items: [
+      { sku: "CM-6100", name: "ברזל זיון 12 מ״מ", qty: 60, unit: "מוט", unitWeightKg: 10.7, deposit: null },
+      { sku: "CM-1001", name: "מלט פורטלנד 50 ק״ג", qty: 20, unit: "שק", unitWeightKg: 50, deposit: "pallet" },
+    ],
+  },
+  {
+    id: "SB-48209",
+    customerId: "c-0455",
+    customer: "גנדלמן ובניו",
+    address: "אילת 3, רעננה",
+    phone: "0586667788",
+    yard: "חצר התלמיד",
+    status: "סופק",
+    updatedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+    items: [
+      { sku: "CM-7010", name: "טיח מכונה 30 ק״ג", qty: 50, unit: "שק", unitWeightKg: 30, deposit: "pallet" },
+    ],
+  },
+];
+
+/* ───────────────────────────── Data hook ───────────────────────────── */
+
+type SyncState = "loading" | "live" | "demo" | "error";
+
+function useOrders() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [sync, setSync] = useState<SyncState>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    if (!SHEETS_URL) {
+      setOrders((prev) => (prev.length ? prev : DEMO_ORDERS));
+      setSync("demo");
+      setLastSync(new Date());
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const fresh = await fetchOrdersFromSheet(signal ?? new AbortController().signal);
+      // keep optimistic values for rows with an in-flight write
+      setOrders((prev) =>
+        fresh.map((o) => (pendingRef.current.has(o.id) ? (prev.find((p) => p.id === o.id) ?? o) : o)),
+      );
+      setSync("live");
+      setError(null);
+      setLastSync(new Date());
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      setSync("error");
+      setError((e as Error).message || "שגיאת סנכרון");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void load(ctrl.signal);
+    if (!SHEETS_URL) return () => ctrl.abort();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load(ctrl.signal);
+    }, POLL_MS);
+    return () => {
+      ctrl.abort();
+      window.clearInterval(timer);
+    };
+  }, [load]);
+
+  const setStatus = useCallback(async (id: string, status: Status) => {
+    let previous: Status | null = null;
+    const stamp = new Date().toISOString();
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== id) return o;
+        previous = o.status;
+        return { ...o, status, updatedAt: stamp };
+      }),
     );
-  }
+    if (previous === null || previous === status) return;
+    if (!SHEETS_URL) return;
 
-  if (error) {
-    return (
-      <>
-        {header}
-        <div className="mx-auto max-w-xl p-6" dir="rtl">
-          <Card className="p-6 space-y-3 border-red-500/40 bg-red-500/5 text-center">
-            <div className="flex items-center justify-center gap-2 font-bold text-red-700">
-              <AlertTriangle className="h-5 w-5" /> כשל בטעינת הזמנות מהגיליון
-            </div>
-            <p className="text-xs text-muted-foreground break-words">
-              {error instanceof Error ? error.message : "שגיאת שרת"}. לא מוצגים נתוני דוגמה.
-            </p>
-            <Button size="sm" onClick={() => refetch()} disabled={isFetching}>
-              <RefreshCw className={`h-3.5 w-3.5 ml-1 ${isFetching ? "animate-spin" : ""}`} />
-              נסה שוב
-            </Button>
-          </Card>
-        </div>
-      </>
-    );
-  }
+    pendingRef.current.add(id);
+    setBusyIds(new Set(pendingRef.current));
+    try {
+      await pushStatusToSheet(id, status);
+      setError(null);
+    } catch (e) {
+      const back = previous as Status;
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: back } : o)));
+      setError(`לא ניתן היה לעדכן את ${id}: ${(e as Error).message}`);
+    } finally {
+      pendingRef.current.delete(id);
+      setBusyIds(new Set(pendingRef.current));
+    }
+  }, []);
+
+  return { orders, sync, error, lastSync, refreshing, busyIds, reload: () => load(), setStatus, dismissError: () => setError(null) };
+}
+
+/* ───────────────────────────── Helpers ───────────────────────────── */
+
+const itemWeightKg = (it: OrderItem) => it.qty * it.unitWeightKg;
+const orderWeightKg = (o: Order) => o.items.reduce((s, it) => s + itemWeightKg(it), 0);
+const depositUnits = (o: Order) => o.items.reduce((s, it) => s + (it.deposit ? it.qty : 0), 0);
+
+const fmt = (n: number, d = 0) =>
+  n.toLocaleString("he-IL", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+const rtf = new Intl.RelativeTimeFormat("he", { numeric: "auto" });
+function relativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const mins = Math.round((t - Date.now()) / 60_000);
+  if (Math.abs(mins) < 60) return rtf.format(mins, "minute");
+  const hrs = Math.round(mins / 60);
+  if (Math.abs(hrs) < 24) return rtf.format(hrs, "hour");
+  return rtf.format(Math.round(hrs / 24), "day");
+}
+
+const wazeUrl = (address: string) =>
+  `https://waze.com/ul?q=${encodeURIComponent(address)}&navigate=yes`;
+
+/* ───────────────────────── Animated number + trend ───────────────────────── */
+
+function AnimatedNumber({ value, decimals = 0 }: { value: number; decimals?: number }) {
+  const reduce = useReducedMotion();
+  const ref = useRef<HTMLSpanElement>(null);
+  const prev = useRef(value);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    if (reduce) {
+      node.textContent = fmt(value, decimals);
+      prev.current = value;
+      return;
+    }
+    const controls = animate(prev.current, value, {
+      duration: 0.6,
+      ease: "easeOut",
+      onUpdate: (v) => {
+        node.textContent = fmt(v, decimals);
+      },
+    });
+    prev.current = value;
+    return () => controls.stop();
+  }, [value, decimals, reduce]);
 
   return (
-    <>
-      {header}
+    <span ref={ref} className="tabular-nums">
+      {fmt(value, decimals)}
+    </span>
+  );
+}
 
-      <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 md:px-8" dir="rtl">
-        <div className="rounded-3xl bg-card p-4 shadow-card border border-border/60 space-y-3">
-          <div className="relative">
-            <Search className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="חיפוש לפי לקוח, מספר הזמנה, כתובת, מחסן או נהג..."
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="w-full rounded-2xl bg-muted/40 py-3 pr-11 pl-4 text-xs font-medium placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 border border-transparent focus:border-primary/20"
-            />
-          </div>
+function useSessionDelta(value: number, ready: boolean) {
+  const base = useRef<number | null>(null);
+  if (ready && base.current === null) base.current = value;
+  return base.current === null ? 0 : value - base.current;
+}
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            <div className="flex flex-wrap gap-1.5">
-              {["הכל", "בהעמסה", "בדרך", "פתוחה"].map((st) => (
+function Trend({ delta, decimals = 0, goodWhen }: { delta: number; decimals?: number; goodWhen: "up" | "down" | "neutral" }) {
+  const rounded = Number(delta.toFixed(decimals));
+  const Icon = rounded > 0 ? TrendingUp : rounded < 0 ? TrendingDown : Minus;
+  const tone =
+    rounded === 0 || goodWhen === "neutral"
+      ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+      : (rounded > 0) === (goodWhen === "up")
+        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+        : "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300";
+  return (
+    <motion.span
+      key={rounded}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}
+      title="שינוי מאז פתיחת המסך"
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      <span dir="ltr" className="tabular-nums">
+        {rounded > 0 ? "+" : ""}
+        {fmt(rounded, decimals)}
+      </span>
+    </motion.span>
+  );
+}
+
+/* ───────────────────────────── KPI bar ───────────────────────────── */
+
+interface KpiProps {
+  icon: LucideIcon;
+  label: string;
+  value: number;
+  unit?: string;
+  decimals?: number;
+  delta: number;
+  goodWhen: "up" | "down" | "neutral";
+  accent: string;
+  loading: boolean;
+}
+
+function KpiCard({ icon: Icon, label, value, unit, decimals = 0, delta, goodWhen, accent, loading }: KpiProps) {
+  return (
+    <motion.div
+      whileHover={{ y: -2 }}
+      className="relative overflow-hidden rounded-2xl border border-white/60 bg-white/70 p-4 shadow-sm backdrop-blur-xl transition-shadow duration-300 hover:shadow-lg dark:border-white/10 dark:bg-slate-900/60"
+    >
+      <div className={`pointer-events-none absolute -top-10 -end-10 h-28 w-28 rounded-full blur-2xl ${accent} opacity-20`} aria-hidden />
+      <div className="relative flex items-start justify-between gap-2">
+        <span className={`grid h-10 w-10 place-items-center rounded-xl text-white shadow-sm ${accent}`}>
+          <Icon className="h-5 w-5" aria-hidden />
+        </span>
+        {!loading && <Trend delta={delta} decimals={decimals} goodWhen={goodWhen} />}
+      </div>
+      <div className="relative mt-3">
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{label}</p>
+        {loading ? (
+          <div className="mt-1 h-8 w-20 animate-pulse rounded-md bg-slate-200 dark:bg-slate-700" />
+        ) : (
+          <p className="mt-0.5 flex items-baseline gap-1.5 text-3xl font-bold text-slate-900 dark:text-white">
+            <AnimatedNumber value={value} decimals={decimals} />
+            {unit && <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{unit}</span>}
+          </p>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+/* ───────────────────────── Status control (dropdown) ───────────────────────── */
+
+function StatusControl({
+  status,
+  busy,
+  onChange,
+}: {
+  status: Status;
+  busy: boolean;
+  onChange: (s: Status) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
+  const st = STATUS_STYLE[status];
+  const Icon = st.icon;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`סטטוס הזמנה: ${status}. לחץ לשינוי`}
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-semibold ring-1 ring-inset transition-all duration-200 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:scale-95 ${st.badge}`}
+      >
+        {busy ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden /> : <Icon className="h-4 w-4" aria-hidden />}
+        {status}
+        <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="menu"
+            initial={reduce ? false : { opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.97 }}
+            transition={{ duration: 0.16 }}
+            className="absolute end-0 z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            {STATUSES.map((s) => {
+              const SIcon = STATUS_STYLE[s].icon;
+              const active = s === status;
+              return (
                 <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                    filterStatus === st
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "bg-muted/70 text-muted-foreground hover:bg-muted"
-                  }`}
+                  key={s}
+                  role="menuitemradio"
+                  aria-checked={active}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    if (!active) onChange(s);
+                  }}
+                  className="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 text-sm font-medium text-slate-800 transition-colors duration-150 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none dark:text-slate-100 dark:hover:bg-slate-800 dark:focus-visible:bg-slate-800"
                 >
-                  {st}
+                  <span className={`h-2 w-2 rounded-full ${STATUS_STYLE[s].dot}`} aria-hidden />
+                  <SIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" aria-hidden />
+                  <span className="flex-1 text-start">{s}</span>
+                  {active && <Check className="h-4 w-4 text-blue-600" aria-hidden />}
                 </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ───────────────────────────── Manifest ───────────────────────────── */
+
+function Manifest({ order }: { order: Order }) {
+  const totalKg = orderWeightKg(order);
+  const deposits = depositUnits(order);
+  const palletUnits = order.items.reduce((s, it) => s + (it.deposit === "pallet" ? it.qty : 0), 0);
+  const crateUnits = order.items.reduce((s, it) => s + (it.deposit === "crate" ? it.qty : 0), 0);
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/40">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <h4 className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-100">
+          <Layers className="h-4 w-4 text-blue-600" aria-hidden />
+          מניפסט קומקס
+          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+            {order.items.length} שורות
+          </span>
+        </h4>
+        {order.customerId && (
+          <Link
+            to="/customers/$id"
+            params={{ id: order.customerId }}
+            className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-blue-700 transition-colors duration-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:scale-95 dark:text-blue-300 dark:hover:bg-blue-500/10"
+          >
+            תיק לקוח
+            <ExternalLink className="h-4 w-4" aria-hidden />
+          </Link>
+        )}
+      </div>
+
+      {order.items.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-slate-600 dark:text-slate-300">אין שורות מניפסט להזמנה זו.</p>
+      ) : (
+        <>
+          <div className="hidden grid-cols-[1fr_auto_auto_auto] gap-4 px-4 pt-3 text-xs font-semibold text-slate-500 sm:grid dark:text-slate-400">
+            <span>פריט</span>
+            <span className="w-24 text-end">כמות</span>
+            <span className="w-24 text-end">משקל</span>
+            <span className="w-24 text-end">פיקדון</span>
+          </div>
+          <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+            {order.items.map((it, idx) => (
+              <li
+                key={`${it.sku}-${idx}`}
+                className="grid grid-cols-2 items-center gap-x-4 gap-y-1 px-4 py-3 sm:grid-cols-[1fr_auto_auto_auto]"
+              >
+                <div className="col-span-2 min-w-0 sm:col-span-1">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{it.name || "פריט ללא שם"}</p>
+                  <p className="font-mono text-xs text-slate-500 dark:text-slate-400" dir="ltr">
+                    {it.sku}
+                  </p>
+                </div>
+                <p className="text-sm text-slate-700 sm:w-24 sm:text-end dark:text-slate-200">
+                  <span className="tabular-nums font-semibold">{fmt(it.qty, it.qty % 1 ? 1 : 0)}</span> {it.unit}
+                </p>
+                <p className="text-end text-sm tabular-nums text-slate-700 sm:w-24 dark:text-slate-200">
+                  {fmt(itemWeightKg(it), 1)} ק״ג
+                </p>
+                <div className="col-span-2 flex sm:col-span-1 sm:w-24 sm:justify-end">
+                  {it.deposit ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-500/40">
+                      <Boxes className="h-3.5 w-3.5" aria-hidden />
+                      {fmt(it.qty)} {it.deposit === "pallet" ? "משטחים" : "ארגזים"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">ללא</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
+            <span className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
+              <Scale className="h-4 w-4 text-slate-500" aria-hidden />
+              סה״כ <span className="tabular-nums">{fmt(totalKg / 1000, 2)}</span> טון
+            </span>
+            <span className="text-slate-700 dark:text-slate-200">
+              פיקדון 1:1 · <span className="tabular-nums font-semibold">{fmt(deposits)}</span> יח׳
+              {deposits > 0 && (
+                <span className="text-slate-500 dark:text-slate-400">
+                  {" "}
+                  ({fmt(palletUnits)} משטחים, {fmt(crateUnits)} ארגזים)
+                </span>
+              )}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────────── Order card ───────────────────────────── */
+
+interface OrderCardProps {
+  order: Order;
+  expanded: boolean;
+  busy: boolean;
+  onToggle: (id: string) => void;
+  onStatus: (id: string, s: Status) => void;
+}
+
+const OrderCard = memo(function OrderCard({ order, expanded, busy, onToggle, onStatus }: OrderCardProps) {
+  const reduce = useReducedMotion();
+  const st = STATUS_STYLE[order.status];
+  const next = nextStatus(order.status);
+  const NextIcon = next ? STATUS_STYLE[next].icon : CheckCircle2;
+  const kg = orderWeightKg(order);
+  const panelId = `manifest-${order.id}`;
+
+  return (
+    <motion.article
+      layout={reduce ? false : "position"}
+      initial={reduce ? false : { opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+      className={`group relative overflow-hidden rounded-2xl border border-slate-200 border-s-4 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg sm:p-5 dark:border-slate-700 dark:bg-slate-900 ${st.border}`}
+    >
+      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-l ${st.glow} to-transparent transition-opacity duration-300 ${order.status !== "סופק" ? "opacity-60 group-hover:opacity-100" : "opacity-0"}`} aria-hidden />
+
+      <div className="relative">
+        {/* Header */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              {order.customerId ? (
+                <Link
+                  to="/customers/$id"
+                  params={{ id: order.customerId }}
+                  className="cursor-pointer truncate rounded-md text-lg font-bold text-slate-900 transition-colors duration-200 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:text-white dark:hover:text-blue-300"
+                >
+                  {order.customer}
+                </Link>
+              ) : (
+                <h3 className="truncate text-lg font-bold text-slate-900 dark:text-white">{order.customer}</h3>
+              )}
+              <span
+                dir="ltr"
+                className="rounded-lg bg-slate-900 px-2 py-0.5 font-mono text-xs font-semibold tracking-wide text-white dark:bg-slate-100 dark:text-slate-900"
+              >
+                {order.id}
+              </span>
+            </div>
+            <p className="mt-2 flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+              <span>{order.address || "כתובת לא הוזנה"}</span>
+            </p>
+            <p className="mt-1 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <Warehouse className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+              <span>{order.yard || "חצר לא צוינה"}</span>
+            </p>
+          </div>
+          <StatusControl status={order.status} busy={busy} onChange={(s) => onStatus(order.id, s)} />
+        </div>
+
+        {/* Meta chips */}
+        <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 dark:bg-slate-800">
+            <Scale className="h-3.5 w-3.5" aria-hidden />
+            <span className="tabular-nums">{fmt(kg / 1000, 2)}</span> טון
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 dark:bg-slate-800">
+            <Boxes className="h-3.5 w-3.5" aria-hidden />
+            {order.items.length} שורות
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 dark:bg-slate-800">
+            <Clock className="h-3.5 w-3.5" aria-hidden />
+            עודכן {relativeTime(order.updatedAt)}
+          </span>
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <a
+            href={wazeUrl(order.address)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`נווט ב־Waze אל ${order.address}`}
+            className="inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-600/30 transition-all duration-200 hover:bg-blue-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-95 sm:flex-none dark:ring-offset-slate-900"
+          >
+            <Navigation className="h-4 w-4" aria-hidden />
+            Waze
+          </a>
+
+          {order.phone ? (
+            <a
+              href={`tel:${order.phone.replace(/[^\d+]/g, "")}`}
+              aria-label={`התקשר ל${order.customer}`}
+              className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full bg-slate-100 px-4 text-sm font-semibold text-slate-800 transition-all duration-200 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 active:scale-95 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+            >
+              <Phone className="h-4 w-4" aria-hidden />
+              <span dir="ltr" className="tabular-nums">
+                {order.phone}
+              </span>
+            </a>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-slate-100 px-4 text-sm font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+            >
+              <Phone className="h-4 w-4" aria-hidden />
+              אין טלפון
+            </span>
+          )}
+
+          <button
+            type="button"
+            disabled={!next || busy}
+            onClick={() => next && onStatus(order.id, next)}
+            className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 transition-all duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:ring-slate-600 dark:hover:bg-slate-800"
+          >
+            <NextIcon className="h-4 w-4" aria-hidden />
+            {next ? `קדם ל${next}` : "הושלם"}
+          </button>
+
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={panelId}
+            onClick={() => onToggle(order.id)}
+            className="ms-auto inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-slate-700 transition-colors duration-200 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:scale-95 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {expanded ? "הסתר מניפסט" : "הצג מניפסט"}
+            <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${expanded ? "rotate-180" : ""}`} aria-hidden />
+          </button>
+        </div>
+
+        {/* Accordion */}
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.div
+              id={panelId}
+              key="manifest"
+              initial={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              animate={reduce ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+              exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              transition={{ duration: 0.28, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
+              <Manifest order={order} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.article>
+  );
+});
+
+/* ───────────────────────────── Page ───────────────────────────── */
+
+function OrdersPage() {
+  const { orders, sync, error, lastSync, refreshing, busyIds, reload, setStatus, dismissError } = useOrders();
+  const reduce = useReducedMotion();
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("הכל");
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
+  const [isMac, setIsMac] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const ready = sync !== "loading" && orders.length > 0;
+  const loading = sync === "loading";
+
+  const metrics = useMemo(() => {
+    const active = orders.filter((o) => o.status !== "סופק");
+    return {
+      active: active.length,
+      tons: active.reduce((s, o) => s + orderWeightKg(o), 0) / 1000,
+      moving: orders.filter((o) => o.status === "בהעמסה" || o.status === "בדרך").length,
+      pending: orders.filter((o) => o.status === "פתוחה").length,
+    };
+  }, [orders]);
+
+  const dActive = useSessionDelta(metrics.active, ready);
+  const dTons = useSessionDelta(metrics.tons, ready);
+  const dMoving = useSessionDelta(metrics.moving, ready);
+  const dPending = useSessionDelta(metrics.pending, ready);
+
+  const counts = useMemo(() => {
+    const c: Record<Filter, number> = { הכל: orders.length, פתוחה: 0, בהעמסה: 0, בדרך: 0, סופק: 0 };
+    for (const o of orders) c[o.status] += 1;
+    return c;
+  }, [orders]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return orders.filter((o) => {
+      if (filter !== "הכל" && o.status !== filter) return false;
+      if (!q) return true;
+      return (
+        o.customer.toLowerCase().includes(q) ||
+        o.id.toLowerCase().includes(q) ||
+        o.address.toLowerCase().includes(q) ||
+        o.yard.toLowerCase().includes(q) ||
+        o.phone.includes(q)
+      );
+    });
+  }, [orders, filter, query]);
+
+  const toggle = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const syncLabel =
+    sync === "live"
+      ? "מסונכרן עם Google Sheets"
+      : sync === "demo"
+        ? "מצב הדגמה מקומי"
+        : sync === "error"
+          ? "הסנכרון נכשל"
+          : "טוען נתונים…";
+
+  return (
+    <div
+      dir="rtl"
+      className="min-h-screen bg-gradient-to-b from-blue-50 via-slate-50 to-slate-100 pb-16 text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100"
+    >
+      <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8">
+        {/* Title row */}
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">ניהול הזמנות</h1>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">לוח בקרה לסדרנים · ח. סבן חומרי בניין</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              role="status"
+              className={`inline-flex min-h-11 items-center gap-2 rounded-full px-3.5 text-xs font-semibold ring-1 ring-inset ${
+                sync === "live"
+                  ? "bg-emerald-50 text-emerald-800 ring-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/40"
+                  : sync === "error"
+                    ? "bg-rose-50 text-rose-800 ring-rose-300 dark:bg-rose-500/15 dark:text-rose-200 dark:ring-rose-500/40"
+                    : "bg-slate-100 text-slate-700 ring-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-600"
+              }`}
+            >
+              {sync === "demo" || sync === "error" ? <WifiOff className="h-4 w-4" aria-hidden /> : <span className={`h-2 w-2 rounded-full ${sync === "live" ? "animate-pulse bg-emerald-500" : "bg-slate-400"}`} aria-hidden />}
+              {syncLabel}
+              {lastSync && sync !== "loading" && (
+                <span className="font-normal opacity-80" dir="ltr">
+                  {lastSync.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => void reload()}
+              disabled={refreshing}
+              aria-label="רענן נתונים"
+              className="grid h-11 w-11 cursor-pointer place-items-center rounded-full bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-all duration-200 hover:bg-slate-50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:scale-95 disabled:opacity-60 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700"
+            >
+              <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} aria-hidden />
+            </button>
+          </div>
+        </header>
+
+        {/* KPI grid */}
+        <section aria-label="מדדים" className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          <KpiCard icon={PackageSearch} label="הזמנות פעילות" value={metrics.active} delta={dActive} goodWhen="neutral" accent="bg-blue-600" loading={loading} />
+          <KpiCard icon={Scale} label="משקל כולל" value={metrics.tons} unit="טון" decimals={1} delta={dTons} goodWhen="neutral" accent="bg-slate-700" loading={loading} />
+          <KpiCard icon={Truck} label="בדרך / בהעמסה" value={metrics.moving} delta={dMoving} goodWhen="up" accent="bg-orange-500" loading={loading} />
+          <KpiCard icon={AlertTriangle} label="ממתינות לטיפול" value={metrics.pending} delta={dPending} goodWhen="down" accent="bg-amber-500" loading={loading} />
+        </section>
+
+        {/* Command center */}
+        <section
+          aria-label="חיפוש וסינון"
+          className="sticky top-2 z-30 mt-5 rounded-2xl border border-white/60 bg-white/80 p-2.5 shadow-lg shadow-slate-900/5 backdrop-blur-xl sm:p-3 dark:border-white/10 dark:bg-slate-900/80"
+        >
+          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
+            <label className="relative block flex-1">
+              <span className="sr-only">חיפוש הזמנות לפי לקוח, מספר הזמנה, כתובת או חצר</span>
+              <Search className="pointer-events-none absolute start-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" aria-hidden />
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setQuery("");
+                    e.currentTarget.blur();
+                  }
+                }}
+                placeholder="חיפוש לקוח, מס׳ הזמנה, כתובת…"
+                className="h-12 w-full rounded-full border border-slate-200 bg-white ps-12 pe-24 text-base text-slate-900 shadow-inner outline-none transition-all duration-200 placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/30 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              />
+              <span className="pointer-events-none absolute end-3 top-1/2 hidden -translate-y-1/2 items-center gap-1 sm:flex" aria-hidden>
+                <kbd className="rounded-md border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {isMac ? "⌘ K" : "Ctrl K"}
+                </kbd>
+                <kbd className="rounded-md border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  /
+                </kbd>
+              </span>
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="נקה חיפוש"
+                  className="absolute end-3 top-1/2 grid h-8 w-8 -translate-y-1/2 cursor-pointer place-items-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 sm:hidden dark:hover:bg-slate-800"
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </button>
+              )}
+            </label>
+
+            <div role="tablist" aria-label="סינון לפי סטטוס" className="-mx-1 flex gap-1 overflow-x-auto rounded-full bg-slate-100 p-1 dark:bg-slate-800">
+              {(["הכל", ...STATUSES] as Filter[]).map((f) => {
+                const active = filter === f;
+                return (
+                  <button
+                    key={f}
+                    role="tab"
+                    type="button"
+                    aria-selected={active}
+                    onClick={() => setFilter(f)}
+                    className={`relative min-h-11 shrink-0 cursor-pointer rounded-full px-4 text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:scale-95 ${
+                      active ? "text-slate-900 dark:text-white" : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="status-pill"
+                        transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 34 }}
+                        className="absolute inset-0 rounded-full bg-white shadow-sm dark:bg-slate-950"
+                      />
+                    )}
+                    <span className="relative flex items-center gap-2">
+                      {f !== "הכל" && <span className={`h-2 w-2 rounded-full ${STATUS_STYLE[f].dot}`} aria-hidden />}
+                      {f}
+                      <span className="rounded-full bg-slate-200/80 px-1.5 py-0.5 text-xs tabular-nums dark:bg-slate-700">{counts[f]}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* Error banner */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              role="alert"
+              initial={reduce ? false : { opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-4 flex items-start gap-3 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200"
+            >
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
+              <p className="flex-1">{error}</p>
+              <button
+                type="button"
+                onClick={() => void reload()}
+                className="min-h-11 cursor-pointer rounded-full px-3 font-semibold underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
+              >
+                נסה שוב
+              </button>
+              <button
+                type="button"
+                onClick={dismissError}
+                aria-label="סגור הודעה"
+                className="grid h-11 w-11 cursor-pointer place-items-center rounded-full hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 dark:hover:bg-rose-500/20"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* List */}
+        <main className="mt-5" aria-busy={loading}>
+          <p className="sr-only" role="status" aria-atomic="true">
+            מוצגות {visible.length} הזמנות מתוך {orders.length}
+          </p>
+
+          {loading ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-56 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" />
               ))}
             </div>
-            <div className="text-[11px] font-semibold text-muted-foreground">
-              {filtered.length} הזמנות מוצגות
-            </div>
-          </div>
-        </div>
-
-        {orders.length === 0 && (
-          <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-            הטאב "{data?.tab}" ריק או שאין בו שורות עם מספר הזמנה.
-          </div>
-        )}
-
-        <div className="space-y-3">
-          {filtered.map((o) => {
-            const isExpanded = expandedId === o.id;
-            const status = normStatus(o.status);
-            const tons = orderWeightTons(o);
-            const unmatched = o.items.filter((i) => !i.matched).length;
-
-            return (
-              <div
-                key={o.id}
-                className="overflow-hidden rounded-3xl bg-card shadow-card border border-border/60 transition"
-              >
-                <div
-                  onClick={() => setExpandedId(isExpanded ? null : o.id)}
-                  className="flex cursor-pointer flex-col gap-3 p-5 transition hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between"
+          ) : visible.length === 0 ? (
+            <div className="grid place-items-center rounded-3xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center dark:border-slate-700 dark:bg-slate-900/40">
+              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+                <PackageSearch className="h-7 w-7 text-slate-500" aria-hidden />
+              </span>
+              <h2 className="mt-4 text-lg font-bold">לא נמצאו הזמנות</h2>
+              <p className="mt-1 max-w-sm text-sm text-slate-600 dark:text-slate-300">
+                {orders.length === 0 ? "הגיליון עדיין לא החזיר הזמנות." : "נסו לשנות את החיפוש או לבחור סטטוס אחר."}
+              </p>
+              {(query || filter !== "הכל") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery("");
+                    setFilter("הכל");
+                  }}
+                  className="mt-5 min-h-11 cursor-pointer rounded-full bg-blue-600 px-5 text-sm font-semibold text-white transition-all duration-200 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-95"
                 >
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-primary">
-                        הזמנה #{o.id}
-                      </span>
-                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                        {fmtDate(o.date)}
-                      </span>
-                      <span
-                        className={`rounded-md px-2 py-0.5 text-xs font-bold ${
-                          status === "בהעמסה"
-                            ? "bg-amber-500/15 text-amber-800 border border-amber-500/30"
-                            : status === "בדרך"
-                              ? "bg-blue-500/15 text-blue-800 border border-blue-500/30"
-                              : "bg-emerald-500/15 text-emerald-800 border border-emerald-500/30"
-                        }`}
-                      >
-                        {o.status || status}
-                      </span>
-                      {o.window && (
-                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" /> {o.window}
-                        </span>
-                      )}
-                    </div>
-
-                    <h3 className="font-display text-lg font-bold text-foreground">
-                      {o.customer || "לא צוין לקוח"}
-                    </h3>
-
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
-                      <span>{o.address || "ללא כתובת"}</span>
-                      {o.yard && (
-                        <>
-                          <span>·</span>
-                          <span>{o.yard}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-4 border-t border-border/40 pt-2 sm:border-0 sm:pt-0">
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-foreground block">
-                        {tons > 0 ? `${tons.toFixed(2)} טון` : "משקל לא ידוע"}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {o.driver ? `נהג: ${o.driver}` : "ללא שיבוץ"}
-                      </span>
-                    </div>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
-                      {isExpanded ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {isExpanded && (
-                  <div className="border-t border-border/60 bg-muted/20 p-5 space-y-4 animate-in fade-in duration-200">
-                    <div>
-                      <div className="flex items-center justify-between text-xs font-bold text-muted-foreground mb-2">
-                        <span>פריטי ההזמנה ({o.items.length} שורות):</span>
-                        <span>
-                          {tons > 0 ? `משקל מוערך: ${tons.toFixed(2)} טון` : ""}
-                          {unmatched > 0 ? ` · ${unmatched} פריטים לא זוהו בקטלוג` : ""}
-                        </span>
-                      </div>
-
-                      {o.items.length === 0 ? (
-                        <div className="rounded-2xl bg-card p-3 text-xs border border-border/50 text-muted-foreground">
-                          {o.itemsText || "אין פירוט פריטים בגיליון"}
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {o.items.map((it, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between rounded-2xl bg-card p-3 text-xs border border-border/50 shadow-2xs"
-                            >
-                              <div className="space-y-0.5">
-                                <span className="font-bold text-foreground">{it.name}</span>
-                                {it.sku && (
-                                  <span className="block text-[10px] font-mono text-muted-foreground">
-                                    מק״ט {it.sku}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <span className="font-bold text-sm">
-                                  {it.qty} {it.unit}
-                                </span>
-                                <span className="block text-[11px] text-muted-foreground">
-                                  {it.matched && it.weightKg > 0
-                                    ? `${((it.weightKg * it.qty) / 1000).toFixed(2)} טון`
-                                    : "משקל לא ידוע"}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-3 rounded-2xl bg-card p-4 border border-border/60 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-600">
-                          <Truck className="h-5 w-5" />
-                        </div>
-                        <div className="text-xs">
-                          <span className="text-muted-foreground block">נהג משובץ:</span>
-                          <span className="font-bold text-foreground">
-                            {o.driver || "ממתין לשיבוץ סדרן ראמי"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {o.phone && (
-                          <a
-                            href={`tel:${o.phone.replace(/[^\d+]/g, "")}`}
-                            className="flex items-center gap-1.5 rounded-xl bg-muted px-3.5 py-2 text-xs font-bold text-foreground hover:bg-muted/80 transition"
-                          >
-                            <Phone className="h-3.5 w-3.5 text-primary" />
-                            <span>חיוג לאתר</span>
-                          </a>
-                        )}
-                        {o.address && (
-                          <a
-                            href={`https://waze.com/ul?q=${encodeURIComponent(o.address)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 rounded-xl bg-blue-500/15 border border-blue-500/30 px-3.5 py-2 text-xs font-bold text-blue-700 hover:bg-blue-500/25 transition"
-                          >
-                            <Navigation className="h-3.5 w-3.5 text-blue-600" />
-                            <span>Waze ישיר</span>
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  נקה סינון
+                </button>
+              )}
+            </div>
+          ) : (
+            <motion.div layout={!reduce} className="grid items-start gap-4 lg:grid-cols-2">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {visible.map((o) => (
+                  <OrderCard
+                    key={o.id}
+                    order={o}
+                    expanded={expandedIds.has(o.id)}
+                    busy={busyIds.has(o.id)}
+                    onToggle={toggle}
+                    onStatus={setStatus}
+                  />
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </main>
       </div>
-    </>
+    </div>
   );
 }
