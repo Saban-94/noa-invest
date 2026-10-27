@@ -12,11 +12,8 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  Layers,
   MapPin,
-  CheckCircle2,
-  AlertCircle,
-  PackageCheck,
+  Package,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,7 +35,7 @@ export const Route = createFileRoute("/orders")({
 function LiveOrdersPage() {
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("הכל");
-  const [expandedId, setExpandedId] = useState<string | null>("37901"); // First order opened by default
+  const [expandedId, setExpandedId] = useState<string | null>("6215857");
 
   const {
     data: orders = ORDERS,
@@ -54,7 +51,7 @@ function LiveOrdersPage() {
   const handleRefresh = async () => {
     const res = await refetch();
     if (res.isSuccess) {
-      toast.success("לוח ההזמנות סונכרן מול גיליון נועה 🚚");
+      toast.success("לוח ההזמנות סונכרן מול טאב הזמנות בסידור 🚚");
     }
   };
 
@@ -84,8 +81,8 @@ function LiveOrdersPage() {
   return (
     <>
       <PageHeader
-        title="לוח הזמנות חיות"
-        subtitle="סנכרון תלת-כיווני מול גיליון נועה, קומקס ERP ושיבוצי נהגים"
+        title="לוח הזמנות וסידור עבודה"
+        subtitle="סנכרון מלא מול טאב הזמנות בגיליון, ניהול מניפסט פריטים ושיבוצי נהגים"
         action={
           <button
             onClick={handleRefresh}
@@ -115,7 +112,7 @@ function LiveOrdersPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <div className="flex flex-wrap gap-1.5">
-              {["הכל", "בהעמסה", "בדרך", "פתוחה"].map((st) => (
+              {["הכל", "בהעמסה", "בדרך", "פתוחה", "בביצוע"].map((st) => (
                 <button
                   key={st}
                   onClick={() => setFilterStatus(st)}
@@ -213,7 +210,10 @@ function LiveOrdersPage() {
                   <div className="border-t border-border/60 bg-muted/20 p-5 space-y-4 animate-in fade-in duration-200">
                     <div>
                       <div className="flex items-center justify-between text-xs font-bold text-muted-foreground mb-2">
-                        <span>מניפסט פריטי הזמנת קומקס ({o.items.length} שורות):</span>
+                        <span className="flex items-center gap-1">
+                          <Package className="h-3.5 w-3.5 text-primary" />
+                          מניפסט פריטי הזמנה ({o.items.length} שורות):
+                        </span>
                         <span>משקל כולל: {weightTons} טון</span>
                       </div>
 
@@ -255,19 +255,21 @@ function LiveOrdersPage() {
                           <span className="font-bold text-foreground">
                             {driver
                               ? `${driver.name} · ${driver.truck} (${driver.plate})`
-                              : "ממתין לשיבוץ סדרן ראמי"}
+                              : o.driverName || "ממתין לשיבוץ סדרן ראמי"}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <a
-                          href={`tel:${o.phone}`}
-                          className="flex items-center gap-1.5 rounded-xl bg-muted px-3.5 py-2 text-xs font-bold text-foreground hover:bg-muted/80 transition"
-                        >
-                          <Phone className="h-3.5 w-3.5 text-primary" />
-                          <span>חיוג לאתר</span>
-                        </a>
+                        {o.phone && (
+                          <a
+                            href={`tel:${o.phone}`}
+                            className="flex items-center gap-1.5 rounded-xl bg-muted px-3.5 py-2 text-xs font-bold text-foreground hover:bg-muted/80 transition"
+                          >
+                            <Phone className="h-3.5 w-3.5 text-primary" />
+                            <span>חיוג לאתר</span>
+                          </a>
+                        )}
 
                         <a
                           href={`https://waze.com/ul?q=${encodeURIComponent(o.address)}`}
