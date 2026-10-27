@@ -3,7 +3,7 @@ import { ORDERS, type Order } from "@/lib/data";
 // This URL was supplied by the user. Override it in Vercel if the deployment URL changes.
 const endpoint = (
   import.meta.env.VITE_NOA_ORDERS_API_URL as string | undefined
-)?.trim() || "https://script.google.com/macros/s/AKfycbx9NpLEnJ5904JqaeeuuR8NslN66F4r6IYddyvr-Q7AeGx5HFHfSAjW8CoP2oT6NoQrvA/exec";
+)?.trim() || "https://script.google.com/macros/s/AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw/exec";
 export const hasLiveOrdersEndpoint = Boolean(endpoint);
 
 function pick(raw: Record<string, any>, ...keys: string[]): any {
