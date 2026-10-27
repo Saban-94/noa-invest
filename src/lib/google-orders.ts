@@ -4,6 +4,7 @@ import { ORDERS, type Order } from "@/lib/data";
 const endpoint = (
   import.meta.env.VITE_NOA_ORDERS_API_URL as string | undefined
 )?.trim() || "https://script.google.com/macros/s/AKfycbx9NpLEnJ5904JqaeeuuR8NslN66F4r6IYddyvr-Q7AeGx5HFHfSAjW8CoP2oT6NoQrvA/exec";
+export const hasLiveOrdersEndpoint = Boolean(endpoint);
 
 function pick(raw: Record<string, any>, ...keys: string[]): any {
   for (const key of keys) if (raw[key] !== undefined && raw[key] !== null && raw[key] !== "") return raw[key];
@@ -35,7 +36,8 @@ function normalizeOrder(raw: Record<string, any>): Order | null {
   const manifest = String(pick(raw, "פירוט מוצרים", "פירוט פריטים", "מניפסט", "itemsText", "products") || "").trim();
   if (!items.length && manifest) {
     // Keep the source manifest verbatim; do not fabricate individual quantities or weights.
-    items.push({ name: manifest, qty: 1, unit: "פירוט הזמנה", weightKg: 0 });
+    const totalTons = Number(String(pick(raw, "משקל (טון)", "משקל טון", "משקל")).replace(/,/g, "")) || 0;
+    items.push({ name: manifest, qty: 1, unit: "פירוט הזמנה", weightKg: totalTons * 1000 });
   }
   const yardRaw = String(pick(raw, "yard", "warehouse", "מחסן מוצא", "מחסן") || "מחסן 4 החרש 10");
   const yard: Order["yard"] = /התלמיד|מחסן\s*1/.test(yardRaw) ? "מחסן 1 התלמיד 6" : "מחסן 4 החרש 10";
