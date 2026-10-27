@@ -39,13 +39,13 @@ function LiveOrdersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const {
-    data: orders = ORDERS,
+    data: orders = (import.meta.env.VITE_NOA_ORDERS_API_URL ? [] : ORDERS),
     isFetching,
     refetch,
   } = useQuery<Order[]>({
     queryKey: ["live-orders"],
     queryFn: fetchLiveOrdersFromSheet,
-    initialData: ORDERS,
+    initialData: import.meta.env.VITE_NOA_ORDERS_API_URL ? undefined : ORDERS,
     staleTime: 30000,
   });
 
@@ -119,7 +119,7 @@ function LiveOrdersPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <div className="flex flex-wrap gap-1.5">
-              {["הכל", "בהעמסה", "בדרך", "פתוחה", "בביצוע"].map((st) => (
+              {["הכל", "בהעמסה", "בדרך", "פתוחה", "סופק"].map((st) => (
                 <button
                   key={st}
                   onClick={() => setFilterStatus(st)}
@@ -139,6 +139,8 @@ function LiveOrdersPage() {
             </div>
           </div>
         </div>
+
+        {orders.length === 0 && !isFetching && <div className="rounded-2xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">לא התקבלו הזמנות מהשרת. בדוק את חיבור Google Apps Script ואת הרשאות הגיליון.</div>}
 
         {/* Orders Accordion List */}
         <div className="space-y-3">
@@ -173,7 +175,9 @@ function LiveOrdersPage() {
                             ? "bg-amber-500/15 text-amber-800 border border-amber-500/30"
                             : o.status === "בדרך"
                               ? "bg-blue-500/15 text-blue-800 border border-blue-500/30"
-                              : "bg-emerald-500/15 text-emerald-800 border border-emerald-500/30"
+                              : o.status === "סופק"
+                                ? "bg-emerald-500/15 text-emerald-800 border border-emerald-500/30"
+                                : "bg-muted text-muted-foreground border border-border"
                         }`}
                       >
                         {o.status}
