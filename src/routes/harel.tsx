@@ -320,6 +320,3 @@ function HarelDashboard() {
     </div>
   );
 }
-
-
-
