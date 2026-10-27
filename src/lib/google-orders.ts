@@ -1,10 +1,10 @@
 import { ORDERS, type Order } from "./data";
 
 // כתובת ה-Apps Script המוגדרת במשתני הסביבה (Vite)
-export const VITE_NOA_ORDERS_API_URL = import.meta.env.ORDERS_API_URL || "";
+export const ORDERS_API_URL = import.meta.env.ORDERS_API_URL || "";
 export const ITURAN_TOKEN = import.meta.env.ITURAN_TOKEN || import.meta.env.ITURAN_TOKEN || "saban-ituran-secret-2026";
 
-export const hasLiveOrdersEndpoint = Boolean(VITE_NOA_ORDERS_API_URL.trim());
+export const hasLiveOrdersEndpoint = Boolean(ORDERS_API_URL.trim());
 
 /**
  * פונקציה לשליפה חיה של טאב "הזמנות" מתוך Google Apps Script / Google Sheets
@@ -16,8 +16,8 @@ export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
   }
 
   try {
-    const separator = VITE_NOA_ORDERS_API_URL.includes("?") ? "&" : "?";
-    const url = `${VITE_NOA_ORDERS_API_URL}${separator}action=getOrders&token=${encodeURIComponent(ITURAN_TOKEN)}`;
+    const separator = ORDERS_API_URL.includes("?") ? "&" : "?";
+    const url = `${ORDERS_API_URL}${separator}action=getOrders&token=${encodeURIComponent(ITURAN_TOKEN)}`;
 
     const res = await fetch(url, {
       method: "GET",
@@ -96,8 +96,8 @@ export async function updateOrderStatus(orderId: string, status: string): Promis
   }
 
   try {
-    const separator = VITE_NOA_ORDERS_API_URL.includes("?") ? "&" : "?";
-    const url = `${VITE_NOA_ORDERS_API_URL}${separator}action=updateOrderStatus&orderId=${encodeURIComponent(orderId)}&status=${encodeURIComponent(status)}&token=${encodeURIComponent(ITURAN_TOKEN)}`;
+    const separator = ORDERS_API_URL.includes("?") ? "&" : "?";
+    const url = `${ORDERS_API_URL}${separator}action=updateOrderStatus&orderId=${encodeURIComponent(orderId)}&status=${encodeURIComponent(status)}&token=${encodeURIComponent(ITURAN_TOKEN)}`;
 
     const res = await fetch(url, { method: "GET" });
     if (!res.ok) throw new Error("שגיאת שרת בעדכון הסטטוס");
