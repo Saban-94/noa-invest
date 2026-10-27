@@ -40,21 +40,24 @@ export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
 
     // מיפוי נתוני הגיליון הגולמיים למבנה הטיפוס Order במערכת
     return data.orders.map((item: any, idx: number) => {
-      const orderId = String(item["מס' הזמנה"] || item["מספר הזמנה"] || `ord_${idx + 1}`).trim();
-      const customerName = String(item["שם לקוח"] || "לקוח מזדמן").trim();
-      const address = String(item["כתובת אספקה"] || "").trim();
-      const yard = String(item["מחסן מוצא"] || "4 (החרש 10)").trim();
-      const status = String(item["סטטוס סידור"] || "פתוחה").trim();
-      const date = String(item["תאריך אספקה"] || new Date().toISOString().split("T")[0]).trim();
+      const receivedDate = String(item["תאריך קליטה"] || "").trim();
+      const date = String(item["תאריך אספקה"] || "").trim();
       const time = String(item["שעה"] || "08:00").trim();
+      const orderId = String(item["מס' הזמנה"] || "").trim();
+      const customerNo = String(item["מס' לקוח"] || "").trim();
+      const customerName = String(item["שם לקוח"] || "לקוח מזדמן").trim();
       const phone = String(item["איש קשר וטלפון"] || "").replace(/[^\d-]/g, "");
+      const address = String(item["כתובת אספקה"] || "").trim();
+      const yard = String(item["מחסן מוצא"] || "").trim();
       const driverStr = String(item["נהג / משאית"] || "").trim();
       const rawItems = String(item["פירוט מוצרים"] || "").trim();
       const weightTons = parseFloat(item["משקל (טון)"] || "0");
-      const wazeLink = String(item["קישור Waze"] || "");
-      const notes = String(item["הערות"] || "").trim();
       const depositBales = String(item["פקדון בלות (60002)"] || "").trim();
       const depositPallets = String(item["פקדון משטחים (60060/60006)"] || "").trim();
+      const noteId = String(item["מס' תעודת משלוח"] || "").trim();
+      const status = String(item["סטטוס סידור"] || "פתוחה").trim();
+      const wazeLink = String(item["קישור Waze"] || "");
+      const notes = String(item["הערות"] || "").trim();
 
       // פיצול שורות מוצרים גולמיות
       const parsedItems = rawItems
@@ -72,23 +75,26 @@ export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
         : [{ name: "סחורה כללית", qty: 1, unit: "מנה", weightKg: 100, deposit: false }];
 
       return {
-        id: orderId,
-        customer: customerName,
-        customerNo: String(item["מס' לקוח"] || ""),
-        address: address,
-        yard: yard,
-        status: status.includes("סופק") ? "סופק" : status.includes("בהעמסה") ? "בהעמסה" : status.includes("בדרך") ? "בדרך" : "פתוחה",
-        date: date,
+        id: orderId, // Assuming ID is the order ID for now
+        receivedDate,
+        date,
         window: time,
-        phone: phone,
+        orderId,
+        noteId,
+        customerNo,
+        customer: customerName,
+        phone,
+        address,
+        yard: yard as any,
         driverId: null,
         driverName: driverStr,
+        status: status as any,
         items: parsedItems,
-        notes: notes,
-        weightTons: weightTons,
-        wazeLink: wazeLink,
-        depositBales: depositBales,
-        depositPallets: depositPallets,
+        notes,
+        weightTons,
+        wazeLink,
+        depositBales,
+        depositPallets,
       };
     });
   } catch (err) {

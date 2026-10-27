@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
 import { type Order } from "@/lib/data";
@@ -18,6 +18,8 @@ import {
   Clock,
   Weight,
   AlertTriangle,
+  FileText,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -49,12 +51,6 @@ function LiveOrdersPage() {
     staleTime: 30000,
   });
 
-  // Sync on mount
-  useEffect(() => {
-    console.log("[Sync] Triggering initial sync on mount");
-    refetch().catch(err => console.error("[Sync] Failed on mount:", err));
-  }, [refetch]);
-
   const updateMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: string }) => updateOrderStatus(orderId, status),
     onSuccess: () => {
@@ -64,25 +60,9 @@ function LiveOrdersPage() {
     onError: () => toast.error("שגיאה בעדכון הסטטוס"),
   });
 
-  const handleRefresh = async () => {
-    console.log("[Sync] Manual refresh triggered");
-    try {
-      const res = await refetch();
-      if (res.isSuccess) {
-        toast.success("נתונים מעודכנים");
-      } else {
-        console.error("[Sync] Refresh failed:", res.error);
-        toast.error("שגיאת סנכרון — בדוק קונסול");
-      }
-    } catch (err) {
-      console.error("[Sync] Exception during refresh:", err);
-      toast.error("שגיאה קריטית בסנכרון");
-    }
-  };
-
   const filtered = orders.filter((o) => {
     const query = q.trim().toLowerCase();
-    const matchQuery = !query || o.customer.toLowerCase().includes(query) || o.id.includes(query) || o.address.toLowerCase().includes(query);
+    const matchQuery = !query || o.customer.toLowerCase().includes(query) || o.orderId.includes(query) || o.address.toLowerCase().includes(query);
     const matchStatus = filterStatus === "הכל" || o.status === filterStatus;
     return matchQuery && matchStatus;
   });
@@ -127,18 +107,18 @@ function LiveOrdersPage() {
 
         <div className="space-y-4">
           {filtered.map((o) => (
-            <Card key={o.id} className="border-border/60 hover:shadow-md transition-shadow">
+            <Card key={o.orderId} className="border-border/60 hover:shadow-md transition-shadow">
               <button
-                onClick={() => setExpandedId(expandedId === o.id ? null : o.id)}
+                onClick={() => setExpandedId(expandedId === o.orderId ? null : o.orderId)}
                 className="w-full p-5 flex items-center justify-between text-right"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-xs">{o.id}</Badge>
+                    <Badge variant="outline" className="font-mono text-xs">#{o.orderId}</Badge>
                     <Badge className={
                       o.status === "בהעמסה" ? "bg-amber-500/20 text-amber-800" :
                       o.status === "בדרך" ? "bg-blue-500/20 text-blue-800" :
-                      o.status === "סופק" ? "bg-emerald-500/20 text-emerald-800" :
+                      o.status === "סופק" ? "bg-emerald-500/20 text-emerald-700" :
                       "bg-muted text-muted-foreground"
                     }>{o.status}</Badge>
                   </div>
@@ -147,24 +127,27 @@ function LiveOrdersPage() {
                     <MapPin className="h-3.5 w-3.5" /> {o.address}
                   </div>
                 </div>
-                {expandedId === o.id ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                {expandedId === o.orderId ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
               </button>
 
-              {expandedId === o.id && (
+              {expandedId === o.orderId && (
                 <CardContent className="border-t border-border/60 bg-muted/20 p-5 space-y-4 animate-in fade-in slide-in-from-top-2">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-card border border-border shadow-sm text-xs">
-                    <div><div className="text-muted-foreground">תאריך:</div><div className="font-bold">{o.date}</div></div>
-                    <div><div className="text-muted-foreground">חלון זמן:</div><div className="font-bold">{o.window}</div></div>
-                    <div><div className="text-muted-foreground">משקל:</div><div className="font-bold flex items-center gap-1"><Weight className="h-3 w-3"/>{o.weightTons} טון</div></div>
-                    <div className="flex items-center justify-end">
-                      <Select value={o.status} onValueChange={(val) => updateMutation.mutate({ orderId: o.id, status: val })}>
-                        <SelectTrigger className="w-32 h-8 rounded-lg text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STATUS_OPTIONS.map(st => <SelectItem key={st} value={st}>{st}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                    <div><div className="text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3"/> תאריך:</div><div className="font-bold">{o.date}</div></div>
+                    <div><div className="text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3"/> שעה:</div><div className="font-bold">{o.window}</div></div>
+                    <div><div className="text-muted-foreground flex items-center gap-1"><Weight className="h-3 w-3"/> משקל:</div><div className="font-bold">{o.weightTons} טון</div></div>
+                    <div><div className="text-muted-foreground flex items-center gap-1"><FileText className="h-3 w-3"/> תעודה:</div><div className="font-bold font-mono">#{o.noteId}</div></div>
+                    
+                    <div className="sm:col-span-4 flex items-center justify-between gap-4 pt-2 border-t mt-2">
+                        <div className="text-xs font-bold text-muted-foreground">עדכון סטטוס:</div>
+                        <Select value={o.status} onValueChange={(val) => updateMutation.mutate({ orderId: o.orderId, status: val })}>
+                          <SelectTrigger className="w-52 h-9 rounded-lg text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_OPTIONS.map(st => <SelectItem key={st} value={st}>{st}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                     </div>
                   </div>
 
@@ -182,8 +165,8 @@ function LiveOrdersPage() {
                               <AlertTriangle className="h-4 w-4 shrink-0"/>
                               <div>
                                   <div className="font-bold">פקדונות:</div>
-                                  <div>{o.depositBales}</div>
-                                  <div>{o.depositPallets}</div>
+                                  {o.depositBales && <div>{o.depositBales}</div>}
+                                  {o.depositPallets && <div>{o.depositPallets}</div>}
                               </div>
                           </div>
                       )}

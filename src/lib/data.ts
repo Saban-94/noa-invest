@@ -52,12 +52,15 @@ export type DeliveryNote = {
 
 export type Order = {
   id: string;
-  customer: string;
-  customerNo: string;
-  phone: string;
-  address: string;
+  receivedDate: string;
   date: string;
   window: string;
+  orderId: string;
+  noteId: string;
+  customerNo: string;
+  customer: string;
+  phone: string;
+  address: string;
   yard: Yard;
   driverId: string | null;
   driverName: string;
