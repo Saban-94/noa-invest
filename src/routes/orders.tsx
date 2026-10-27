@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { ORDERS, DRIVERS, type Order, fetchLiveOrders } from "@/lib/data";
+import { ORDERS, DRIVERS, type Order } from "@/lib/data";
+import { fetchLiveOrdersFromSheet } from "@/lib/google-orders";
 import {
   Truck,
   Search,
@@ -35,7 +36,7 @@ export const Route = createFileRoute("/orders")({
 function LiveOrdersPage() {
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("הכל");
-  const [expandedId, setExpandedId] = useState<string | null>("6215857");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const {
     data: orders = ORDERS,
@@ -43,15 +44,18 @@ function LiveOrdersPage() {
     refetch,
   } = useQuery<Order[]>({
     queryKey: ["live-orders"],
-    queryFn: fetchLiveOrders,
+    queryFn: fetchLiveOrdersFromSheet,
     initialData: ORDERS,
     staleTime: 30000,
   });
 
   const handleRefresh = async () => {
-    const res = await refetch();
-    if (res.isSuccess) {
-      toast.success("לוח ההזמנות סונכרן מול טאב הזמנות בסידור 🚚");
+    try {
+      const res = await refetch();
+      if (res.isSuccess) toast.success("הנתונים נטענו מחדש");
+      else toast.error("לא ניתן לסנכרן כרגע. בדוק את חיבור הגיליון.");
+    } catch {
+      toast.error("שגיאה בסנכרון הגיליון");
     }
   };
 
@@ -97,6 +101,9 @@ function LiveOrdersPage() {
       />
 
       <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 md:px-8">
+        <div className={`rounded-xl border px-3 py-2 text-xs ${import.meta.env.VITE_NOA_ORDERS_API_URL ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800" : "border-amber-500/30 bg-amber-500/10 text-amber-900"}`} role="status">
+          {import.meta.env.VITE_NOA_ORDERS_API_URL ? "מקור נתונים: חיבור Google Sheets מוגדר · רענון ידני זמין" : "מצב הדגמה: לא הוגדר VITE_NOA_ORDERS_API_URL ולכן מוצגות הזמנות לדוגמה בלבד"}
+        </div>
         {/* Search & Status Filters */}
         <div className="rounded-3xl bg-card p-4 shadow-card border border-border/60 space-y-3">
           <div className="relative">
@@ -146,9 +153,11 @@ function LiveOrdersPage() {
                 className="overflow-hidden rounded-3xl bg-card shadow-card border border-border/60 transition"
               >
                 {/* Accordion Header Row */}
-                <div
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
                   onClick={() => setExpandedId(isExpanded ? null : o.id)}
-                  className="flex cursor-pointer flex-col gap-3 p-5 transition hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex w-full cursor-pointer flex-col gap-3 p-5 text-right transition hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -203,7 +212,7 @@ function LiveOrdersPage() {
                       )}
                     </div>
                   </div>
-                </div>
+                </button>
 
                 {/* Accordion Body: Manifest of Items & Action Buttons */}
                 {isExpanded && (
