@@ -1,6 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { DeliveryNote } from "@/lib/data";
-import { buildLogisticsFindings } from "@/lib/logistics-audit";
 
 /**
  * גשר שרת ← Google Apps Script (Api.js).
@@ -9,7 +7,7 @@ import { buildLogisticsFindings } from "@/lib/logistics-audit";
  */
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbwg8KWzcw9QSls0q-892lj2KW1_S1Y9fiEsVGpjObgEqyIjun83pT592wUdcVCN101Agg/exec";
+  "https://script.google.com/macros/s/AKfycbx9NpLEnJ5904JqaeeuuR8NslN66F4r6IYddyvr-Q7AeGx5HFHfSAjW8CoP2oT6NoQrvA/exec";
 
 let activeGasUrl: string | null = null;
 
@@ -20,7 +18,7 @@ function gasUrl(): string {
   if (
     envUrl &&
     (envUrl.includes("TwXhw") ||
-      envUrl.includes("AKfycbwg8KWzcw9QSls0q-892lj2KW1_S1Y9fiEsVGpjObgEqyIjun83pT592wUdcVCN101Agg"))
+      envUrl.includes("AKfycbx9NpLEnJ5904JqaeeuuR8NslN66F4r6IYddyvr-Q7AeGx5HFHfSAjW8CoP2oT6NoQrvA"))
   ) {
     return DEFAULT_GAS_URL;
   }
@@ -164,77 +162,45 @@ export type SheetNote = {
   harelApprovedAt: string;
 };
 
-type ResolvedFile = { fileId?: string; viewUrl?: string; source?: string };
-
-function auditNoteFromSheet(n: SheetNote): DeliveryNote {
-  const parseDeposit = (code: string): number | null => {
-    const text = String(n.depositsText || "");
-    const match = text.match(new RegExp(code + "[^0-9]{0,25}([0-9]+)"));
-    return match ? Number.parseInt(match[1], 10) : null;
-  };
-  const bales = parseDeposit("60002");
-  const pallets = parseDeposit("60060");
-  return {
-    id: String(n.id),
-    customer: n.customer || "לא זוהה שם לקוח",
-    date: n.date || "",
-    comaxOrder: n.comaxOrder || undefined,
-    fileId: n.fileId || undefined,
-    driveUrl: n.driveUrl || undefined,
-    driver: [n.driver, n.truck].filter(Boolean).join(" · ") || undefined,
-    items: (n.items || []).map((item) => ({
-      name: String(item.name || ""),
-      sku: item.sku || undefined,
-      qty: Number(item.qty),
-      ordered: Number(item.qty),
-      weightKg: 0,
-      unit: item.unit || "יח׳",
-    })),
-    deposits: {
-      ...(bales !== null ? { bales60002: { delivered: bales, billed: bales } } : {}),
-      ...(pallets !== null ? { pallets60060: { delivered: pallets, billed: pallets } } : {}),
-    },
-    live: true,
-  };
-}
-
-/**
- * תעודות שהגיליון החזיר בלי fileId (לינק חסר, או נוסחת HYPERLINK שנקראה כתווית בלבד):
- * מבקשים מ-Apps Script לאתר את הקובץ (גיליון, טאב בירור, תיקיית הארכיון) ומשלימים.
- * כשל כאן לא שובר את הרשימה.
- */
-async function fillMissingFiles(notes: SheetNote[]): Promise<void> {
-  const missing = notes
-    .filter((n) => !n.fileId && n.id)
-    .map((n) => n.id)
-    .slice(0, 100);
-  if (missing.length === 0) return;
-  try {
-    const r = await gasGet({ action: "resolveNoteFiles", ids: missing.join(",") });
-    const files = (r.files && typeof r.files === "object" ? r.files : {}) as Record<
-      string,
-      ResolvedFile
-    >;
-    for (const n of notes) {
-      const f = files[n.id];
-      if (!n.fileId && f?.fileId) {
-        n.fileId = f.fileId;
-        n.driveUrl = n.driveUrl || f.viewUrl || "";
-      }
-    }
-  } catch (err) {
-    console.warn(
-      "[AppsScript] resolveNoteFiles failed:",
-      err instanceof Error ? err.message : String(err),
-    );
-  }
-}
+export type SheetPtoEvent = {
+  truck: string;
+  driver: string;
+  eventType: string;
+  eventTimeIso: string;
+  address: string;
+  ingestedAt: string;
+};
 
 export const listNotesFn = createServerFn({ method: "POST" }).handler(async () => {
   const data = await gasGet({ action: "getNotes" });
-  const notes = (Array.isArray(data.notes) ? data.notes : []) as SheetNote[];
-  await fillMissingFiles(notes);
-  return { notes };
+  return { notes: (Array.isArray(data.notes) ? data.notes : []) as SheetNote[] };
+});
+
+/** אירועי פתיחה/סגירה של PTO מהטאב איתוראן_PTO (נקלטים ממיילי איתוראן) */
+export const listPtoFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { since?: string; truck?: string } | undefined) => {
+    const since = String(d?.since || "");
+    if (since && Number.isNaN(new Date(since).getTime())) throw new Error("since לא תקין");
+    return { since, truck: String(d?.truck || "").slice(0, 20) };
+  })
+  .handler(async ({ data }) => {
+    const params: Record<string, string> = { action: "getIturanPto" };
+    if (data.since) params.since = data.since;
+    if (data.truck) params.truck = data.truck;
+    const r = await gasGet(params);
+    return {
+      events: (Array.isArray(r.events) ? r.events : []) as SheetPtoEvent[],
+      fetchedAt: String((r.meta as { fetchedAt?: string } | undefined)?.fetchedAt || ""),
+    };
+  });
+
+/** קטלוג מוצרים מהטאב "מילון לוגיסטי" */
+export const getCatalogFn = createServerFn({ method: "POST" }).handler(async () => {
+  const r = await gasGet({ action: "getCatalog" });
+  return {
+    rows: (Array.isArray(r.rows) ? r.rows : []) as Record<string, string>[],
+    totalRows: Number(r.totalRows || 0),
+  };
 });
 
 export const getScanFn = createServerFn({ method: "POST" })
@@ -284,38 +250,16 @@ export const saveSignedNoteFn = createServerFn({ method: "POST" })
   });
 
 export const approvalFn = createServerFn({ method: "POST" })
-  .inputValidator((d: {
-    noteId: string;
-    approver: "rami" | "harel";
-    note?: string;
-    auditEvidence?: Record<string, string>;
-  }) => {
+  .inputValidator((d: { noteId: string; approver: "rami" | "harel"; note?: string }) => {
     if (!String(d?.noteId || "")) throw new Error("חסר מספר תעודה");
     if (d.approver !== "rami" && d.approver !== "harel") throw new Error("approver לא תקין");
-    if (!d.auditEvidence || typeof d.auditEvidence !== "object") {
-      throw new Error("נדרשת בדיקת לוגיסטיקה ותיעוד אסמכתאות לפני אישור");
-    }
-    const auditEvidence = Object.fromEntries(
-      Object.entries(d.auditEvidence).map(([key, value]) => [String(key), String(value || "").slice(0, 2000)]),
-    );
     return {
       noteId: String(d.noteId),
       approver: d.approver,
       note: String(d.note || "").slice(0, 500),
-      auditEvidence,
     };
   })
   .handler(async ({ data }) => {
-    const response = await gasGet({ action: "getNotes" });
-    const notes = (Array.isArray(response.notes) ? response.notes : []) as SheetNote[];
-    await fillMissingFiles(notes);
-    const source = notes.find((item) => String(item.id) === data.noteId);
-    if (!source) throw new Error("לא ניתן לאמת אישור: התעודה לא נמצאה במקור החי");
-    const findings = buildLogisticsFindings(auditNoteFromSheet(source));
-    const missing = findings.filter((finding) => (data.auditEvidence[finding.id] || "").trim().length < 12);
-    if (missing.length) {
-      throw new Error(`האישור נחסם בשרת: חסרות אסמכתאות ל-${missing.length} בדיקות מתוך ${findings.length}`);
-    }
     await gasPost({ action: "submitApproval", ...data });
     return { success: true as const };
   });
