@@ -18,6 +18,8 @@ export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
   try {
     const separator = ORDERS_API_URL.includes("?") ? "&" : "?";
     const url = `${ORDERS_API_URL}${separator}action=getOrders&token=${encodeURIComponent(ITURAN_TOKEN)}`;
+    
+    console.log("[DEBUG] Fetching orders from:", url);
 
     const res = await fetch(url, {
       method: "GET",

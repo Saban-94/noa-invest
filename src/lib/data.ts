@@ -346,50 +346,7 @@ export function auditNote(n?: DeliveryNote): {
   return { status, findings };
 }
 
-export const ORDERS: Order[] = [
-  {
-    id: "6215560",
-    customer: "אחמד אבו חדר",
-    phone: "050-7727019",
-    address: "שחף 9, הוד השרון",
-    date: "2026-10-15",
-    window: "07:30–09:30",
-    yard: "מחסן 4 החרש 10",
-    driverId: "hikmat",
-    status: "בדרך",
-    items: [
-      { name: "חמרה אדומה גננית (בלה)", qty: 16, unit: "בלה", weightKg: 1000, deposit: 45 },
-      { name: "חול מחצבה (בלה)", qty: 2, unit: "בלה", weightKg: 1000, deposit: 45 },
-    ],
-  },
-  {
-    id: "6215561",
-    customer: "אלירן סיימון",
-    phone: "054-7330817",
-    address: "ויתקין 20, רמת השרון",
-    date: "2026-10-15",
-    window: "08:30–10:30",
-    yard: "מחסן 4 החרש 10",
-    driverId: "hikmat",
-    status: "בהעמסה",
-    items: [{ name: "סומסום שק גדול (בלה)", qty: 4, unit: "בלה", weightKg: 1000, deposit: 45 }],
-  },
-  {
-    id: "6215553",
-    customer: "וגשל דאו",
-    phone: "054-7710750",
-    address: "בורוכוב 28, תל אביב",
-    date: "2026-10-15",
-    window: "09:30–11:30",
-    yard: "מחסן 1 התלמיד 6",
-    driverId: "ali",
-    status: "פתוחה",
-    items: [
-      { name: "טיח בריכות סבן", qty: 15, unit: "שק", weightKg: 25 },
-      { name: "הרבצה צמנטית כרמית", qty: 15, unit: "שק", weightKg: 25 },
-    ],
-  },
-];
+export const ORDERS: Order[] = [];
 
 export function fetchNotes(): DeliveryNote[] {
   return NOTES;
