@@ -53,14 +53,21 @@ export type DeliveryNote = {
 export type Order = {
   id: string;
   customer: string;
+  customerNo: string;
   phone: string;
   address: string;
   date: string;
   window: string;
   yard: Yard;
   driverId: string | null;
-  status: "פתוחה" | "בהעמסה" | "בדרך" | "סופק";
-  items: { name: string; qty: number; unit: string; weightKg: number; deposit?: number }[];
+  driverName: string;
+  status: "פתוחה" | "בהעמסה" | "בדרך" | "סופק" | "הועבר לתעודת משלוח";
+  items: { name: string; qty: number; unit: string; weightKg: number; deposit?: boolean }[];
+  notes: string;
+  weightTons: number;
+  wazeLink: string;
+  depositBales: string;
+  depositPallets: string;
 };
 
 export type GpsRecord = {

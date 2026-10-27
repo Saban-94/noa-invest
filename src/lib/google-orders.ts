@@ -50,21 +50,26 @@ export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
       const phone = String(item["איש קשר וטלפון"] || "").replace(/[^\d-]/g, "");
       const driverStr = String(item["נהג / משאית"] || "").trim();
       const rawItems = String(item["פירוט מוצרים"] || "").trim();
+      const weightTons = parseFloat(item["משקל (טון)"] || "0");
+      const wazeLink = String(item["קישור Waze"] || "");
+      const notes = String(item["הערות"] || "").trim();
+      const depositBales = String(item["פקדון בלות (60002)"] || "").trim();
+      const depositPallets = String(item["פקדון משטחים (60060/60006)"] || "").trim();
 
-      // פיצול שורות מוצרים גולמיות ממחרוזת הגיליון למבנה מניפסט
+      // פיצול שורות מוצרים גולמיות
       const parsedItems = rawItems
-        ? rawItems.split(/[,;]/).map((part, pIdx) => {
+        ? rawItems.split(/[,;]/).map((part) => {
             const trimmed = part.trim();
             const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(יח'|שק|בלות|לוח|דלי|מטר)?\s*(.+)$/);
             return {
               name: match ? match[3].trim() : trimmed,
               qty: match ? parseFloat(match[1]) : 1,
               unit: match && match[2] ? match[2] : "יח'",
-              weightKg: 50, // משקל ברירת מחדל לשורה אם לא צוין אחרת
+              weightKg: 50,
               deposit: /בלות|פקדון|משטחים/i.test(trimmed),
             };
           })
-        : [{ name: "סחורה כללית לפי תעודה", qty: 1, unit: "מנה", weightKg: 100, deposit: false }];
+        : [{ name: "סחורה כללית", qty: 1, unit: "מנה", weightKg: 100, deposit: false }];
 
       return {
         id: orderId,
@@ -76,10 +81,14 @@ export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
         date: date,
         window: time,
         phone: phone,
-        driverId: driverStr.includes("חכמת") ? "driver_1" : driverStr.includes("עלי") ? "driver_2" : null,
+        driverId: null,
         driverName: driverStr,
         items: parsedItems,
-        notes: String(item["הערות"] || ""),
+        notes: notes,
+        weightTons: weightTons,
+        wazeLink: wazeLink,
+        depositBales: depositBales,
+        depositPallets: depositPallets,
       };
     });
   } catch (err) {
