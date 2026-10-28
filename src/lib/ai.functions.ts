@@ -59,7 +59,7 @@ function safeRecord(value: unknown, depth = 0): unknown {
 
 function compactSource(payload: unknown, keys: string[], question: string, limit = 10): SourceResult {
   const rows = rowsFrom(payload, keys);
-  const terms = question.toLowerCase().match(/[\\p{L}\\p{N}-]{3,}/gu) ?? [];
+  const terms = question.toLowerCase().match(/[a-z0-9א-ת-]{3,}/giu) ?? [];
   const ranked = rows.map((record, index) => {
     const raw = JSON.stringify(record).toLowerCase();
     const score = terms.reduce((sum, term) => sum + (raw.includes(term) ? 1 : 0), 0);
