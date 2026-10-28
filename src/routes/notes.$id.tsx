@@ -7,7 +7,6 @@ import {
   auditNote,
   noteItemsCount,
   noteWeightKg,
-  noteWeightTons,
   type DeliveryNote,
 } from "@/lib/data";
 import { fetchLiveNotes, approveStrict } from "@/lib/api";
@@ -114,18 +113,73 @@ function AnimatedNumber({ value, decimals = 0 }: { value: number; decimals?: num
 
 /* ───────────────────────────── Metric card ───────────────────────────── */
 
+type MetricState = "ok" | "loading" | "missing";
+
 interface MetricProps {
   index: number;
   label: string;
   icon: LucideIcon;
   tone: string;
   surface: string;
+  state?: MetricState;
   children: ReactNode;
   footer?: ReactNode;
+  /** כשמוגדר — הכרטיס הופך לכפתור */
+  onClick?: () => void;
+  actionLabel?: string;
 }
 
-const MetricCard = memo(function MetricCard({ index, label, icon: Icon, tone, surface, children, footer }: MetricProps) {
+const MetricCard = memo(function MetricCard({
+  index,
+  label,
+  icon: Icon,
+  tone,
+  surface,
+  state = "ok",
+  children,
+  footer,
+  onClick,
+  actionLabel,
+}: MetricProps) {
   const reduce = useReducedMotion();
+  const shell =
+    "group relative block h-full w-full overflow-hidden rounded-2xl border border-border/70 bg-card/95 p-4 text-start shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md motion-reduce:transform-none";
+
+  const body = (
+    <>
+      <span
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-0.5 origin-right scale-x-0 bg-gradient-to-l from-primary via-primary/40 to-transparent transition-transform duration-300 group-hover:scale-x-100 motion-reduce:transition-none"
+      />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-xs font-semibold text-muted-foreground">{label}</div>
+          <div className="mt-2 font-display text-2xl font-extrabold tracking-tight text-foreground transition-colors duration-200 group-hover:text-primary">
+            {state === "loading" ? (
+              <span className="block h-8 w-20 animate-pulse rounded-md bg-muted motion-reduce:animate-none" aria-label="טוען" />
+            ) : state === "missing" ? (
+              <span className="text-muted-foreground" aria-label="אין נתונים">
+                —
+              </span>
+            ) : (
+              children
+            )}
+          </div>
+        </div>
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 motion-reduce:transform-none ${surface} ${tone}`}
+        >
+          {state === "loading" ? (
+            <Loader2 className="h-5 w-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          ) : (
+            <Icon className="h-5 w-5" aria-hidden="true" />
+          )}
+        </div>
+      </div>
+      {footer && <div className="mt-3">{footer}</div>}
+    </>
+  );
+
   return (
     <motion.li
       initial={reduce ? false : { opacity: 0, y: 14 }}
@@ -133,26 +187,18 @@ const MetricCard = memo(function MetricCard({ index, label, icon: Icon, tone, su
       transition={{ duration: 0.35, delay: reduce ? 0 : index * 0.07, ease: "easeOut" }}
       className="min-w-[200px] shrink-0 snap-start md:min-w-0"
     >
-      <div className="group relative h-full overflow-hidden rounded-2xl border border-border/70 bg-card/95 p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md motion-reduce:transform-none">
-        <span
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 h-0.5 origin-right scale-x-0 bg-gradient-to-l from-primary via-primary/40 to-transparent transition-transform duration-300 group-hover:scale-x-100 motion-reduce:transition-none"
-        />
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-xs font-semibold text-muted-foreground">{label}</div>
-            <div className="mt-2 font-display text-2xl font-extrabold tracking-tight text-foreground transition-colors duration-200 group-hover:text-primary">
-              {children}
-            </div>
-          </div>
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 motion-reduce:transform-none ${surface} ${tone}`}
-          >
-            <Icon className="h-5 w-5" aria-hidden="true" />
-          </div>
-        </div>
-        {footer && <div className="mt-3">{footer}</div>}
-      </div>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={`${label}. ${actionLabel ?? "פעולה"}`}
+          className={`${shell} cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 active:scale-[0.98]`}
+        >
+          {body}
+        </button>
+      ) : (
+        <div className={shell}>{body}</div>
+      )}
     </motion.li>
   );
 });
@@ -331,6 +377,45 @@ function CenterState({ icon, title, text, action }: { icon: ReactNode; title: st
   );
 }
 
+/* ───────────────────────────── Comax manifest sync ─────────────────────────────
+ * תעודות חיות מהגיליון לא תמיד נושאות שורות פריטים. כשחסרות — המניפסט נשלף לפי מספר הזמנת קומקס:
+ *   GET {VITE_SHEETS_ORDERS_URL}?action=manifest&order=<comaxOrder> → { items: [{sku,name,qty,unit,unitWeightKg}] }
+ */
+
+const SHEETS_URL: string = (import.meta.env?.VITE_SHEETS_ORDERS_URL as string | undefined) ?? "";
+const SKU_BALES = "60002";
+const SKU_PALLETS = "60060";
+
+interface ManifestRow {
+  sku: string;
+  name: string;
+  qty: number;
+  unit: string;
+  unitWeightKg: number;
+}
+
+const toNum = (v: unknown): number => {
+  const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+};
+
+async function fetchManifest(orderId: string, signal?: AbortSignal): Promise<ManifestRow[]> {
+  if (!SHEETS_URL) throw new Error("לא הוגדר VITE_SHEETS_ORDERS_URL");
+  const res = await fetch(`${SHEETS_URL}?action=manifest&order=${encodeURIComponent(orderId)}`, { signal });
+  if (!res.ok) throw new Error(`שגיאת שרת ${res.status}`);
+  const json = (await res.json()) as { items?: Record<string, unknown>[] };
+  return (json.items ?? []).map((r) => ({
+    sku: String(r.sku ?? "").trim(),
+    name: String(r.name ?? ""),
+    qty: toNum(r.qty),
+    unit: String(r.unit ?? "יח׳"),
+    unitWeightKg: toNum(r.unitWeightKg ?? r.weightKg ?? r.unitWeight),
+  }));
+}
+
+const sumSku = (rows: ManifestRow[], sku: string) =>
+  rows.reduce((s, r) => (r.sku === sku ? s + r.qty : s), 0);
+
 /* ───────────────────────────── Page ───────────────────────────── */
 
 function Viewer() {
@@ -412,6 +497,16 @@ function Viewer() {
       const f = await getScanFn({ data: { fileId: n!.fileId! } });
       return scanToDataUrl(f.mimeType, f.base64);
     },
+  });
+
+  // המניפסט נשלף רק כשהתעודה עצמה ללא שורות פריטים ויש לה מספר הזמנת קומקס
+  const noteHasItems = (n?.items?.length ?? 0) > 0;
+  const manifestQuery = useQuery({
+    queryKey: ["comax-manifest", n?.comaxOrder],
+    enabled: !!n && !noteHasItems && !!n.comaxOrder && !!SHEETS_URL,
+    staleTime: 60_000,
+    retry: 1,
+    queryFn: ({ signal }) => fetchManifest(String(n!.comaxOrder), signal),
   });
 
   const handleOpenTask = async () => {
@@ -512,6 +607,53 @@ function Viewer() {
   const auditEvidenceCount = auditFindings.filter((finding) => isDocumented(auditEvidence[finding.id])).length;
   const auditPct = auditFindings.length ? (auditEvidenceCount / auditFindings.length) * 100 : 0;
 
+  /* ── נתוני כרטיסי המדדים: מהתעודה אם קיימים, אחרת ממניפסט קומקס ── */
+  const manifest = manifestQuery.data ?? [];
+  const syncing = manifestQuery.isFetching;
+  const lineCount = noteHasItems ? n.items!.length : manifest.length;
+  const itemsCount = noteHasItems ? noteItemsCount(n) : manifest.reduce((sum, r) => sum + r.qty, 0);
+  const weightKg = noteHasItems ? noteWeightKg(n) : manifest.reduce((sum, r) => sum + r.qty * r.unitWeightKg, 0);
+  const balesDelivered = n.deposits?.bales60002?.delivered ?? sumSku(manifest, SKU_BALES);
+  const palletsDelivered = n.deposits?.pallets60060?.delivered ?? sumSku(manifest, SKU_PALLETS);
+  const depositsKnown =
+    n.deposits?.bales60002 !== undefined || n.deposits?.pallets60060 !== undefined || manifest.length > 0;
+  const sourceLabel = noteHasItems ? "מהתעודה" : "מקומקס";
+  const dataState: MetricState = lineCount > 0 ? "ok" : syncing ? "loading" : "missing";
+  const depositState: MetricState = depositsKnown ? "ok" : syncing ? "loading" : "missing";
+  const missingHint = !n.comaxOrder
+    ? "אין מספר הזמנת קומקס בתעודה"
+    : !SHEETS_URL
+      ? "חסר VITE_SHEETS_ORDERS_URL"
+      : manifestQuery.isError
+        ? `שגיאת סנכרון: ${manifestQuery.error instanceof Error ? manifestQuery.error.message : "כשל"}`
+        : "לחץ לסנכרון מקומקס";
+
+  const syncManifest = () => {
+    if (!n.comaxOrder) {
+      toast.error("לתעודה אין מספר הזמנת קומקס לסנכרון");
+      return;
+    }
+    if (!SHEETS_URL) {
+      toast.error("לא הוגדר VITE_SHEETS_ORDERS_URL", { description: "הגדר את כתובת ה-Apps Script כדי למשוך מניפסט." });
+      return;
+    }
+    void manifestQuery.refetch().then((r) => {
+      if (r.isError) toast.error("סנכרון קומקס נכשל", { description: r.error instanceof Error ? r.error.message : undefined });
+      else toast.success(`נטענו ${r.data?.length ?? 0} שורות מקומקס`);
+    });
+  };
+
+  const scrollToAudit = (focusFirstMissing: boolean) => {
+    if (focusFirstMissing) {
+      const idx = auditFindings.findIndex((f) => !isDocumented(auditEvidence[f.id]));
+      if (idx >= 0) {
+        if (idx >= 8) setShowAllAuditFindings(true);
+        setOpenRows(new Set([auditFindings[idx].id]));
+      }
+    }
+    document.getElementById("audit-section")?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  };
+
   const visibleFindings = (() => {
     const base = onlyMissing ? auditFindings.filter((f) => !isDocumented(auditEvidence[f.id])) : auditFindings;
     return showAllAuditFindings || onlyMissing ? base : base.slice(0, 8);
@@ -588,32 +730,82 @@ function Viewer() {
         {/* שורת מדדים */}
         <section aria-label="סיכום תעודה">
           <ul className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 [scrollbar-width:none] md:grid md:grid-cols-4 md:overflow-visible [&::-webkit-scrollbar]:hidden">
-            <MetricCard index={0} label="כמות פריטים" icon={Layers} tone="text-sky-700 dark:text-sky-300" surface="bg-sky-500/10"
-              footer={<p className="text-[11px] text-muted-foreground">{n.items?.length || 0} שורות בתעודה</p>}>
-              <AnimatedNumber value={noteItemsCount(n)} />
+            <MetricCard
+              index={0}
+              label="כמות פריטים"
+              icon={Layers}
+              tone="text-sky-700 dark:text-sky-300"
+              surface="bg-sky-500/10"
+              state={dataState}
+              onClick={!noteHasItems ? syncManifest : undefined}
+              actionLabel={dataState === "ok" ? "לחיצה לרענון המניפסט מקומקס" : "לחיצה לסנכרון מניפסט מקומקס"}
+              footer={
+                <p className={`flex items-center gap-1 text-[11px] ${dataState === "missing" ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+                  {!noteHasItems && <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin motion-reduce:animate-none" : ""}`} aria-hidden="true" />}
+                  {dataState === "ok" ? `${lineCount} שורות · ${sourceLabel}` : dataState === "loading" ? "מסנכרן מקומקס…" : missingHint}
+                </p>
+              }
+            >
+              <AnimatedNumber value={itemsCount} />
             </MetricCard>
-            <MetricCard index={1} label="משקל מוערך" icon={Scale} tone="text-slate-700 dark:text-slate-200" surface="bg-slate-500/10"
-              footer={<p className="text-[11px] text-muted-foreground tabular-nums">{noteWeightKg(n).toLocaleString("he-IL")} ק״ג</p>}>
+
+            <MetricCard
+              index={1}
+              label="משקל מוערך"
+              icon={Scale}
+              tone="text-slate-700 dark:text-slate-200"
+              surface="bg-slate-500/10"
+              state={dataState}
+              onClick={!noteHasItems ? syncManifest : undefined}
+              actionLabel="לחיצה לסנכרון מניפסט מקומקס"
+              footer={
+                <p className={`text-[11px] tabular-nums ${dataState === "missing" || weightKg === 0 ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+                  {dataState === "ok"
+                    ? weightKg > 0
+                      ? `${Math.round(weightKg).toLocaleString("he-IL")} ק״ג`
+                      : "חסר משקל יחידה בשורות"
+                    : dataState === "loading"
+                      ? "מסנכרן מקומקס…"
+                      : missingHint}
+                </p>
+              }
+            >
               <span className="flex items-baseline gap-1.5">
-                <AnimatedNumber value={noteWeightTons(n)} decimals={2} />
+                <AnimatedNumber value={weightKg / 1000} decimals={2} />
                 <span className="text-sm font-semibold text-muted-foreground">טון</span>
               </span>
             </MetricCard>
-            <MetricCard index={2} label="פיקדונות שסופקו" icon={Boxes} tone="text-amber-700 dark:text-amber-300" surface="bg-amber-500/10"
+
+            <MetricCard
+              index={2}
+              label="פיקדונות שסופקו"
+              icon={Boxes}
+              tone="text-amber-700 dark:text-amber-300"
+              surface="bg-amber-500/10"
+              state={depositState}
+              onClick={() => scrollToAudit(false)}
+              actionLabel="מעבר לבדיקות הפיקדון"
               footer={
                 <p className="text-[11px] text-muted-foreground">
-                  בלות 60002 · משטחים 60060
+                  בלות {SKU_BALES} · משטחים {SKU_PALLETS}
                 </p>
-              }>
+              }
+            >
               <span className="flex items-baseline gap-2 tabular-nums">
-                <AnimatedNumber value={n.deposits?.bales60002?.delivered ?? 0} />
+                <AnimatedNumber value={balesDelivered} />
                 <span className="text-base text-muted-foreground">/</span>
-                <AnimatedNumber value={n.deposits?.pallets60060?.delivered ?? 0} />
+                <AnimatedNumber value={palletsDelivered} />
               </span>
             </MetricCard>
-            <MetricCard index={3} label="בקרת לוגיסטיקה" icon={ShieldCheck}
+
+            <MetricCard
+              index={3}
+              label="בקרת לוגיסטיקה"
+              icon={ShieldCheck}
               tone={auditComplete ? "text-emerald-700 dark:text-emerald-300" : "text-orange-700 dark:text-orange-300"}
               surface={auditComplete ? "bg-emerald-500/10" : "bg-orange-500/10"}
+              onClick={() => scrollToAudit(!auditComplete)}
+              actionLabel={auditComplete ? "מעבר לבקרת הלוגיסטיקה" : "מעבר לבדיקה הראשונה החסרה"}
               footer={
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
                   <motion.div
@@ -623,7 +815,8 @@ function Viewer() {
                     transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 110, damping: 20 }}
                   />
                 </div>
-              }>
+              }
+            >
               <span className="tabular-nums">
                 {auditEvidenceCount}/{auditFindings.length}
               </span>
@@ -889,7 +1082,7 @@ function Viewer() {
         </div>
 
         {/* בקרת לוגיסטיקה מלאה */}
-        <section className="space-y-4 rounded-3xl border border-amber-500/30 bg-card p-5 shadow-card" aria-label="בקרת לוגיסטיקה של נועה">
+        <section id="audit-section" className="scroll-mt-4 space-y-4 rounded-3xl border border-amber-500/30 bg-card p-5 shadow-card" aria-label="בקרת לוגיסטיקה של נועה">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
             <div>
               <h2 className="flex items-center gap-2 font-display text-base font-extrabold">
