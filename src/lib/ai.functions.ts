@@ -61,7 +61,7 @@ function safeRecord(value: unknown, depth = 0): unknown {
   return safe;
 }
 
-function compactSource(payload: unknown, keys: string[], question: string, limit = 10): SourceResult {
+function compactSource(payload: unknown, keys: string[], question: string, limit = 10, includeUnmatched = false): SourceResult {
   const rows = rowsFrom(payload, keys);
   const terms = question.toLowerCase().match(/[a-z0-9א-ת-]{3,}/giu) ?? [];
   const ranked = rows.map((record, index) => {
@@ -70,13 +70,13 @@ function compactSource(payload: unknown, keys: string[], question: string, limit
     return { record, index, score };
   });
   const matching = ranked.filter((row) => row.score > 0).sort((a, b) => b.score - a.score || a.index - b.index);
-  const chosen = (matching.length ? matching : ranked).slice(0, limit);
+  const chosen = matching.length ? matching.slice(0, limit) : includeUnmatched ? ranked.slice(0, limit) : [];
   return { available: true, count: rows.length, records: chosen.map(({ record }) => safeRecord(record)) };
 }
 
-async function loadSource(action: string, keys: string[], question: string, limit = 10): Promise<SourceResult> {
+async function loadSource(action: string, keys: string[], question: string, limit = 10, includeUnmatched = false): Promise<SourceResult> {
   try {
-    return compactSource(await fetchGasAction(action), keys, question, limit);
+    return compactSource(await fetchGasAction(action), keys, question, limit, includeUnmatched);
   } catch (error) {
     return { available: false, count: 0, error: error instanceof Error ? error.message.slice(0, 180) : "מקור לא זמין" };
   }
@@ -90,7 +90,7 @@ async function getServerContext(question: string): Promise<string> {
     loadSource("getCatalog", ["rows", "data"], question, 8),
     loadSource("getGps", ["data", "stops", "gps"], question, 8),
     loadSource("getCustomers", ["data", "customers"], question, 8),
-    loadSource("getDashboard", ["data"], question, 1),
+    loadSource("getDashboard", ["data"], question, 1, true),
     loadSource("getRamiInquiries", ["data", "inquiries"], question, 8),
   ]);
   return JSON.stringify({
