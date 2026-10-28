@@ -161,7 +161,7 @@ function ChatScreen() {
   const [contextSelection, setContextSelection] = useState<ContextPanelSelection | null>(null);
   const [sidePanel, setSidePanel] = useState<"inspector" | "context">("context");
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [sessionId, setSessionId] = useState(() => `s-${Date.now()}`);
 
 
@@ -391,7 +391,7 @@ function ChatScreen() {
   }, [messages, isThinking]);
 
   useEffect(() => {
-    setSessions(loadChatSessions());
+    setChatSessions(loadChatSessions());
   }, []);
 
   // שמירת שיחה אוטומטית
@@ -416,7 +416,7 @@ function ChatScreen() {
       lastAddress: lastAddressFocus || undefined,
       lastNoteId: contextSelection?.noteId,
     };
-    setSessions((prev) => {
+    setChatSessions((prev) => {
       const next = upsertChatSession(prev, session);
       saveChatSessions(next);
       return next;
@@ -1213,7 +1213,7 @@ function ChatScreen() {
 
       <ChatHistoryDrawer
         open={historyOpen}
-        sessions={sessions}
+        sessions={chatSessions}
         activeId={sessionId}
         onClose={() => setHistoryOpen(false)}
         onNew={() => {
@@ -1259,7 +1259,7 @@ function ChatScreen() {
           setHistoryOpen(false);
         }}
         onDelete={(id) => {
-          setSessions((prev) => {
+          setChatSessions((prev) => {
             const next = prev.filter((x) => x.id !== id);
             saveChatSessions(next);
             return next;
