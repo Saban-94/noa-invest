@@ -39,7 +39,7 @@ function rowsFrom(payload: unknown, keys: string[]): unknown[] {
   const obj = payload as Record<string, unknown>;
   for (const key of keys) if (Array.isArray(obj[key])) return obj[key] as unknown[];
   if (obj.data && typeof obj.data === "object") return rowsFrom(obj.data, keys);
-  return [];
+  return [payload];
 }
 
 const PRIVATE_KEY = /phone|טלפון|contact|איש קשר|email|מייל|(^|_)hp($|_)|ח[.]?פ|עוסק|tax|drive|url|קישור|file.?id|base64|חתימה|signature|token|מפתח/i;
