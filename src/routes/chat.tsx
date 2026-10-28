@@ -14,6 +14,7 @@ import {
   CrossReferenceInspector,
   type DiscrepancyItem,
 } from "@/components/chat/CrossReferenceInspector";
+import { NotePreviewCard, type NoteCardData } from "@/components/chat/NotePreviewCard";
 import { playDispatchChime } from "@/lib/audio-alerts";
 import { fetchLiveNotes } from "@/lib/api";
 import { listPtoFn } from "@/lib/notes-api.functions";
@@ -50,6 +51,8 @@ type ChatMessage = {
   };
   discrepancyAlerts?: DiscrepancyItem[];
   quickActions?: { label: string; query: string }[];
+  /** כרטיס תעודה + תצוגה מקדימה מ-Drive (fileId מ-HYPERLINK בגיליון) */
+  noteCard?: NoteCardData;
 };
 
 const PTO_LOOKBACK_MS = 7 * 24 * 3600 * 1000;
@@ -153,13 +156,28 @@ function ChatScreen() {
       pushNoa({
         text:
           `📄 ת.מ. ${foundNote.id} — ${foundNote.customer}\n\n` +
-          `• תאריך: ${foundNote.date || "—"}\n• כתובת: ${foundNote.siteAddress || "—"}\n` +
-          `• נהג: ${foundNote.driver || "—"}\n• פריטים: ${noteItemsCount(foundNote)} | משקל: ${noteWeightTons(foundNote).toFixed(1)} טון\n` +
+          `• תאריך: ${foundNote.date || "—"}\n` +
+          `• כתובת: ${foundNote.siteAddress || "—"}\n` +
+          `• נהג: ${foundNote.driver || "—"}\n` +
+          `• פריטים: ${noteItemsCount(foundNote)} | משקל: ${noteWeightTons(foundNote).toFixed(1)} טון\n` +
           `• בלות 60002: ${b} | משטחים 60060: ${p}\n` +
           `• מנוף: ${foundNote.craneTime || "לא נרשם"}\n` +
-          `• PTO: ${pto ? `${israelTime(pto.openIso)}–${pto.closeIso ? israelTime(pto.closeIso) : "?"} (${pto.durationMin ?? "?"} דק׳)` : "לא נמצא"}\n` +
+          `• PTO: ${
+            pto
+              ? `${israelTime(pto.openIso)}–${pto.closeIso ? israelTime(pto.closeIso) : "?"} (${pto.durationMin ?? "?"} דק׳)`
+              : "לא נמצא"
+          }\n` +
           `• חתימה: ${foundNote.signedBy || "לא זוהתה"}`,
-        statusTag: pto ? "גיליון + PTO" : "גיליון",
+        statusTag: pto ? "גיליון + PTO + סריקה" : "גיליון + סריקה",
+        noteCard: {
+          noteId: foundNote.id,
+          customer: foundNote.customer || "",
+          address: foundNote.siteAddress,
+          date: foundNote.date,
+          driver: foundNote.driver,
+          fileId: foundNote.fileId,
+          driveUrl: foundNote.driveUrl || foundNote.signedUrl,
+        },
       });
       return;
     }
@@ -338,6 +356,7 @@ function ChatScreen() {
                       </div>
                     )}
                     <div className="whitespace-pre-line text-[13px] leading-6 sm:text-sm sm:leading-7">{m.text}</div>
+                    {m.noteCard && <NotePreviewCard card={m.noteCard} />}
                     {m.tachographCard && (
                       <div className="mt-3">
                         <TachographCanvasViewer
