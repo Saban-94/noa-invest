@@ -403,7 +403,19 @@ async function fetchManifest(orderId: string, signal?: AbortSignal): Promise<Man
   if (!SHEETS_URL) throw new Error("לא הוגדר VITE_SHEETS_ORDERS_URL");
   const res = await fetch(`${SHEETS_URL}?action=manifest&order=${encodeURIComponent(orderId)}`, { signal });
   if (!res.ok) throw new Error(`שגיאת שרת ${res.status}`);
-  const json = (await res.json()) as { items?: Record<string, unknown>[] };
+  const text = await res.text();
+  let json: { items?: Record<string, unknown>[]; error?: string };
+  try {
+    json = JSON.parse(text) as typeof json;
+  } catch {
+    const looksHtml = text.trimStart().startsWith("<");
+    throw new Error(
+      looksHtml
+        ? "השרת החזיר דף HTML במקום JSON — ודא ש-VITE_SHEETS_ORDERS_URL היא כתובת /exec של Apps Script, שהפריסה פתוחה ל-Anyone, ושה-doGet תומך ב-action=manifest"
+        : "תשובת השרת אינה JSON תקין",
+    );
+  }
+  if (json.error) throw new Error(json.error);
   return (json.items ?? []).map((r) => ({
     sku: String(r.sku ?? "").trim(),
     name: String(r.name ?? ""),
