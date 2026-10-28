@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { listOrdersFn, updateOrderStatusFn } from "@/lib/orders.functions";
+import { AdvanceStatusButton, CallButton, WazeButton } from "@/components/OrderActionButtons";
+import { OrdersMetricsRow, type OrdersMetricKey } from "@/components/OrdersMetricsRow";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import {
@@ -13,9 +15,7 @@ import {
   Layers,
   MapPin,
   Minus,
-  Navigation,
   PackageSearch,
-  Phone,
   RefreshCw,
   Scale,
   Search,
@@ -219,9 +219,6 @@ function relativeTime(iso: string): string {
   if (Math.abs(hrs) < 24) return rtf.format(hrs, "hour");
   return rtf.format(Math.round(hrs / 24), "day");
 }
-
-const wazeUrl = (address: string) =>
-  `https://waze.com/ul?q=${encodeURIComponent(address)}&navigate=yes`;
 
 /* ───────────────────────── Animated number + trend ───────────────────────── */
 
@@ -523,7 +520,6 @@ const OrderCard = memo(function OrderCard({ order, expanded, busy, onToggle, onS
   const reduce = useReducedMotion();
   const st = STATUS_STYLE[order.status];
   const next = nextStatus(order.status);
-  const NextIcon = next ? STATUS_STYLE[next].icon : CheckCircle2;
   const kg = orderWeightKg(order);
   const panelId = `manifest-${order.id}`;
 
@@ -591,48 +587,13 @@ const OrderCard = memo(function OrderCard({ order, expanded, busy, onToggle, onS
 
         {/* Actions */}
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <a
-            href={wazeUrl(order.address)}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`נווט ב־Waze אל ${order.address}`}
-            className="inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-600/30 transition-all duration-200 hover:bg-blue-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-95 sm:flex-none dark:ring-offset-slate-900"
-          >
-            <Navigation className="h-4 w-4" aria-hidden />
-            Waze
-          </a>
-
-          {order.phone ? (
-            <a
-              href={`tel:${order.phone.replace(/[^\d+]/g, "")}`}
-              aria-label={`התקשר ל${order.customer}`}
-              className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full bg-slate-100 px-4 text-sm font-semibold text-slate-800 transition-all duration-200 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 active:scale-95 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-            >
-              <Phone className="h-4 w-4" aria-hidden />
-              <span dir="ltr" className="tabular-nums">
-                {order.phone}
-              </span>
-            </a>
-          ) : (
-            <span
-              aria-disabled="true"
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-slate-100 px-4 text-sm font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-            >
-              <Phone className="h-4 w-4" aria-hidden />
-              אין טלפון
-            </span>
-          )}
-
-          <button
-            type="button"
-            disabled={!next || busy}
-            onClick={() => next && onStatus(order.id, next)}
-            className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 transition-all duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:ring-slate-600 dark:hover:bg-slate-800"
-          >
-            <NextIcon className="h-4 w-4" aria-hidden />
-            {next ? `קדם ל${next}` : "הושלם"}
-          </button>
-
+          <WazeButton address={order.address} className="flex-1 sm:flex-none" />
+          <CallButton phone={order.phone} name={order.customer} />
+          <AdvanceStatusButton
+            nextLabel={next}
+            loading={busy}
+            onAdvance={() => next && onStatus(order.id, next)}
+          />
           <button
             type="button"
             aria-expanded={expanded}
@@ -707,6 +668,11 @@ function OrdersPage() {
       pending: orders.filter((o) => o.status === "פתוחה").length,
     };
   }, [orders]);
+
+  const orderMetricRows = useMemo(
+    () => orders.map((order) => ({ status: order.status, weightKg: orderWeightKg(order) })),
+    [orders],
+  );
 
   const dActive = useSessionDelta(metrics.active, ready);
   const dTons = useSessionDelta(metrics.tons, ready);
@@ -800,6 +766,14 @@ function OrdersPage() {
           <KpiCard icon={Truck} label="בדרך / בהעמסה" value={metrics.moving} delta={dMoving} goodWhen="up" accent="bg-orange-500" loading={loading} />
           <KpiCard icon={AlertTriangle} label="ממתינות לטיפול" value={metrics.pending} delta={dPending} goodWhen="down" accent="bg-amber-500" loading={loading} />
         </section>
+
+        <OrdersMetricsRow
+          orders={orderMetricRows}
+          loading={loading}
+          isFetching={refreshing}
+          activeMetric={filter}
+          onSelect={setFilter}
+        />
 
         {/* Command center */}
         <section
