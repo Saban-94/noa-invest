@@ -4,7 +4,14 @@
  * ?task=6715841 → פתיחה + גלילה לכרטיס · [מסך הראל] → /harel?task=6715841
  */
 
-import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
+import {
+  Outlet,
+  createFileRoute,
+  Link,
+  useLocation,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -50,8 +57,17 @@ export const Route = createFileRoute("/inquiry")({
   head: () => ({
     meta: [{ title: "בירור תעודות — משימות ראמי" }],
   }),
-  component: InquiryBoard,
+  component: InquiryLayout,
 });
+
+/**
+ * /inquiry הוא גם ההורה של /inquiry/$id (מסך הסימון).
+ * בלי Outlet המסך הפנימי לא מוצג בכלל — כמו ב-notes.tsx: רשימה בנתיב הבסיס, אחרת Outlet.
+ */
+function InquiryLayout() {
+  const { pathname } = useLocation();
+  return pathname === "/inquiry" || pathname === "/inquiry/" ? <InquiryBoard /> : <Outlet />;
+}
 
 const cardDomId = (docNumber: string) => `inquiry-card-${docNumber}`;
 
