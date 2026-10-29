@@ -15,9 +15,9 @@ import {
   Sun,
   Moon,
   Search,
-  HelpCircle,
+  LayoutGrid,
 } from "lucide-react";
-import { type ReactNode, useState, useEffect } from "react";
+import { type ReactNode, useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "@tanstack/react-router";
 import noa from "@/assets/noa.jpg";
 import { PWAInstallButton } from "./PWAInstallButton";
@@ -38,6 +38,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 const DESKTOP_NAV = [
   { to: "/", label: "ראשי הראל", icon: Crown },
@@ -55,33 +62,23 @@ const MOBILE_NAV = [
   { to: "/", label: "מצב", icon: Crown },
   { to: "/orders", label: "הזמנות", icon: Truck },
   { to: "/notes", label: "תעודות", icon: FileText },
-  { to: "/canvas", label: "קנבס", icon: Edit3 },
   { to: "/inquiry", label: "בירור", icon: Search },
 ] as const;
+
+// Everything the bottom bar does not show is reachable from the "more" sheet,
+// so no destination exists on desktop only.
+const MOBILE_MORE = DESKTOP_NAV.filter((d) => !MOBILE_NAV.some((m) => m.to === d.to));
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const approvalsState = useApprovals();
   const { theme, toggleTheme } = useTheme();
   
-  const [isSidebarActive, setIsSidebarActive] = useState(false);
-  
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    const handleInteraction = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => setIsSidebarActive(true), 2000);
-    };
-
-    window.addEventListener("mousemove", handleInteraction);
-    window.addEventListener("touchstart", handleInteraction);
-
-    return () => {
-      window.removeEventListener("mousemove", handleInteraction);
-      window.removeEventListener("touchstart", handleInteraction);
-      clearTimeout(timeout);
-    };
-  }, []);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const quickScrollRef = useRef<HTMLDivElement>(null);
 
   const [quickInput, setQuickInput] = useState("");
   const [quickMessages, setQuickMessages] = useState<
@@ -94,7 +91,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     },
   ]);
 
+  // Keep the side-chat pinned to the newest message. Scrolls the pane itself
+  // (scrollIntoView would also scroll the whole page).
+  useEffect(() => {
+    const el = quickScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+  }, [quickMessages.length]);
+
   const active = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
+  const moreActive = MOBILE_MORE.some((m) => active(m.to));
 
   const triggerHaptic = () => {
     if (typeof navigator !== "undefined" && navigator.vibrate) {
@@ -158,9 +164,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
 
   return (
-    <div className={`flex min-h-dvh ${isSidebarActive ? "bg-background" : "bg-background"}`}>
-      <aside className={`sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-l border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex transition-all ${isSidebarActive ? "opacity-100" : "opacity-90"}`}>
-        <div>
+    <div className="flex min-h-dvh bg-background">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:right-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-primary-foreground"
+      >
+        דלג לתוכן
+      </a>
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-l border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
+        {/* min-h-0 + overflow: on short laptop screens the nav scrolls instead of clipping the footer */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
           <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border/40">
             <div className="relative">
               <img
@@ -187,7 +200,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Link
                   key={to}
                   to={to}
-                  className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-bold transition ${
+                  aria-current={isCurrent ? "page" : undefined}
+                  className={`flex min-h-11 items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-bold transition ${
                     isCurrent
                       ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-xs"
                       : "opacity-75 hover:bg-sidebar-accent/50 hover:opacity-100"
@@ -208,7 +222,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </div>
 
-        <div className="p-3 border-t border-sidebar-border/40 space-y-2">
+        <div className="shrink-0 p-3 border-t border-sidebar-border/40 space-y-2">
           <button 
             onClick={toggleTheme}
             className="w-full flex items-center justify-between rounded-xl px-3.5 py-2 text-xs font-bold opacity-75 hover:opacity-100 hover:bg-sidebar-accent/50"
@@ -325,7 +339,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 pb-24 md:pb-6">{children}</main>
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-nav outline-none lg:pb-6">
+        {children}
+      </main>
 
       <aside className="sticky top-0 hidden h-dvh w-80 shrink-0 flex-col border-r border-border/70 bg-card p-4 xl:flex">
         <div className="flex items-center justify-between border-b pb-3.5">
@@ -362,7 +378,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="mt-3 flex-1 flex flex-col justify-between overflow-hidden">
-          <div className="flex-1 space-y-2.5 overflow-y-auto pr-1 text-xs">
+          <div
+            ref={quickScrollRef}
+            className="flex-1 space-y-2.5 overflow-y-auto overscroll-contain pr-1 text-xs scrollbar-thin"
+          >
             {quickMessages.map((msg, idx) => (
               <div
                 key={idx}
@@ -403,7 +422,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <nav className="glass fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border/70 pb-safe md:hidden shadow-lg backdrop-blur-md">
+      <nav
+        aria-label="ניווט ראשי"
+        className="glass fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border/70 pb-safe shadow-lg lg:hidden"
+      >
         {MOBILE_NAV.map(({ to, label, icon: I }) => {
           const isCurrent = active(to);
           return (
@@ -411,14 +433,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               key={to}
               to={to}
               onClick={triggerHaptic}
-              className={`flex flex-col items-center gap-1 pt-2 pb-1.5 text-[11px] font-bold transition active:scale-95 ${
-                isCurrent ? "text-primary" : "text-muted-foreground/80 hover:text-foreground"
+              aria-current={isCurrent ? "page" : undefined}
+              className={`hit flex flex-col items-center justify-center gap-1 pt-2 pb-1.5 text-xs font-bold transition active:scale-95 motion-reduce:active:scale-100 ${
+                isCurrent ? "text-primary" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <div className="relative">
                 <I className={`h-5.5 w-5.5 ${isCurrent ? "stroke-[2.5]" : "stroke-2"}`} />
                 {to === "/" && readyNotesCount > 0 && (
-                  <span className="absolute -top-1 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-ceo text-[9px] font-extrabold text-white">
+                  <span className="absolute -top-1 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-ceo px-1 text-[10px] font-extrabold text-white">
                     {readyNotesCount}
                   </span>
                 )}
@@ -427,7 +450,75 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           );
         })}
+
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic();
+            setMoreOpen(true);
+          }}
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+          className={`hit flex flex-col items-center justify-center gap-1 pt-2 pb-1.5 text-xs font-bold transition active:scale-95 motion-reduce:active:scale-100 ${
+            moreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <LayoutGrid className={`h-5.5 w-5.5 ${moreActive ? "stroke-[2.5]" : "stroke-2"}`} />
+          <span>עוד</span>
+        </button>
       </nav>
+
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <SheetContent
+          side="bottom"
+          dir="rtl"
+          className="max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-3xl px-4 pt-5 pb-[calc(1rem+env(safe-area-inset-bottom))] lg:hidden"
+        >
+          <SheetHeader className="text-right">
+            <SheetTitle className="font-display text-base font-bold">כל המסכים</SheetTitle>
+            <SheetDescription className="sr-only">ניווט לכל אזורי המערכת</SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-4 grid grid-cols-2 gap-2.5">
+            {MOBILE_MORE.map(({ to, label, icon: I }) => {
+              const isCurrent = active(to);
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  onClick={() => {
+                    triggerHaptic();
+                    setMoreOpen(false);
+                  }}
+                  aria-current={isCurrent ? "page" : undefined}
+                  className={`flex min-h-14 items-center gap-3 rounded-2xl border px-3.5 py-3 text-sm font-bold transition active:scale-[0.98] motion-reduce:active:scale-100 ${
+                    isCurrent
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border/70 bg-card hover:bg-muted"
+                  }`}
+                >
+                  <I className="h-5 w-5 shrink-0" />
+                  <span className="leading-tight">{label}</span>
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-border/70 bg-card px-3 py-2.5 text-sm font-semibold hover:bg-muted"
+            >
+              {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+              <span>{theme === "light" ? "מצב כהה" : "מצב בהיר"}</span>
+            </button>
+            <div className="flex min-h-12 items-center justify-center">
+              <PWAInstallButton />
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -441,14 +532,52 @@ export function PageHeader({
   subtitle?: string;
   action?: ReactNode;
 }) {
+  const ref = useRef<HTMLElement>(null);
+  const [stuck, setStuck] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement;
+
+    // Publish the real header height so scroll-padding / sticky children
+    // (see --header-h in styles.css) stay correct when the header wraps.
+    const syncHeight = () => root.style.setProperty("--header-h", `${el.offsetHeight}px`);
+    syncHeight();
+    const ro = new ResizeObserver(syncHeight);
+    ro.observe(el);
+
+    // Elevate the header once content scrolls beneath it.
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setStuck(window.scrollY > 4));
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+      root.style.removeProperty("--header-h");
+    };
+  }, []);
+
   return (
-    <header className="pt-safe sticky top-0 z-30 glass border-b border-border/60">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3.5 md:px-8">
-        <div>
-          <h1 className="text-xl font-bold md:text-2xl text-foreground">{title}</h1>
-          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+    <header
+      ref={ref}
+      data-stuck={stuck}
+      className="pt-safe header-elevated sticky top-0 z-30 glass border-b border-border/60"
+    >
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 md:px-8 md:py-3.5">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-bold text-foreground md:text-2xl">{title}</h1>
+          {subtitle && (
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{subtitle}</p>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {action}
           <div className="md:hidden">
             <PWAInstallButton variant="compact" />
