@@ -61,6 +61,9 @@
 
 :root {
   --radius: 0.9rem;
+  /* Layout tokens — --header-h is overwritten at runtime by PageHeader (ResizeObserver) */
+  --header-h: calc(3.75rem + env(safe-area-inset-top));
+  --nav-h: 4.25rem;
   --background: oklch(0.975 0.006 85);
   --foreground: oklch(0.2 0.02 160);
   --card: oklch(1 0 0);
@@ -147,12 +150,21 @@
   }
   html {
     -webkit-text-size-adjust: 100%;
+    /* Anchors / scrollIntoView never land under the sticky header or the iOS notch */
+    scroll-padding-top: calc(var(--header-h) + 0.75rem);
+    scroll-padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 0.75rem);
+    scroll-behavior: smooth;
+    /* No layout jump when a page toggles between scrolling / not scrolling (desktop) */
+    scrollbar-gutter: stable;
   }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Kill the grey tap flash on iOS/Android; we ship our own active states */
+    -webkit-tap-highlight-color: transparent;
   }
   h1,
   h2,
@@ -160,6 +172,23 @@
   h4 {
     font-family: var(--font-display);
     letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+  /* Tabular figures for every number the CEO scans (tons, counts, plates) */
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
 }
 
@@ -237,4 +266,78 @@
 @utility animate-reveal {
   display: grid;
   animation: reveal 0.35s ease-out both;
+}
+
+/* ---------- Scroll & touch utilities ---------- */
+
+/* 44x44 minimum hit area (WCAG 2.5.5 AA) without changing the visual glyph */
+@utility hit {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+/* Content bottom padding that clears the fixed mobile nav + home indicator */
+@utility pb-nav {
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 1rem);
+}
+
+/* Offset for something that must stick just below the sticky PageHeader (--header-h already includes the safe-area inset) */
+@utility top-below-header {
+  top: var(--header-h);
+}
+
+/* Horizontal scroller: snap, no scrollbar, no scroll-chaining into the page */
+@utility scroll-row {
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  & > * {
+    scroll-snap-align: start;
+  }
+}
+
+/* Soft fade on the scrolling edges so users see there is more (RTL-safe: both edges) */
+@utility scroll-fade-x {
+  mask-image: linear-gradient(to right, transparent 0, #000 1rem, #000 calc(100% - 1rem), transparent 100%);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 1rem,
+    #000 calc(100% - 1rem),
+    transparent 100%
+  );
+}
+
+/* Thin, unobtrusive scrollbars for inner panes (desktop); native on touch */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent) transparent;
+}
+
+/* Header elevation once content scrolls underneath (toggled via data-stuck) */
+@utility header-elevated {
+  transition: box-shadow 160ms ease-out;
+  &[data-stuck="true"] {
+    box-shadow: 0 6px 20px -12px oklch(0.2 0.04 165 / 35%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp {
+    animation: none;
+    transform: rotate(-9deg);
+    opacity: 0.88;
+  }
+  .animate-reveal {
+    animation: none;
+  }
+  .header-elevated {
+    transition: none;
+  }
 }
