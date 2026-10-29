@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   AlertTriangle,
+  Crown,
   CheckCircle2,
   Clock3,
   ExternalLink,
@@ -30,6 +31,8 @@ import { STATUS_LABEL } from "@/lib/inquiry-workflow";
 import { InquiryThread } from "@/components/InquiryThread";
 import { notifyHarelQueueFn } from "@/lib/onesignal.functions";
 import { playDispatchChime } from "@/lib/audio-alerts";
+import { NotifyStatusChip, WorkroomNav } from "@/components/workroom";
+import { WORKROOM_BTN, notificationAccepted, type NotifyState } from "@/lib/workroom-ui";
 
 export const Route = createFileRoute("/inquiry/$id")({
   component: RamiInquiryAdvancedView,
@@ -73,6 +76,7 @@ function RamiInquiryAdvancedView() {
   const [tool, setTool] = useState<Tool>("marker");
   const [signatureApproved, setSignatureApproved] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 480 });
+  const [notify, setNotify] = useState<NotifyState>({ state: "idle" });
 
   const inquiryQuery = useQuery({
     queryKey: ["workroom", "inquiry-detail"],
@@ -127,6 +131,7 @@ function RamiInquiryAdvancedView() {
       context.lineJoin = "round";
       const first = stroke.points[0];
       const last = stroke.points[stroke.points.length - 1];
+      if (!first || !last) continue;
       if (stroke.tool === "marker") {
         context.strokeStyle = "rgba(250, 204, 21, 0.42)";
         context.lineWidth = 24;
@@ -272,30 +277,37 @@ function RamiInquiryAdvancedView() {
   });
 
   const sendReply = useMutation({
-    mutationFn: (payload: { text: string; replyToId?: string }) =>
+    mutationFn: (payload: { text: string; replyToId?: string | undefined }) =>
       ramiReplyFn({
         data: {
           inquiryId: String(inquiry?.inquiryId || inquiry?.docNumber || id),
           noteId: String(inquiry?.docNumber || id),
           text: payload.text,
-          replyToId: payload.replyToId,
+          ...(payload.replyToId ? { replyToId: payload.replyToId } : {}),
         },
       }),
     onSuccess: async () => {
+      const noteId = String(inquiry?.docNumber || id);
+      setNotify({ state: "sending", noteId, target: "harel" });
       void playDispatchChime(0.9);
+      let ok = false;
       try {
-        await notifyHarelQueueFn({
+        const response = await notifyHarelQueueFn({
           data: {
-            noteId: String(inquiry?.docNumber || id),
-            customer: inquiry?.customer,
+            noteId,
             kind: "rami_replied",
+            ...(inquiry?.customer ? { customer: inquiry.customer } : {}),
           },
         });
+        ok = notificationAccepted(response);
       } catch (error) {
         console.warn("OneSignal", error);
       }
+      setNotify({ state: ok ? "sent" : "failed", noteId, target: "harel", at: new Date().toISOString() });
       await qc.invalidateQueries({ queryKey: ["workroom"] });
       toast.success("המענה נשמר ונשלח להראל");
+      if (ok) toast.info("בקשת התראה להראל נמסרה ל-OneSignal; מסירה למכשיר לא מאומתת");
+      else toast.error("המענה נשמר, אך בקשת ההתראה להראל נכשלה");
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "שליחת המענה נכשלה"),
   });
@@ -338,6 +350,7 @@ function RamiInquiryAdvancedView() {
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-6 p-4 md:p-8" dir="rtl">
+      <WorkroomNav current="inquiry" taskId={String(inquiry.docNumber || id)} />
       <div className="rounded-3xl border border-border bg-card p-5 shadow-sm md:p-6">
         <div className="flex flex-col justify-between gap-5 xl:flex-row xl:items-center">
           <PageHeader
@@ -354,8 +367,15 @@ function RamiInquiryAdvancedView() {
                 <ExternalLink className="h-4 w-4" /> מסמך המקור
               </a>
             )}
-            <Link to="/inquiry" search={{ tab: "tasks" }} className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-secondary-foreground hover:opacity-90">
-              <ArrowRight className="h-4 w-4" /> חזרה לבירורים
+            <Link to="/harel" search={{ task: String(inquiry.docNumber || id) }} className={WORKROOM_BTN.harel}>
+              <Crown className="h-4 w-4" aria-hidden="true" /> מסך הראל
+            </Link>
+            <Link
+              to="/inquiry"
+              search={{ task: String(inquiry.docNumber || id), tab: "tasks" }}
+              className={WORKROOM_BTN.secondary}
+            >
+              <ArrowRight className="h-4 w-4" aria-hidden="true" /> חזרה לבירורים
             </Link>
           </div>
         </div>
@@ -435,6 +455,7 @@ function RamiInquiryAdvancedView() {
                   await sendReply.mutateAsync({ text, replyToId });
                 }}
               />
+              {notify.state !== "idle" && <NotifyStatusChip notify={notify} className="mt-3" />}
               <p className="mt-3 text-xs leading-5 text-muted-foreground">כל הודעה נשמרת בשרשור השרת. שליחת מענה של ראמי להראל מפעילה צליל ומנסה לשלוח התראה; אישור מנכ״ל נשאר שלב נפרד.</p>
             </div>
           </Card>

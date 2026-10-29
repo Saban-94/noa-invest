@@ -9,6 +9,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 const DEFAULT_APP_ID = "06fa3292-cfc4-42e4-a64a-d629e58ec9b3";
+const APP_ORIGIN = "https://noa-invest.vercel.app";
 
 function appId() {
   return process.env["ONESIGNAL_APP_ID"] || DEFAULT_APP_ID;
@@ -54,11 +55,21 @@ async function sendOneSignal(payload: NotifyPayload) {
   if (!res.ok) {
     throw new Error(`OneSignal ${res.status}: ${text.slice(0, 200)}`);
   }
-  return json;
+  // תשובה מנורמלת וסריאלית: id ריק או errors לא ריק = הבקשה לא התקבלה
+  const rawErrors = json["errors"];
+  return {
+    id: typeof json["id"] === "string" ? (json["id"] as string) : "",
+    errors:
+      rawErrors == null ||
+      (Array.isArray(rawErrors) && rawErrors.length === 0) ||
+      (typeof rawErrors === "object" && Object.keys(rawErrors as object).length === 0)
+        ? ""
+        : JSON.stringify(rawErrors).slice(0, 300),
+  };
 }
 
 export const notifyNewNoteFn = createServerFn({ method: "POST" })
-  .validator((d: { noteId: string; customer?: string }) => d)
+  .validator((d: { noteId: string; customer?: string | undefined }) => d)
   .handler(async ({ data }) => {
     return sendOneSignal({
       title: "תעודת משלוח חדשה",
@@ -72,7 +83,7 @@ export const notifyHarelQueueFn = createServerFn({ method: "POST" })
   .validator(
     (d: {
       noteId: string;
-      customer?: string;
+      customer?: string | undefined;
       kind: "pending_harel" | "returned_to_rami" | "rami_replied";
     }) => d,
   )
@@ -85,10 +96,11 @@ export const notifyHarelQueueFn = createServerFn({ method: "POST" })
     return sendOneSignal({
       title: titles[data.kind],
       body: `ת.מ. ${data.noteId}${data.customer ? ` · ${data.customer}` : ""}`,
+      // deep-link לאותה משימה בשני הכיוונים: הראל→ראמי נוחת על /inquiry, ראמי→הראל על /harel
       url:
         data.kind === "returned_to_rami"
-          ? `https://noa-invest.vercel.app/inquiry/${data.noteId}`
-          : `https://noa-invest.vercel.app/harel`,
+          ? `${APP_ORIGIN}/inquiry?task=${encodeURIComponent(data.noteId)}&tab=tasks`
+          : `${APP_ORIGIN}/harel?task=${encodeURIComponent(data.noteId)}`,
       data: { type: data.kind, noteId: data.noteId },
     });
   });

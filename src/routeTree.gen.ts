@@ -10,23 +10,49 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CanvasRouteImport } from './routes/canvas'
 import { Route as ChatRouteImport } from './routes/chat'
+import { Route as CustomersRouteImport } from './routes/customers'
+import { Route as HarelRouteImport } from './routes/harel'
+import { Route as InquiryRouteImport } from './routes/inquiry'
 import { Route as IturanRouteImport } from './routes/ituran'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as OrdersRouteImport } from './routes/orders'
-import { Route as CustomersRouteImport } from './routes/customers'
-import { Route as NotesIdRouteImport } from './routes/notes.$id'
+import { Route as TachographRouteImport } from './routes/tachograph'
+import { Route as ApiBackendRouteImport } from './routes/api.backend'
+import { Route as ApiSplitScanRouteImport } from './routes/api.split-scan'
 import { Route as CustomersIdRouteImport } from './routes/customers.$id'
-import { Route as CanvasRouteImport } from './routes/canvas'
+import { Route as InquiryIdRouteImport } from './routes/inquiry.$id'
+import { Route as NotesIdRouteImport } from './routes/notes.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CanvasRoute = CanvasRouteImport.update({
+  id: '/canvas',
+  path: '/canvas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CustomersRoute = CustomersRouteImport.update({
+  id: '/customers',
+  path: '/customers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HarelRoute = HarelRouteImport.update({
+  id: '/harel',
+  path: '/harel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InquiryRoute = InquiryRouteImport.update({
+  id: '/inquiry',
+  path: '/inquiry',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IturanRoute = IturanRouteImport.update({
@@ -44,105 +70,156 @@ const OrdersRoute = OrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CustomersRoute = CustomersRouteImport.update({
-  id: '/customers',
-  path: '/customers',
+const TachographRoute = TachographRouteImport.update({
+  id: '/tachograph',
+  path: '/tachograph',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CanvasRoute = CanvasRouteImport.update({
-  id: '/canvas',
-  path: '/canvas',
+const ApiBackendRoute = ApiBackendRouteImport.update({
+  id: '/api/backend',
+  path: '/api/backend',
   getParentRoute: () => rootRouteImport,
 } as any)
-const NotesIdRoute = NotesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => NotesRoute,
+const ApiSplitScanRoute = ApiSplitScanRouteImport.update({
+  id: '/api/split-scan',
+  path: '/api/split-scan',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const CustomersIdRoute = CustomersIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => CustomersRoute,
 } as any)
+const InquiryIdRoute = InquiryIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => InquiryRoute,
+} as any)
+const NotesIdRoute = NotesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => NotesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/canvas': typeof CanvasRoute
   '/chat': typeof ChatRoute
+  '/customers': typeof CustomersRouteWithChildren
+  '/harel': typeof HarelRoute
+  '/inquiry': typeof InquiryRouteWithChildren
   '/ituran': typeof IturanRoute
   '/notes': typeof NotesRouteWithChildren
   '/orders': typeof OrdersRoute
-  '/customers': typeof CustomersRouteWithChildren
-  '/canvas': typeof CanvasRoute
-  '/notes/$id': typeof NotesIdRoute
+  '/tachograph': typeof TachographRoute
+  '/api/backend': typeof ApiBackendRoute
+  '/api/split-scan': typeof ApiSplitScanRoute
   '/customers/$id': typeof CustomersIdRoute
+  '/inquiry/$id': typeof InquiryIdRoute
+  '/notes/$id': typeof NotesIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/canvas': typeof CanvasRoute
   '/chat': typeof ChatRoute
+  '/customers': typeof CustomersRouteWithChildren
+  '/harel': typeof HarelRoute
+  '/inquiry': typeof InquiryRouteWithChildren
   '/ituran': typeof IturanRoute
   '/notes': typeof NotesRouteWithChildren
   '/orders': typeof OrdersRoute
-  '/customers': typeof CustomersRouteWithChildren
-  '/canvas': typeof CanvasRoute
-  '/notes/$id': typeof NotesIdRoute
+  '/tachograph': typeof TachographRoute
+  '/api/backend': typeof ApiBackendRoute
+  '/api/split-scan': typeof ApiSplitScanRoute
   '/customers/$id': typeof CustomersIdRoute
+  '/inquiry/$id': typeof InquiryIdRoute
+  '/notes/$id': typeof NotesIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/canvas': typeof CanvasRoute
   '/chat': typeof ChatRoute
+  '/customers': typeof CustomersRouteWithChildren
+  '/harel': typeof HarelRoute
+  '/inquiry': typeof InquiryRouteWithChildren
   '/ituran': typeof IturanRoute
   '/notes': typeof NotesRouteWithChildren
   '/orders': typeof OrdersRoute
-  '/customers': typeof CustomersRouteWithChildren
-  '/canvas': typeof CanvasRoute
-  '/notes/$id': typeof NotesIdRoute
+  '/tachograph': typeof TachographRoute
+  '/api/backend': typeof ApiBackendRoute
+  '/api/split-scan': typeof ApiSplitScanRoute
   '/customers/$id': typeof CustomersIdRoute
+  '/inquiry/$id': typeof InquiryIdRoute
+  '/notes/$id': typeof NotesIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/canvas'
     | '/chat'
+    | '/customers'
+    | '/harel'
+    | '/inquiry'
     | '/ituran'
     | '/notes'
     | '/orders'
-    | '/customers'
-    | '/canvas'
-    | '/notes/$id'
+    | '/tachograph'
+    | '/api/backend'
+    | '/api/split-scan'
     | '/customers/$id'
+    | '/inquiry/$id'
+    | '/notes/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/canvas'
     | '/chat'
+    | '/customers'
+    | '/harel'
+    | '/inquiry'
     | '/ituran'
     | '/notes'
     | '/orders'
-    | '/customers'
-    | '/canvas'
-    | '/notes/$id'
+    | '/tachograph'
+    | '/api/backend'
+    | '/api/split-scan'
     | '/customers/$id'
+    | '/inquiry/$id'
+    | '/notes/$id'
   id:
     | '__root__'
     | '/'
+    | '/canvas'
     | '/chat'
+    | '/customers'
+    | '/harel'
+    | '/inquiry'
     | '/ituran'
     | '/notes'
     | '/orders'
-    | '/customers'
-    | '/canvas'
-    | '/notes/$id'
+    | '/tachograph'
+    | '/api/backend'
+    | '/api/split-scan'
     | '/customers/$id'
+    | '/inquiry/$id'
+    | '/notes/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CanvasRoute: typeof CanvasRoute
   ChatRoute: typeof ChatRoute
+  CustomersRoute: typeof CustomersRouteWithChildren
+  HarelRoute: typeof HarelRoute
+  InquiryRoute: typeof InquiryRouteWithChildren
   IturanRoute: typeof IturanRoute
   NotesRoute: typeof NotesRouteWithChildren
   OrdersRoute: typeof OrdersRoute
-  CustomersRoute: typeof CustomersRouteWithChildren
-  CanvasRoute: typeof CanvasRoute
+  TachographRoute: typeof TachographRoute
+  ApiBackendRoute: typeof ApiBackendRoute
+  ApiSplitScanRoute: typeof ApiSplitScanRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -154,11 +231,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/canvas': {
+      id: '/canvas'
+      path: '/canvas'
+      fullPath: '/canvas'
+      preLoaderRoute: typeof CanvasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat': {
       id: '/chat'
       path: '/chat'
       fullPath: '/chat'
       preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/customers': {
+      id: '/customers'
+      path: '/customers'
+      fullPath: '/customers'
+      preLoaderRoute: typeof CustomersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/harel': {
+      id: '/harel'
+      path: '/harel'
+      fullPath: '/harel'
+      preLoaderRoute: typeof HarelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inquiry': {
+      id: '/inquiry'
+      path: '/inquiry'
+      fullPath: '/inquiry'
+      preLoaderRoute: typeof InquiryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ituran': {
@@ -182,26 +287,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/customers': {
-      id: '/customers'
-      path: '/customers'
-      fullPath: '/customers'
-      preLoaderRoute: typeof CustomersRouteImport
+    '/tachograph': {
+      id: '/tachograph'
+      path: '/tachograph'
+      fullPath: '/tachograph'
+      preLoaderRoute: typeof TachographRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/canvas': {
-      id: '/canvas'
-      path: '/canvas'
-      fullPath: '/canvas'
-      preLoaderRoute: typeof CanvasRouteImport
+    '/api/backend': {
+      id: '/api/backend'
+      path: '/api/backend'
+      fullPath: '/api/backend'
+      preLoaderRoute: typeof ApiBackendRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/notes/$id': {
-      id: '/notes/$id'
-      path: '/$id'
-      fullPath: '/notes/$id'
-      preLoaderRoute: typeof NotesIdRouteImport
-      parentRoute: typeof NotesRoute
+    '/api/split-scan': {
+      id: '/api/split-scan'
+      path: '/api/split-scan'
+      fullPath: '/api/split-scan'
+      preLoaderRoute: typeof ApiSplitScanRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/customers/$id': {
       id: '/customers/$id'
@@ -210,8 +315,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomersIdRouteImport
       parentRoute: typeof CustomersRoute
     }
+    '/inquiry/$id': {
+      id: '/inquiry/$id'
+      path: '/$id'
+      fullPath: '/inquiry/$id'
+      preLoaderRoute: typeof InquiryIdRouteImport
+      parentRoute: typeof InquiryRoute
+    }
+    '/notes/$id': {
+      id: '/notes/$id'
+      path: '/$id'
+      fullPath: '/notes/$id'
+      preLoaderRoute: typeof NotesIdRouteImport
+      parentRoute: typeof NotesRoute
+    }
   }
 }
+
+interface CustomersRouteChildren {
+  CustomersIdRoute: typeof CustomersIdRoute
+}
+
+const CustomersRouteChildren: CustomersRouteChildren = {
+  CustomersIdRoute: CustomersIdRoute,
+}
+
+const CustomersRouteWithChildren = CustomersRoute._addFileChildren(
+  CustomersRouteChildren,
+)
+
+interface InquiryRouteChildren {
+  InquiryIdRoute: typeof InquiryIdRoute
+}
+
+const InquiryRouteChildren: InquiryRouteChildren = {
+  InquiryIdRoute: InquiryIdRoute,
+}
+
+const InquiryRouteWithChildren =
+  InquiryRoute._addFileChildren(InquiryRouteChildren)
 
 interface NotesRouteChildren {
   NotesIdRoute: typeof NotesIdRoute
@@ -223,25 +365,19 @@ const NotesRouteChildren: NotesRouteChildren = {
 
 const NotesRouteWithChildren = NotesRoute._addFileChildren(NotesRouteChildren)
 
-interface CustomersRouteChildren {
-  CustomersIdRoute: typeof CustomersIdRoute
-}
-
-const CustomersRouteChildren: CustomersRouteChildren = {
-  CustomersIdRoute: CustomersIdRoute,
-}
-
-const CustomersRouteWithChildren =
-  CustomersRoute._addFileChildren(CustomersRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CanvasRoute: CanvasRoute,
   ChatRoute: ChatRoute,
+  CustomersRoute: CustomersRouteWithChildren,
+  HarelRoute: HarelRoute,
+  InquiryRoute: InquiryRouteWithChildren,
   IturanRoute: IturanRoute,
   NotesRoute: NotesRouteWithChildren,
   OrdersRoute: OrdersRoute,
-  CustomersRoute: CustomersRouteWithChildren,
-  CanvasRoute: CanvasRoute,
+  TachographRoute: TachographRoute,
+  ApiBackendRoute: ApiBackendRoute,
+  ApiSplitScanRoute: ApiSplitScanRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

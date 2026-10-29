@@ -18,26 +18,36 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { InquiryMessage } from "@/lib/inquiry-workflow";
-import { formatHe } from "@/lib/inquiry-workflow";
+import type { InquiryMessage, InquiryStatus } from "@/lib/inquiry-workflow";
+import { formatHe, STATUS_LABEL } from "@/lib/inquiry-workflow";
+import { TONE, WORKROOM_BTN, statusTone } from "@/lib/workroom-ui";
+
+function asStatus(s: string): InquiryStatus | null {
+  return s in STATUS_LABEL ? (s as InquiryStatus) : null;
+}
 
 export type TaskCardData = {
   id: string;
   docNumber: string;
   customer: string;
-  customerNo?: string;
-  address?: string;
-  driver?: string;
-  date?: string;
-  issue?: string;
-  aiAnalysis?: string;
+  customerNo?: string | undefined;
+  address?: string | undefined;
+  driver?: string | undefined;
+  date?: string | undefined;
+  issue?: string | undefined;
+  aiAnalysis?: string | undefined;
   status: string;
-  statusLabel?: string;
-  thread?: InquiryMessage[];
-  taskReason?: string;
-  dueLabel?: string;
-  overdue?: boolean;
-  driveUrl?: string;
+  statusLabel?: string | undefined;
+  thread?: InquiryMessage[] | undefined;
+  taskReason?: string | undefined;
+  dueLabel?: string | undefined;
+  overdue?: boolean | undefined;
+  driveUrl?: string | undefined;
+};
+
+export type ReplyOptions = {
+  /** true = «שלח להראל» (צליל + OneSignal) · false = «הודעה חדשה» (שמירה בלבד) */
+  sendToHarel: boolean;
 };
 
 const ROLE_ICON = {
@@ -59,7 +69,11 @@ export function ExpandableTaskCard({
   data: TaskCardData;
   defaultOpen?: boolean;
   mode?: "rami" | "harel";
-  onReply?: (text: string, replyToId?: string) => Promise<void> | void;
+  onReply?: (
+    text: string,
+    replyToId: string | undefined,
+    opts: ReplyOptions,
+  ) => Promise<void> | void;
   onSendToHarel?: () => void;
   onOpenTask?: () => void;
   className?: string;
@@ -71,11 +85,15 @@ export function ExpandableTaskCard({
   const [busy, setBusy] = useState(false);
   const thread = data.thread || [];
 
-  const submit = async (sendHarel?: boolean) => {
+  const status = asStatus(data.status);
+  const tone = status ? TONE[statusTone(status)] : TONE.muted;
+  const panelId = `task-card-panel-${data.docNumber}`;
+
+  const submit = async (sendHarel: boolean) => {
     if (!draft.trim() || !onReply) return;
     setBusy(true);
     try {
-      await onReply(draft.trim(), replyTo || undefined);
+      await onReply(draft.trim(), replyTo || undefined, { sendToHarel: sendHarel });
       setDraft("");
       setReplyTo(null);
       if (sendHarel) onSendToHarel?.();
@@ -95,11 +113,13 @@ export function ExpandableTaskCard({
     >
       <button
         type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
         onClick={() => {
           setOpen((v) => !v);
           onOpenTask?.();
         }}
-        className="flex w-full items-start gap-3 p-4 text-right transition hover:bg-muted/30"
+        className="flex w-full items-start gap-3 p-4 text-right transition hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
       >
         <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/20">
           <FileText className="h-5 w-5" />
@@ -107,7 +127,14 @@ export function ExpandableTaskCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-base font-extrabold">ת.מ. {data.docNumber}</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold">
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                tone.border,
+                tone.surface,
+                tone.text,
+              )}
+            >
               {data.statusLabel || data.status}
             </span>
             {data.overdue && (
@@ -127,11 +154,14 @@ export function ExpandableTaskCard({
             </div>
           )}
         </div>
-        <ChevronDown className={cn("mt-2 h-5 w-5 shrink-0 transition", open && "rotate-180")} />
+        <ChevronDown
+          aria-hidden="true"
+          className={cn("mt-2 h-5 w-5 shrink-0 transition motion-reduce:transition-none", open && "rotate-180")}
+        />
       </button>
 
       {open && (
-        <div className="space-y-4 border-t border-border/50 bg-background/40 p-4">
+        <div id={panelId} className="space-y-4 border-t border-border/50 bg-background/40 p-4">
           <div className="grid gap-2 rounded-2xl border bg-muted/20 p-3 text-xs sm:grid-cols-2">
             <Row label="לקוח" value={data.customer} />
             <Row label="מס׳ לקוח" value={data.customerNo || "—"} />
@@ -233,18 +263,19 @@ export function ExpandableTaskCard({
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Link to="/notes/$id" params={{ id: data.docNumber }} className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-[11px] font-bold hover:bg-muted">
-              <FileText className="h-3.5 w-3.5" /> תעודה <ChevronLeft className="h-3.5 w-3.5" />
+            <Link to="/notes/$id" params={{ id: data.docNumber }} className={WORKROOM_BTN.secondary}>
+              <FileText className="h-3.5 w-3.5" aria-hidden="true" /> תעודה{" "}
+              <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
-            <Link to="/inquiry" search={{ task: data.docNumber, tab: "tasks" }} className="inline-flex items-center gap-1 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-[11px] font-bold">
-              <MessageSquare className="h-3.5 w-3.5" /> חדר משימה
+            <Link to="/inquiry/$id" params={{ id: data.docNumber }} className={WORKROOM_BTN.task}>
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" /> חדר משימה
             </Link>
-            <Link to="/harel" className="inline-flex items-center gap-1 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold">
-              <Crown className="h-3.5 w-3.5" /> דשבורד הראל
+            <Link to="/harel" search={{ task: data.docNumber }} className={WORKROOM_BTN.harel}>
+              <Crown className="h-3.5 w-3.5" aria-hidden="true" /> מסך הראל
             </Link>
             {data.driveUrl && (
-              <a href={data.driveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-[11px] font-bold">
-                <ExternalLink className="h-3.5 w-3.5" /> Drive
+              <a href={data.driveUrl} target="_blank" rel="noreferrer" className={WORKROOM_BTN.secondary}>
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> Drive
               </a>
             )}
           </div>

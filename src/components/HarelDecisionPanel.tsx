@@ -1,5 +1,6 @@
 /**
  * פעולות הראל: אשר / דחה / החזר לראמי (+ מה חסר + יעד + נדנוד)
+ * בהחזרה לראמי: צליל + בקשת OneSignal עם deep-link ל-/inquiry?task=… ומשוב (toast + chip).
  */
 
 import { useState } from "react";
@@ -9,21 +10,31 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { harelDecideFn } from "@/lib/inquiry-workflow.functions";
+import { notifyHarelQueueFn } from "@/lib/onesignal.functions";
 import { defaultDueAt } from "@/lib/inquiry-workflow";
+import { notificationAccepted, type NotifyState } from "@/lib/workroom-ui";
+import { playDispatchChime } from "@/lib/audio-alerts";
 import { Check, RotateCcw, X } from "lucide-react";
+
+type Decision = "approve" | "reject" | "return";
 
 export function HarelDecisionPanel({
   inquiryId,
   noteId,
+  customer,
   annotationUrl,
   fileId,
   onDone,
+  onNotify,
 }: {
   inquiryId: string;
-  noteId?: string;
-  annotationUrl?: string;
-  fileId?: string;
-  onDone?: () => void;
+  noteId?: string | undefined;
+  customer?: string | undefined;
+  annotationUrl?: string | undefined;
+  fileId?: string | undefined;
+  onDone?: (decision: Decision) => void;
+  /** מצב בקשת ההתראה לראמי — להצגת chip במסך המארח */
+  onNotify?: (state: NotifyState) => void;
 }) {
   const qc = useQueryClient();
   const [mode, setMode] = useState<"idle" | "return" | "reject">("idle");
@@ -36,43 +47,80 @@ export function HarelDecisionPanel({
   });
   const [nudgeMin, setNudgeMin] = useState(60);
 
+  const notifyRami = async () => {
+    const target = noteId || inquiryId;
+    onNotify?.({ state: "sending", noteId: target, target: "rami" });
+    void playDispatchChime(0.9);
+    let ok = false;
+    try {
+      const response = await notifyHarelQueueFn({
+        data: {
+          noteId: target,
+          kind: "returned_to_rami",
+          ...(customer ? { customer } : {}),
+        },
+      });
+      ok = notificationAccepted(response);
+    } catch (e) {
+      console.warn("OneSignal", e);
+    }
+    onNotify?.({
+      state: ok ? "sent" : "failed",
+      noteId: target,
+      target: "rami",
+      at: new Date().toISOString(),
+    });
+    if (ok) toast.info("בקשת התראה לראמי נמסרה ל-OneSignal; מסירה למכשיר לא מאומתת");
+    else toast.error("המשימה נשמרה, אך בקשת ההתראה לראמי נכשלה");
+  };
+
   const mut = useMutation({
-    mutationFn: harelDecideFn,
-    onSuccess: () => {
-      toast.success("ההחלטה נשמרה");
+    mutationFn: async (decision: Decision) => {
+      await harelDecideFn({
+        data: {
+          inquiryId,
+          decision,
+          text: note,
+          reason: reason.trim(),
+          dueAt: dueLocal ? new Date(dueLocal).toISOString() : defaultDueAt(4),
+          nudgeEveryMin: nudgeMin,
+          ...(noteId ? { noteId } : {}),
+          ...(annotationUrl ? { annotationUrl } : {}),
+          ...(fileId ? { fileId } : {}),
+        },
+      });
+      return decision;
+    },
+    onSuccess: (decision) => {
+      toast.success(
+        decision === "return"
+          ? "המשימה נשלחה לראמי"
+          : decision === "approve"
+            ? "התעודה אושרה ונסגרה"
+            : "הדחייה נשמרה",
+      );
       void qc.invalidateQueries({ queryKey: ["workroom"] });
       void qc.invalidateQueries({ queryKey: ["inquiries"] });
       setMode("idle");
       setReason("");
       setNote("");
-      onDone?.();
+      if (decision === "return") void notifyRami();
+      onDone?.(decision);
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const submit = (decision: "approve" | "reject" | "return") => {
+  const submit = (decision: Decision) => {
     if (decision === "return" && !reason.trim()) {
       toast.error("חובה למלא «מה חסר»");
       return;
     }
-    mut.mutate({
-      data: {
-        inquiryId,
-        noteId,
-        decision,
-        text: note,
-        reason: reason.trim(),
-        dueAt: dueLocal ? new Date(dueLocal).toISOString() : defaultDueAt(4),
-        nudgeEveryMin: nudgeMin,
-        annotationUrl,
-        fileId,
-      },
-    });
+    mut.mutate(decision);
   };
 
   return (
     <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4" dir="rtl">
-      <div className="text-sm font-bold text-amber-950">החלטת הראל</div>
+      <div className="text-sm font-bold text-amber-950 dark:text-amber-100">החלטת הראל</div>
 
       {mode === "idle" && (
         <div className="flex flex-wrap gap-2">
