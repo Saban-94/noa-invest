@@ -27,6 +27,16 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -46,6 +56,7 @@ function Index() {
   const ap = useApprovals();
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [isApprovingAll, setIsApprovingAll] = useState(false);
+  const [confirmAllOpen, setConfirmAllOpen] = useState(false);
 
   const {
     data: notes,
@@ -108,48 +119,59 @@ function Index() {
 
   const handleApproveAll = async () => {
     if (!forApproval.length) return;
+    const batch = [...forApproval];
+    let approved = 0;
     setIsApprovingAll(true);
     try {
-      for (const n of forApproval) {
+      for (const n of batch) {
         await approveStrict(n.id, "harel");
         approvals.harel(n.id);
+        approved += 1;
       }
       playUrgentSignatureAlarm();
-      toast.success(`אושרו ${forApproval.length} תעודות`);
+      toast.success(`אושרו ${approved} תעודות`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "אישור מרוכז נכשל");
+      const reason = e instanceof Error ? e.message : "אישור מרוכז נכשל";
+      toast.error(
+        approved > 0
+          ? `אושרו ${approved} מתוך ${batch.length}. העצירה בגלל: ${reason}`
+          : reason,
+      );
     } finally {
       setIsApprovingAll(false);
+      setConfirmAllOpen(false);
     }
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8" dir="rtl">
+    <div dir="rtl">
       <PageHeader
         title="ראשי הראל"
         subtitle="אישור תעודות · מעקב בירורים אצל ראמי · ניווט למשימה ולהודעות"
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
-              className="gap-2"
+              className="hit gap-2"
               onClick={() => void refetch()}
               disabled={isFetching}
+              aria-label="רענון"
             >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-              רענון
+              <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin motion-reduce:animate-none" : ""}`} />
+              <span className="hidden sm:inline">רענון</span>
             </Button>
+            {/* Secondary links live in the nav / "more" sheet on phones — keep the sticky header slim */}
             <Link
               to="/harel"
-              className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-amber-700"
+              className="hidden min-h-11 items-center gap-2 rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-amber-700 md:inline-flex"
             >
               <Crown className="h-4 w-4" />
               דשבורד משימות והודעות
             </Link>
             <Link
               to="/inquiry"
-              className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted"
+              className="hidden min-h-11 items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted md:inline-flex"
             >
               <MessageSquareWarning className="h-4 w-4" />
               מרכז בירורים
@@ -158,7 +180,9 @@ function Index() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-5 md:px-8 md:py-6">
+
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         <Kpi
           label="נשלחו לאישור"
           value={forApproval.length}
@@ -207,7 +231,7 @@ function Index() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="top-below-header sticky z-20 -mx-4 flex items-center justify-between gap-2 border-b border-border/40 bg-background/90 px-4 py-2 backdrop-blur md:-mx-8 md:px-8 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
               <h2 className="flex items-center gap-2 font-display text-base font-bold">
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/15 text-amber-800">
                   <Crown className="h-4 w-4" />
@@ -220,11 +244,13 @@ function Index() {
               {forApproval.length > 1 && (
                 <Button
                   size="sm"
-                  className="bg-amber-700 text-xs hover:bg-amber-800"
+                  className="hit bg-amber-700 text-xs hover:bg-amber-800"
                   disabled={isApprovingAll}
-                  onClick={() => void handleApproveAll()}
+                  onClick={() => setConfirmAllOpen(true)}
                 >
-                  {isApprovingAll && <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" />}
+                  {isApprovingAll && (
+                    <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                  )}
                   אשר הכל
                 </Button>
               )}
@@ -246,7 +272,7 @@ function Index() {
           </section>
 
           <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="top-below-header sticky z-20 -mx-4 flex items-center justify-between gap-2 border-b border-border/40 bg-background/90 px-4 py-2 backdrop-blur md:-mx-8 md:px-8 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
               <h2 className="flex items-center gap-2 font-display text-base font-bold">
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-500/15 text-orange-800">
                   <MessageSquareWarning className="h-4 w-4" />
@@ -256,7 +282,10 @@ function Index() {
                   {inInquiry.length}
                 </span>
               </h2>
-              <Link to="/inquiry" className="text-xs font-bold text-primary hover:underline">
+              <Link
+                to="/inquiry"
+                className="inline-flex min-h-11 items-center text-xs font-bold text-primary hover:underline"
+              >
                 לכל הבירורים
               </Link>
             </div>
@@ -271,7 +300,7 @@ function Index() {
       )}
 
       {done.length > 0 && (
-        <section className="space-y-2" data-scroll-reveal>
+        <section className="space-y-2">
           <h3 className="text-sm font-bold text-muted-foreground">
             אושרו ע״י מנכ״ל ({done.length})
           </h3>
@@ -281,12 +310,12 @@ function Index() {
                 key={n.id}
                 to="/notes/$id"
                 params={{ id: n.id }}
-                className="flex items-center justify-between rounded-2xl border border-border/50 bg-card px-4 py-3 text-sm shadow-sm hover:border-emerald-500/40"
+                className="flex min-h-12 items-center justify-between rounded-2xl border border-border/50 bg-card px-4 py-3 text-sm shadow-sm hover:border-emerald-500/40"
               >
                 <span className="font-semibold">
                   {n.customer} · <span className="font-mono">#{n.id}</span>
                 </span>
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-700">
                   👑 אושר
                 </span>
               </Link>
@@ -294,6 +323,38 @@ function Index() {
           </div>
         </section>
       )}
+      </div>
+
+      <AlertDialog open={confirmAllOpen} onOpenChange={setConfirmAllOpen}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader className="text-right sm:text-right">
+            <AlertDialogTitle>
+              לאשר סופית {forApproval.length} תעודות ({sumTons.toFixed(1)} טון)?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              כל התעודות ברשימה יסומנו כ״אושר סופית לחיוב״ בחותמת המנכ״ל. לא ניתן לבטל פעולה זו מכאן.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:flex-row-reverse sm:justify-start sm:space-x-0">
+            <AlertDialogAction
+              className="min-h-11 bg-ceo text-ceo-foreground hover:bg-ceo/90"
+              disabled={isApprovingAll}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleApproveAll();
+              }}
+            >
+              {isApprovingAll && (
+                <Loader2 className="ml-1 h-4 w-4 animate-spin motion-reduce:animate-none" />
+              )}
+              אשר סופית {forApproval.length} תעודות 👑
+            </AlertDialogAction>
+            <AlertDialogCancel className="min-h-11" disabled={isApprovingAll}>
+              ביטול
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -317,9 +378,9 @@ function Kpi({
     <Card className={`rounded-2xl border p-4 shadow-sm ${bg}`}>
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-[11px] font-semibold text-muted-foreground">{label}</div>
-          <div className={`mt-1 font-display text-2xl font-extrabold ${color}`}>{value}</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div>
+          <div className="text-xs font-semibold text-muted-foreground">{label}</div>
+          <div className={`mt-1 font-display text-2xl font-extrabold tabular-nums ${color}`}>{value}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>
         </div>
         <Icon className={`h-7 w-7 opacity-40 ${color}`} />
       </div>
@@ -370,9 +431,9 @@ function NoteCard({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-sm font-bold">ת.מ. {n.id}</span>
-            <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium">{n.date}</span>
+            <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{n.date}</span>
             <span
-              className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+              className={`rounded-md px-2 py-0.5 text-xs font-bold ${
                 variant === "approval"
                   ? "bg-amber-500/15 text-amber-900"
                   : "bg-orange-500/15 text-orange-900"
@@ -396,7 +457,7 @@ function NoteCard({
           <Link
             to="/notes/$id"
             params={{ id: n.id }}
-            className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-background px-2.5 py-1.5 text-[11px] font-bold hover:bg-muted"
+            className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-background min-h-11 px-3 py-2 text-xs font-bold hover:bg-muted"
           >
             <FileText className="h-3.5 w-3.5" />
             פתח תעודה
@@ -406,7 +467,7 @@ function NoteCard({
           <Link
             to="/inquiry/$id"
             params={{ id: n.id }}
-            className="inline-flex items-center gap-1 rounded-lg border border-orange-500/40 bg-orange-500/10 px-2.5 py-1.5 text-[11px] font-bold text-orange-950 hover:bg-orange-500/20"
+            className="inline-flex items-center gap-1 rounded-lg border border-orange-500/40 bg-orange-500/10 min-h-11 px-3 py-2 text-xs font-bold text-orange-950 hover:bg-orange-500/20"
           >
             <MessageSquareWarning className="h-3.5 w-3.5" />
             {variant === "inquiry" ? "משימה / הודעות" : "שלח לבירור ראמי"}
@@ -414,7 +475,7 @@ function NoteCard({
 
           <Link
             to="/harel"
-            className="inline-flex items-center gap-1 rounded-lg border border-amber-600/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] font-bold text-amber-950 hover:bg-amber-500/20"
+            className="inline-flex items-center gap-1 rounded-lg border border-amber-600/30 bg-amber-500/10 min-h-11 px-3 py-2 text-xs font-bold text-amber-950 hover:bg-amber-500/20"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             דשבורד הראל
@@ -427,7 +488,7 @@ function NoteCard({
           <Link
             to="/inquiry/$id"
             params={{ id: n.id }}
-            className="flex items-center justify-center gap-2 bg-orange-600/90 py-3 text-sm font-bold text-white hover:bg-orange-700"
+            className="flex min-h-12 items-center justify-center gap-2 bg-orange-600/90 py-3 text-sm font-bold text-white hover:bg-orange-700"
           >
             <Send className="h-4 w-4" />
             שליחה לבירור ראמי
@@ -436,7 +497,7 @@ function NoteCard({
             type="button"
             onClick={onApprove}
             disabled={isApproving}
-            className="flex items-center justify-center gap-2 bg-ceo py-3 text-sm font-bold text-ceo-foreground hover:opacity-95 disabled:opacity-60"
+            className="flex min-h-12 items-center justify-center gap-2 bg-ceo py-3 text-sm font-bold text-ceo-foreground hover:opacity-95 disabled:opacity-60"
           >
             {isApproving && <Loader2 className="h-4 w-4 animate-spin" />}
             אושר סופית 👑
