@@ -271,7 +271,7 @@ function Index() {
       )}
 
       {done.length > 0 && (
-        <section className="space-y-2">
+        <section className="space-y-2" data-scroll-reveal>
           <h3 className="text-sm font-bold text-muted-foreground">
             אושרו ע״י מנכ״ל ({done.length})
           </h3>

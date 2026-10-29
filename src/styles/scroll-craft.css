@@ -1,0 +1,48 @@
+/* Scroll Craft UI/UX layer for Noa Invest.
+   Opt-in motion only: operationally critical content remains visible by default. */
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-block: 1rem;
+}
+
+:where([id]) {
+  scroll-margin-block: 1rem;
+}
+
+[data-scroll-reveal] {
+  transition:
+    opacity 360ms ease,
+    transform 360ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.sc-motion-ready [data-scroll-reveal]:not(.sc-visible) {
+  opacity: 0;
+  transform: translateY(0.75rem);
+}
+
+[data-scroll-reveal].sc-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+[data-scroll-stagger] > [data-scroll-reveal]:nth-child(2) { transition-delay: 45ms; }
+[data-scroll-stagger] > [data-scroll-reveal]:nth-child(3) { transition-delay: 90ms; }
+[data-scroll-stagger] > [data-scroll-reveal]:nth-child(4) { transition-delay: 135ms; }
+[data-scroll-stagger] > [data-scroll-reveal]:nth-child(5) { transition-delay: 180ms; }
+[data-scroll-stagger] > [data-scroll-reveal]:nth-child(6) { transition-delay: 225ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+    scroll-padding-block: 0;
+  }
+
+  [data-scroll-reveal],
+  [data-scroll-reveal].sc-visible,
+  .sc-motion-ready [data-scroll-reveal]:not(.sc-visible) {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

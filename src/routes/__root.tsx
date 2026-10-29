@@ -13,6 +13,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/AppShell";
 
 import appCss from "../styles.css?url";
+import "../styles/scroll-craft.css";
+import { initScrollCraftMotion } from "../lib/scroll-craft-motion";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { enableAudioOnFirstTouch, setupOneSignalPushListener } from "../lib/audio-alerts";
 import { flushPendingApprovals } from "../lib/api";
@@ -116,6 +118,8 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   useEffect(() => {
+    const cleanupScrollCraftMotion = initScrollCraftMotion();
+
     // 1. Enable audio context on first user interaction for iOS / Android
     enableAudioOnFirstTouch();
 
@@ -132,9 +136,15 @@ function RootComponent() {
 
     // 4. Flush any offline-queued approvals when connected
     void flushPendingApprovals();
-    window.addEventListener("online", () => {
+    const handleOnline = () => {
       void flushPendingApprovals();
-    });
+    };
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      cleanupScrollCraftMotion();
+      window.removeEventListener("online", handleOnline);
+    };
   }, []);
 
   return (
