@@ -3,8 +3,8 @@
  * כרטיסים מתרחבים · מצב משימה · שליחה להראל + צלצול + OneSignal
  */
 
-import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { useMemo, useState, type ComponentType } from "react";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useMemo, type ComponentType } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -37,7 +37,10 @@ type Tab = "tasks" | "pending_harel" | "all";
 export const Route = createFileRoute("/inquiry")({
   validateSearch: (s: Record<string, unknown>) => ({
     task: typeof s.task === "string" ? s.task : undefined,
-    tab: (s.tab as Tab) || undefined,
+    tab:
+      s.tab === "tasks" || s.tab === "pending_harel" || s.tab === "all"
+        ? s.tab
+        : undefined,
   }),
   head: () => ({
     meta: [{ title: "בירור תעודות — משימות ראמי" }],
@@ -48,7 +51,8 @@ export const Route = createFileRoute("/inquiry")({
 function InquiryBoard() {
   const search = useSearch({ from: "/inquiry" });
   const focusId = search.task;
-  const [tab, setTab] = useState<Tab>(search.tab || "tasks");
+  const tab: Tab = search.tab || "tasks";
+  const navigate = useNavigate({ from: "/inquiry" });
   const qc = useQueryClient();
 
   const q = useQuery({
@@ -108,23 +112,34 @@ function InquiryBoard() {
           replyToId: p.replyToId,
         },
       });
+      let notificationRequested = false;
       if (p.notifyHarel) {
         void playDispatchChime(0.9);
         try {
-          await notifyHarelQueueFn({
+          const response = await notifyHarelQueueFn({
             data: {
               noteId: p.noteId,
               customer: p.customer,
               kind: "rami_replied",
             },
           });
+          notificationRequested =
+            typeof response?.id === "string" &&
+            response.id.length > 0 &&
+            !response.errors;
         } catch (e) {
           console.warn("OneSignal", e);
         }
       }
+      return { notificationRequested };
     },
-    onSuccess: () => {
-      toast.success("המענה נשמר · נשלח להראל");
+    onSuccess: ({ notificationRequested }) => {
+      toast.success("המענה נשמר בהיסטוריית המשימה");
+      if (notificationRequested) {
+        toast.info("בקשת התראה נמסרה ל-OneSignal; מסירה למכשיר לא מאומתת");
+      } else {
+        toast.error("המענה נשמר, אך בקשת ההתראה ל-OneSignal נכשלה");
+      }
       void qc.invalidateQueries({ queryKey: ["workroom"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -155,26 +170,28 @@ function InquiryBoard() {
           }
         />
 
+        <WorkroomNav current="inquiry" />
+
         <div className="grid grid-cols-3 gap-2">
           <Stat
             label="משימות לראמי"
             value={tasks.length}
             active={tab === "tasks"}
-            onClick={() => setTab("tasks")}
+            onClick={() => void navigate({ search: (prev) => ({ ...prev, tab: "tasks" }) })}
             icon={RotateCcw}
           />
           <Stat
             label="ממתינים להראל"
             value={pendingHarel.length}
             active={tab === "pending_harel"}
-            onClick={() => setTab("pending_harel")}
+            onClick={() => void navigate({ search: (prev) => ({ ...prev, tab: "pending_harel" }) })}
             icon={Crown}
           />
           <Stat
             label="הכל"
             value={all.length}
             active={tab === "all"}
-            onClick={() => setTab("all")}
+            onClick={() => void navigate({ search: (prev) => ({ ...prev, tab: "all" }) })}
             icon={Inbox}
           />
         </div>
@@ -274,9 +291,10 @@ function Stat({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "rounded-2xl border p-3 text-right transition",
+        "rounded-2xl border p-3 text-right transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 motion-reduce:transform-none",
         active
           ? "border-primary/40 bg-primary/10 shadow-sm"
           : "border-border/60 bg-card/80 hover:bg-muted/40",
@@ -288,5 +306,23 @@ function Stat({
       </div>
       <div className="mt-1 text-[10px] font-bold text-muted-foreground">{label}</div>
     </button>
+  );
+}
+
+function WorkroomNav({ current }: { current: "inquiry" | "harel" }) {
+  return (
+    <nav aria-label="ניווט אזור העבודה" className="flex flex-wrap gap-2 rounded-2xl border border-border/60 bg-card/70 p-2">
+      <Link to="/inquiry" search={{ tab: "tasks" }} aria-current={current === "inquiry" ? "page" : undefined}
+        className={cn("rounded-xl px-3 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2", current === "inquiry" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}>
+        בירור ראמי
+      </Link>
+      <Link to="/harel" aria-current={current === "harel" ? "page" : undefined}
+        className={cn("rounded-xl px-3 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2", current === "harel" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}>
+        דשבורד הראל
+      </Link>
+      <Link to="/chat" className="rounded-xl px-3 py-2 text-xs font-bold text-muted-foreground transition hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+        צ׳אט
+      </Link>
+    </nav>
   );
 }

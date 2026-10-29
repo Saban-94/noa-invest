@@ -2,7 +2,7 @@
  * /harel — דשבורד מנכ״ל: תור אישור + פירוט + החלטות
  */
 
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
@@ -27,6 +27,9 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/harel")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    task: typeof s.task === "string" ? s.task : undefined,
+  }),
   head: () => ({
     meta: [{ title: "דשבורד הראל — נועה ח. סבן" }],
   }),
@@ -34,6 +37,8 @@ export const Route = createFileRoute("/harel")({
 });
 
 function HarelDashboard() {
+  const search = useSearch({ from: "/harel" });
+  const navigate = useNavigate({ from: "/harel" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -58,6 +63,7 @@ function HarelDashboard() {
 
   // Include returned-to-Rami items in the default selection, not just pending approvals.
   const selected: WorkroomInquiry | null =
+    all.find((i) => i.id === search.task || i.docNumber === search.task) ||
     all.find((i) => i.id === selectedId || i.docNumber === selectedId) ||
     queue[0] ||
     null;
@@ -82,6 +88,8 @@ function HarelDashboard() {
           </Button>
         }
       />
+
+      <WorkroomNav current="harel" />
 
       <div
         role="status"
@@ -178,7 +186,7 @@ function HarelDashboard() {
         {/* תור */}
         <Card className="max-h-[70vh] space-y-2 overflow-y-auto rounded-2xl border-border/70 p-3 shadow-sm">
           <div className="flex items-center justify-between px-1 pb-1 text-xs font-bold text-muted-foreground">
-            <span>תור לבדיקה</span>
+            <span>תור לבדיקה · מופרד לפי שלב</span>
             <span className="rounded-full bg-muted px-2 py-0.5 font-mono tabular-nums">
               {queue.length}
             </span>
@@ -191,45 +199,71 @@ function HarelDashboard() {
               אין תעודות ממתינות
             </p>
           )}
-          {queue.map((i) => {
-            const active =
-              selected && (selected.id === i.id || selected.docNumber === i.docNumber);
-            const overdue = isOverdue(i.task);
-            return (
-              <button
-                key={i.id || i.docNumber}
-                type="button"
-                aria-pressed={Boolean(active)}
-                onClick={() => setSelectedId(i.id || i.docNumber)}
-                className={`w-full rounded-xl border p-3 text-right transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 motion-reduce:transform-none ${ 
-                  active
-                    ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/15"
-                    : "border-border/60 hover:bg-muted/40"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-sm font-bold">ת.מ. {i.docNumber}</span>
-                  <span className="text-[10px] font-bold text-muted-foreground">
-                    {STATUS_LABEL[i.status]}
-                  </span>
-                </div>
-                <div className="mt-0.5 text-xs font-semibold">{i.customer}</div>
-                <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
-                  {i.issue || i.aiAnalysis}
-                </div>
-                {i.task?.status === "open" && (
-                  <div
-                    className={`mt-1 text-[10px] font-bold ${overdue ? "text-destructive" : "text-amber-700"}`}
-                  >
-                    משימה לראמי
-                    {overdue
-                      ? " · באיחור"
-                      : ` · עוד ${minutesUntilDue(i.task)} דק׳`}
-                  </div>
-                )}
-              </button>
-            );
-          })}
+          {[
+            { title: "ממתינים להחלטת הראל", items: pendingHarel },
+            { title: "חזרו להמשך טיפול ראמי", items: returned },
+          ].map(
+            (group) =>
+              group.items.length > 0 && (
+                <section
+                  key={group.title}
+                  aria-label={group.title}
+                  className="space-y-2"
+                >
+                  <h2 className="px-1 pt-2 text-[11px] font-bold text-muted-foreground">
+                    {group.title} <span className="font-mono">({group.items.length})</span>
+                  </h2>
+                  {group.items.map((i) => {
+                    const active =
+                      selected &&
+                      (selected.id === i.id || selected.docNumber === i.docNumber);
+                    const overdue = isOverdue(i.task);
+                    return (
+                      <button
+                        key={i.id || i.docNumber}
+                        type="button"
+                        aria-pressed={Boolean(active)}
+                        onClick={() => {
+                          const taskId = i.docNumber || i.id;
+                          setSelectedId(taskId);
+                          void navigate({ search: { task: taskId } });
+                        }}
+                        className={`w-full rounded-xl border p-3 text-right transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 motion-reduce:transform-none ${
+                          active
+                            ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/15"
+                            : "border-border/60 hover:bg-muted/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-sm font-bold">
+                            ת.מ. {i.docNumber}
+                          </span>
+                          <span className="text-[10px] font-bold text-muted-foreground">
+                            {STATUS_LABEL[i.status]}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-xs font-semibold">
+                          {i.customer}
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                          {i.issue || i.aiAnalysis}
+                        </div>
+                        {i.task?.status === "open" && (
+                          <div
+                            className={`mt-1 text-[10px] font-bold ${overdue ? "text-destructive" : "text-amber-700"}`}
+                          >
+                            משימה לראמי
+                            {overdue
+                              ? " · באיחור"
+                              : ` · עוד ${minutesUntilDue(i.task)} דק׳`}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </section>
+              ),
+          )}
         </Card>
 
         {/* פירוט */}
@@ -261,7 +295,14 @@ function HarelDashboard() {
                     </Link>
                     <Link
                       to="/inquiry"
-                      search={{ task: selected.docNumber, tab: "tasks" }}
+                      search={{
+                        task: selected.docNumber,
+                        tab:
+                          selected.status === "returned_to_rami" ||
+                          selected.status === "pending_rami"
+                            ? "tasks"
+                            : "pending_harel",
+                      }}
                       className="inline-flex items-center justify-center rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs font-bold text-orange-800 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-orange-500/15 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 motion-reduce:transform-none dark:text-orange-200"
                     >
                       פתיחת משימה
@@ -318,5 +359,23 @@ function HarelDashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+function WorkroomNav({ current }: { current: "inquiry" | "harel" }) {
+  return (
+    <nav aria-label="ניווט אזור העבודה" className="flex flex-wrap gap-2 rounded-2xl border border-border/60 bg-card/70 p-2">
+      <Link to="/inquiry" search={{ tab: "tasks" }} aria-current={current === "inquiry" ? "page" : undefined}
+        className={`rounded-xl px-3 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${current === "inquiry" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}>
+        בירור ראמי
+      </Link>
+      <Link to="/harel" aria-current={current === "harel" ? "page" : undefined}
+        className={`rounded-xl px-3 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${current === "harel" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}>
+        דשבורד הראל
+      </Link>
+      <Link to="/chat" className="rounded-xl px-3 py-2 text-xs font-bold text-muted-foreground transition hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+        צ׳אט
+      </Link>
+    </nav>
   );
 }
