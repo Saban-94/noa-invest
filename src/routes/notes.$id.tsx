@@ -818,7 +818,7 @@ function Viewer() {
   })();
 
   const steps: Step[] = [
-    { key: "audit", label: "בקרת נועה AI", hint: `${auditEvidenceCount}/${auditFindings.length} אסמכתאות · ${auditDecisionCount}/${auditFindings.length} החלטות ראמי`, done: auditComplete, icon: Brain },
+    { key: "audit", label: "בקרת נועה AI", hint: auditPersisted ? "האסמכתאות והחלטות ראמי נשמרו בשרת" : `${auditEvidenceCount}/${auditFindings.length} אסמכתאות · ${auditDecisionCount}/${auditFindings.length} החלטות ראמי`, done: auditPersisted, icon: Brain },
     { key: "rami", label: "אישור ראמי", hint: ramiApprovalActive ? ap!.rami!.at : "ממתין לבדיקה / תיקון", done: ramiApprovalActive, icon: Stamp },
     { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel && !returnedToRami ? ap.harel.at : ramiApprovalActive || n.noteStage === "pending_harel" ? "ממתין להחלטת הראל" : "ממתין לאישור ראמי", done: Boolean(ap?.harel) && !returnedToRami, icon: Crown },
   ];
@@ -1368,17 +1368,17 @@ function Viewer() {
             <span
               role="status"
               className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                auditComplete ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"
+                auditPersisted ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"
               }`}
             >
-              {auditComplete ? "הבדיקות והחלטות ראמי הושלמו" : `אסמכתאות ${auditEvidenceCount}/${auditFindings.length} · החלטות ${auditDecisionCount}/${auditFindings.length}`}
+              {auditPersisted ? "הבקרה נשמרה בשרת" : auditComplete ? "הושלמה — נדרשת שמירה בשרת" : `אסמכתאות ${auditEvidenceCount}/${auditFindings.length} · החלטות ${auditDecisionCount}/${auditFindings.length}`}
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="h-2 min-w-[160px] flex-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
               <motion.div
-                className={`h-full rounded-full ${auditComplete ? "bg-emerald-500" : "bg-amber-500"}`}
+                className={`h-full rounded-full ${auditPersisted ? "bg-emerald-500" : "bg-amber-500"}`}
                 initial={{ width: 0 }}
                 animate={{ width: `${auditPct}%` }}
                 transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 110, damping: 20 }}
