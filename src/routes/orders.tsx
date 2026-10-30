@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Clock,
   ExternalLink,
+  FileText,
   Layers,
   MapPin,
   Minus,
@@ -51,6 +52,7 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  noteId?: string;
   customerId: string;
   customerNo: string;
   receivedDate: string;
@@ -576,6 +578,19 @@ const OrderCard = memo(function OrderCard({ order, expanded, busy, onToggle, onS
           </div>
           <StatusControl status={order.status} busy={busy} onChange={(s) => onStatus(order.id, s)} />
         </div>
+
+        {order.noteId && (
+          <div className="mt-3">
+            <Link
+              to="/notes/$id"
+              params={{ id: order.noteId }}
+              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3.5 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+            >
+              <FileText className="h-4 w-4" aria-hidden />
+              חמ״ל בקרה · תעודה {order.noteId}
+            </Link>
+          </div>
+        )}
 
         {/* Meta chips */}
         <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
