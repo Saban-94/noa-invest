@@ -278,6 +278,51 @@ export const saveSignedNoteFn = createServerFn({ method: "POST" })
     return { driveUrl: String(r.driveUrl || ""), folder: String(r.folder || "") };
   });
 
+export type LogisticsAuditDecision = {
+  status: "pending" | "resolved" | "accepted_exception" | "needs_fix";
+  note?: string;
+};
+
+export type LogisticsAuditState = {
+  evidence: Record<string, string>;
+  decisions: Record<string, LogisticsAuditDecision>;
+};
+
+/** שליפת טיוטת בקרת לוגיסטיקה משותפת לפי מספר תעודה. */
+export const getLogisticsAuditFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { noteId: string }) => {
+    const noteId = String(d?.noteId || "").trim();
+    if (!noteId) throw new Error("חסר מספר תעודה");
+    return { noteId };
+  })
+  .handler(async ({ data }): Promise<LogisticsAuditState> => {
+    const result = await gasGet({ action: "getLogisticsAuditEvidence", noteId: data.noteId });
+    return {
+      evidence: (result.evidence && typeof result.evidence === "object" ? result.evidence : {}) as Record<string, string>,
+      decisions: (result.decisions && typeof result.decisions === "object" ? result.decisions : {}) as Record<string, LogisticsAuditDecision>,
+    };
+  });
+
+/** שמירת כל האסמכתאות והחלטות ראמי בשרת לפני אישור. */
+export const saveLogisticsAuditFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { noteId: string; evidence: Record<string, string>; decisions: Record<string, LogisticsAuditDecision> }) => {
+    const noteId = String(d?.noteId || "").trim();
+    if (!noteId || !d.evidence || typeof d.evidence !== "object" || Array.isArray(d.evidence) ||
+        !d.decisions || typeof d.decisions !== "object" || Array.isArray(d.decisions)) {
+      throw new Error("חסרים פרטי שמירת בקרת לוגיסטיקה");
+    }
+    return { noteId, evidence: d.evidence, decisions: d.decisions };
+  })
+  .handler(async ({ data }) => {
+    const result = await gasPost({
+      action: "saveLogisticsAuditEvidence",
+      noteId: data.noteId,
+      evidence: data.evidence,
+      decisions: data.decisions,
+    });
+    return { success: result.success === true, savedAt: String(result.savedAt || ""), count: Number(result.count || 0) };
+  });
+
 export const approvalFn = createServerFn({ method: "POST" })
   .inputValidator((d: { 
     noteId: string; 
