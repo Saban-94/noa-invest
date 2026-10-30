@@ -180,7 +180,7 @@ export const listNotesFn = createServerFn({ method: "POST" }).handler(async () =
 export const getManifestFn = createServerFn({ method: "POST" })
   .inputValidator((d: { orderId: string }) => {
     const orderId = String(d?.orderId || "").trim();
-    if (!/^\\d{4,20}$/.test(orderId)) throw new Error("מספר הזמנת קומקס לא תקין");
+    if (!/^\d{4,20}$/.test(orderId)) throw new Error("מספר הזמנת קומקס לא תקין");
     return { orderId };
   })
   .handler(async ({ data }) => {
@@ -198,6 +198,10 @@ export const getManifestFn = createServerFn({ method: "POST" })
       }),
       source: String(result.source || ""),
       orderId: String(result.orderId || data.orderId),
+      customerNo: String(result.customerNo || ""),
+      customer: String(result.customer || ""),
+      address: String(result.address || ""),
+      date: String(result.date || ""),
     };
   });
 

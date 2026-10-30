@@ -10,7 +10,7 @@
  * 5. לחץ Deploy והעתק את הכתובת שמסתיימת ב-/exec.
  */
 
-const API_VERSION = "2026-10-30-v10-customer-documents";
+const API_VERSION = "2026-10-30-v11-logistics-command-center";
 const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
 const TAB_GALYA = "ארכיון_תעודות_גליה";
 
@@ -230,7 +230,20 @@ function handleGetComaxManifest_(params) {
       if (m) items.push({ sku: m[1], name: m[2].trim(), unit: m[3], qty: Number(m[4].replace(",", ".")), unitWeightKg: 0 });
     });
   }
-  return jsonResponse({ success: true, orderId: orderId, source: "הזמנות", items: items });
+  const customerNoCol = idx(["מס' לקוח", "מס׳ לקוח", "מספר לקוח", "customerNo"]);
+  const customerCol = idx(["שם לקוח", "לקוח", "customer", "customerName"]);
+  const addressCol = idx(["כתובת אספקה", "כתובת", "address", "deliveryAddress"]);
+  const dateCol = idx(["תאריך אספקה", "תאריך", "date", "deliveryDate"]);
+  return jsonResponse({
+    success: true,
+    orderId: orderId,
+    source: "הזמנות",
+    customerNo: customerNoCol >= 0 ? String(row[customerNoCol] || "").trim() : "",
+    customer: customerCol >= 0 ? String(row[customerCol] || "").trim() : "",
+    address: addressCol >= 0 ? String(row[addressCol] || "").trim() : "",
+    date: dateCol >= 0 ? String(row[dateCol] || "").trim() : "",
+    items: items
+  });
 }
 
 function handleUpdateOrderStatus_(body) {
@@ -508,8 +521,19 @@ function handleSubmitApproval(body) {
     ? body.auditEvidence
     : null;
   if (!auditEvidence || Object.keys(auditEvidence).length === 0 ||
-      Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
-    return jsonResponse({ success: false, error: "האישור נחסם: חסרות אסמכתאות בדיקת לוגיסטיקה" });
+      Object.values(auditEvidence).some(value => {
+        const text = String(value || "").trim();
+        const hasRamiDecision = /החלטת ראמי:\s*(תוקן ואומת|מאשר חריגה)/.test(text);
+        const acceptedExceptionHasReason = !/החלטת ראמי:\s*מאשר חריגה/.test(text) ||
+          /הסבר ראמי:\s*\S{3,}/.test(text);
+        return text.length < 12 ||
+          /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text) ||
+          !hasRamiDecision || !acceptedExceptionHasReason;
+      })) {
+    return jsonResponse({
+      success: false,
+      error: "האישור נחסם: לכל ממצא נדרשות אסמכתה והחלטת ראמי מפורשת. אישור חריגה מחייב הסבר."
+    });
   }
 
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
@@ -1148,15 +1172,37 @@ function handleWorkroomRamiReply_(body) {
     const { headers, docIdx } = workroomColumns_(sheet);
     const rowNum = workroomUniqueRowOrError_(sheet, key, headers, docIdx);
     const state = workroomGetState_(sheet, rowNum, headers);
+    const handoffToHarel = body.handoffToHarel === true;
+    if (handoffToHarel) {
+      const officialSheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName(TAB_GALYA);
+      if (!officialSheet) throw new Error("לא נמצא גיליון התעודות לאימות אישור ראמי");
+      const officialHeaders = officialSheet.getRange(1, 1, 1, Math.max(1, officialSheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+      const officialDocIdx = headerIndex_(officialHeaders, ["מס' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח", "מספר ת.מ", "מספר תעודה", "מס׳ תעודה", "docNumber", "noteId", "id"]);
+      if (officialDocIdx < 0) throw new Error("לא נמצאה עמודת מספר תעודה לאימות אישור ראמי");
+      const officialRowNum = workroomUniqueRowOrError_(officialSheet, key, officialHeaders, officialDocIdx);
+      const officialRamiIdx = headerIndex_(officialHeaders, ["אישור ראמי"]);
+      const officialRamiValue = officialRamiIdx >= 0 ? String(officialSheet.getRange(officialRowNum, officialRamiIdx + 1).getValue() || "").trim() : "";
+      if (!officialRamiValue) throw new Error("העברה להראל חסומה: לא נמצא אישור ראמי רשמי");
+      const savedEvidence = readLogisticsAuditEvidence_(key);
+      const evidenceValues = Object.values(savedEvidence);
+      if (!evidenceValues.length || evidenceValues.some(value => {
+        const text = String(value || "").trim();
+        return !/החלטת ראמי:\s*(תוקן ואומת|מאשר חריגה)/.test(text) ||
+          (/החלטת ראמי:\s*מאשר חריגה/.test(text) && !/הסבר ראמי:\s*\S{3,}/.test(text));
+      })) {
+        throw new Error("העברה להראל חסומה: חסרות אסמכתאות או החלטות מפורשות של ראמי");
+      }
+    }
     state.thread.push(workroomMessage_("rami", reply, "replied", [], String(body.replyToId || "")));
-    workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: state.task, status: "pending_harel" });
+    const nextStatus = handoffToHarel ? "pending_harel" : state.status;
+    workroomWriteState_(sheet, rowNum, headers, { thread: state.thread, task: state.task, status: nextStatus });
     const legacyIdx = ensureHeader_(sheet, headers, ["הסבר ומענה מראמי", "מענה ראמי", "ramiReply"], "הסבר ומענה מראמי");
     const prev = String(sheet.getRange(rowNum, legacyIdx + 1).getValue() || "").trim();
     const stamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
     sheet.getRange(rowNum, legacyIdx + 1).setValue(prev ? prev + "\n[" + stamp + "] ראמי: " + reply : "[" + stamp + "] ראמי: " + reply);
     SpreadsheetApp.flush();
   invalidateWorkroomSheetCache_();
-    return jsonResponse({ success: true, inquiryId: key, status: "pending_harel" });
+    return jsonResponse({ success: true, inquiryId: key, status: nextStatus });
   } catch (err) {
     return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
   } finally {
@@ -1388,10 +1434,33 @@ function handleSubmitRamiReply(body) {
   const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
   const entry = "[" + nowStr + "] ראמי: " + reply;
   sheet.getRange(rowNum, replyIdx + 1).setValue(prev ? prev + "\n" + entry : entry);
-  sheet.getRange(rowNum, statusIdx + 1).setValue("ממתין לאישור הראל");
+
+  let nextStatus = String(sheet.getRange(rowNum, statusIdx + 1).getValue() || "ממתין למענה ראמי").trim();
+  if (body.handoffToHarel === true) {
+    const officialSheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName(TAB_GALYA);
+    if (!officialSheet) return jsonResponse({ success: false, error: "לא נמצא גיליון התעודות לאימות העברה להראל" });
+    const officialHeaders = officialSheet.getRange(1, 1, 1, Math.max(1, officialSheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+    const officialDocIdx = headerIndex_(officialHeaders, ["מס' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח", "מספר ת.מ", "מספר תעודה", "מס׳ תעודה", "docNumber", "noteId", "id"]);
+    if (officialDocIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה" });
+    const officialRowNum = workroomUniqueRowOrError_(officialSheet, noteId, officialHeaders, officialDocIdx);
+    const officialRamiIdx = headerIndex_(officialHeaders, ["אישור ראמי"]);
+    const officialRamiValue = officialRamiIdx >= 0 ? String(officialSheet.getRange(officialRowNum, officialRamiIdx + 1).getValue() || "").trim() : "";
+    const savedEvidence = readLogisticsAuditEvidence_(noteId);
+    const evidenceValues = Object.values(savedEvidence);
+    if (!officialRamiValue || !evidenceValues.length || evidenceValues.some(value => {
+      const text = String(value || "").trim();
+      return !/החלטת ראמי:\s*(תוקן ואומת|מאשר חריגה)/.test(text) ||
+        (/החלטת ראמי:\s*מאשר חריגה/.test(text) && !/הסבר ראמי:\s*\S{3,}/.test(text));
+    })) {
+      return jsonResponse({ success: false, error: "העברה להראל חסומה: נדרשים אישור ראמי ואסמכתאות עם החלטה לכל ממצא" });
+    }
+    nextStatus = "ממתין לאישור הראל";
+  }
+
+  sheet.getRange(rowNum, statusIdx + 1).setValue(nextStatus);
   SpreadsheetApp.flush();
   invalidateWorkroomSheetCache_();
-  return jsonResponse({ success: true, noteId: noteId, status: "ממתין לאישור הראל" });
+  return jsonResponse({ success: true, noteId: noteId, status: nextStatus });
 }
 
 function handleSaveInquiryAnnotations(body) {

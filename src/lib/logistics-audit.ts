@@ -21,19 +21,86 @@ function extractSku(name: string, explicitSku?: string): string | undefined {
   return normalize(name).match(/(?:מק["״']?ט\s*)?(\d{5,8})/)?.[1];
 }
 
-export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
+function normalizeUnit(value: unknown): string {
+  const unit = normalize(value).toLowerCase().replace(/[.'״׳]/g, "");
+  if (/^(יח|יחידה|יחידות)$/.test(unit)) return "יח";
+  if (/^(שק|שקים)$/.test(unit)) return "שק";
+  if (/^(משטח|משטחים)$/.test(unit)) return "משטח";
+  if (/^(בלה|בלות)$/.test(unit)) return "בלה";
+  if (/^(מטר|מטרים)$/.test(unit)) return "מטר";
+  return unit;
+}
+
+export function buildLogisticsFindings(
+  note: DeliveryNote,
+  comaxManifest?: {
+    items?: Array<{ sku: string; name?: string; qty: number; unit?: string }>;
+    customerNo?: string;
+    customer?: string;
+    address?: string;
+    date?: string;
+  } | null,
+): LogisticsFinding[] {
   const findings: LogisticsFinding[] = [];
   const items = Array.isArray(note.items) ? note.items : [];
+  const comaxItems = Array.isArray(comaxManifest?.items) ? comaxManifest.items : [];
 
-  if (note.live) {
+  if (note.live && (!comaxItems.length || !note.comaxOrder)) {
     findings.push({
       id: "source:live",
       category: "source",
       title: "הצלבת מקור נדרשת",
-      detail: "הנתונים נטענו מהגיליון החי אך עדיין לא הוצלבו מול הזמנת המקור/קומקס ומסמך ה-PDF.",
-      sourceRequired: "מספר הזמנה ומסמך PDF מקוריים, כולל עמוד ושורת ראיה",
+      detail: "לא התקבלה הזמנת קומקס מאומתת להשוואה. נתוני התעודה לבדם אינם מוכיחים התאמה.",
+      sourceRequired: "הזמנת קומקס מלאה ומסמך PDF מקורי",
       severity: "blocker",
     });
+  }
+
+  if (note.live) {
+    const deliveryAddress = normalize(note.siteAddress);
+    const orderAddress = normalize(comaxManifest?.address);
+    const compactAddress = (value: string) => value.toLowerCase().replace(/[\s,.'"/-]/g, "");
+    const addressMatches = Boolean(deliveryAddress && orderAddress &&
+      compactAddress(deliveryAddress) === compactAddress(orderAddress));
+    findings.push({
+      id: "address:verification",
+      category: "source",
+      title: !deliveryAddress
+        ? "כתובת אספקה חסרה"
+        : !orderAddress
+          ? "כתובת הזמנה חסרה להשוואה"
+          : addressMatches
+            ? "כתובת אספקה תואמת להזמנת קומקס"
+            : "פער כתובת בין התעודה להזמנה",
+      detail: !deliveryAddress
+        ? "לא זוהתה כתובת אספקה בתעודה. אין להעביר להראל עד להזנת כתובת מדויקת ואימותה."
+        : !orderAddress
+          ? "לא נמצאה כתובת בהזמנת קומקס. יש לבדוק מול כרטיס הלקוח; אם זו כתובת חדשה, לתעד ולקבל אישור מפורש מראמי."
+          : addressMatches
+            ? "הכתובת בתעודה תואמת לכתובת בהזמנת קומקס. יש להשלים אסמכתה ולאמת מול כרטיס הלקוח."
+            : "הכתובת בתעודה שונה מהכתובת בהזמנת קומקס. יש לברר אם מדובר בכתובת חדשה ומאושרת או בטעות הקלדה.",
+      expected: orderAddress || "כתובת בהזמנת קומקס לא זמינה",
+      observed: deliveryAddress || "לא הוזנה כתובת",
+      sourceRequired: "כרטיס לקוח + כתובת בהזמנת קומקס; בכתובת חדשה — אישור ראמי ותיעוד הכתובת המלאה",
+      severity: "blocker",
+    });
+
+    const noteCustomerNo = normalize(note.customerNo);
+    const orderCustomerNo = normalize(comaxManifest?.customerNo);
+    if (!noteCustomerNo || !orderCustomerNo || noteCustomerNo !== orderCustomerNo) {
+      findings.push({
+        id: "source:customer-number",
+        category: "source",
+        title: !noteCustomerNo || !orderCustomerNo ? "מספר לקוח חסר בהצלבה" : "אי התאמה במספר לקוח",
+        detail: !noteCustomerNo || !orderCustomerNo
+          ? "מספר הלקוח חסר בתעודה או בהזמנת קומקס."
+          : `מספר הלקוח בתעודה (${noteCustomerNo}) שונה ממספר הלקוח בהזמנה (${orderCustomerNo}).`,
+        expected: orderCustomerNo || "לא זוהה",
+        observed: noteCustomerNo || "לא זוהה",
+        sourceRequired: "מספר לקוח בכרטיס הלקוח ובהזמנת קומקס",
+        severity: "blocker",
+      });
+    }
   }
 
   if (!note.comaxOrder) {
@@ -62,29 +129,24 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
     const sku = extractSku(item.name, item.sku);
     const title = sku ? `מק״ט ${sku}` : item.name || `שורה ${index + 1}`;
     const safeQty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : null;
-    const safeOrdered = Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null;
+    const comaxMatches = sku ? comaxItems.filter((source) => normalize(source.sku) === sku) : [];
+    const comaxMatch = comaxMatches.length
+      ? { ...comaxMatches[0], qty: comaxMatches.reduce((sum, source) => sum + Number(source.qty || 0), 0) }
+      : undefined;
+    const safeOrdered = note.live
+      ? (comaxMatch && Number.isFinite(Number(comaxMatch.qty)) ? Number(comaxMatch.qty) : null)
+      : (Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null);
     const isTransport = /הובל|מנוף|משלוח|הובלה|הובלות/i.test(normalize(item.name));
     const id = `item:${sku || normalize(item.name).toLowerCase().replace(/\s+/g, "-") || index}`;
 
-    if (note.live) {
+    if (note.live && !comaxItems.length) {
       findings.push({
         id: `${id}:live-order-crosscheck`,
         category: "quantity",
-        title: `${title} — כמות הזמנה לא הוצלבה`,
-        detail: "בנתון החי הכמות הצפויה אינה מגיעה מהזמנה נפרדת. אין להסיק שהכמות תואמת רק משום שהשדות המקומיים זהים.",
-        expected: "כמות מהזמנת המקור",
+        title: `${title} — לא ניתן להשוות להזמנה`,
+        detail: "מניפסט קומקס לא נטען; הכמות בתעודה אינה יכולה לשמש ככמות ההזמנה.",
         observed: String(item.qty ?? "לא ידוע"),
-        sourceRequired: "הזמנת קומקס ותעודת PDF, אותו מק״ט ויחידת מידה",
-        severity: "blocker",
-      });
-      findings.push({
-        id: `${id}:catalog-crosscheck`,
-        category: "source",
-        title: `${title} — אימות מק״ט מול קטלוג`,
-        detail: "אין כרגע חיבור לקטלוג מק״טים מוסמך. התאמה מספרית/טקסטואלית בלבד אינה מאשרת שהמק״ט קיים, פעיל ומתאים לפריט.",
-        expected: sku || "מק״ט מקור חסר",
-        observed: item.name,
-        sourceRequired: "קטלוג מק״טים פעיל של קומקס ותיאור פריט תואם",
+        sourceRequired: "הזמנת קומקס מלאה עם מק״ט, כמות ויחידת מידה",
         severity: "blocker",
       });
     }
@@ -98,6 +160,37 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
         expected: "מק״ט מדויק בהזמנה",
         observed: item.name,
         sourceRequired: "שורת הזמנה ושורת תעודה עם מק״ט מפורש",
+        severity: "blocker",
+      });
+    }
+
+    if (note.live && comaxItems.length > 0 && sku && !comaxMatch) {
+      findings.push({
+        id: `${id}:not-in-order`,
+        category: "quantity",
+        title: `${title} — פריט לא מופיע בהזמנה`,
+        detail: "המק״ט מופיע בתעודת המשלוח אך לא נמצא במניפסט הזמנת קומקס.",
+        observed: String(item.qty ?? "לא ידוע"),
+        sourceRequired: "בדיקת שורת הפריט בתעודה ובהזמנת קומקס",
+        severity: "blocker",
+      });
+    }
+
+    if (
+      note.live &&
+      comaxMatch &&
+      normalize(item.unit) &&
+      normalize(comaxMatch.unit) &&
+      normalizeUnit(item.unit) !== normalizeUnit(comaxMatch.unit)
+    ) {
+      findings.push({
+        id: `${id}:unit-mismatch`,
+        category: "quantity",
+        title: `${title} — יחידת מידה שונה`,
+        detail: `יחידת המידה בתעודה: ${item.unit}; יחידת המידה בהזמנת קומקס: ${comaxMatch.unit}.`,
+        expected: String(comaxMatch.unit),
+        observed: String(item.unit),
+        sourceRequired: "שורת פריט בהזמנת קומקס ובתעודת המשלוח, כולל יחידת מידה",
         severity: "blocker",
       });
     }
@@ -152,6 +245,24 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
     }
   });
 
+  if (note.live && comaxItems.length > 0) {
+    const deliverySkus = new Set(items.map((item) => extractSku(item.name, item.sku)).filter(Boolean));
+    comaxItems.forEach((source) => {
+      const sourceSku = normalize(source.sku);
+      if (!sourceSku || deliverySkus.has(sourceSku)) return;
+      findings.push({
+        id: `order-item:${sourceSku}:missing-from-note`,
+        category: "quantity",
+        title: `מק״ט ${sourceSku} — חסר בתעודת המשלוח`,
+        detail: "הפריט מופיע בהזמנת קומקס אך לא זוהה בתעודת המשלוח.",
+        expected: String(source.qty),
+        observed: "לא מופיע בתעודה",
+        sourceRequired: "הזמנת קומקס מול כל שורות תעודת המשלוח",
+        severity: "blocker",
+      });
+    });
+  }
+
   // פיקדון הוא בדיקה אחת לכל מק״ט: נתונים חסרים, פער והצלבה מוצגים יחד.
   const deposits = [
     { sku: "60002", label: "בלות פיקדון", data: note.deposits?.bales60002 },
@@ -198,10 +309,23 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
   return findings;
 }
 
+export type RamiFindingDecision = {
+  status: "pending" | "resolved" | "accepted_exception" | "needs_fix";
+  note?: string;
+};
+
 export function isLogisticsAuditComplete(
   findings: LogisticsFinding[],
   evidenceByFinding: Record<string, string>,
+  decisionsByFinding: Record<string, RamiFindingDecision> = {},
 ): boolean {
-  return findings.length > 0 &&
-    findings.every((finding) => normalize(evidenceByFinding[finding.id]).length >= 12);
+  return findings.length > 0 && findings.every((finding) => {
+    const evidence = normalize(evidenceByFinding[finding.id]);
+    const hasUsableEvidence = evidence.length >= 12 &&
+      !/(\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן)/i.test(evidence);
+    const decision = decisionsByFinding[finding.id];
+    const decisionValid = decision?.status === "resolved" ||
+      (decision?.status === "accepted_exception" && normalize(decision.note).length >= 3);
+    return hasUsableEvidence && decisionValid;
+  });
 }
