@@ -44,6 +44,7 @@ function CustomerDetailView() {
   const customer = q.data?.customer;
   const notes = (q.data?.notes || []) as Record<string, unknown>[];
   const orders = (q.data?.orders || []) as Record<string, unknown>[];
+  const documents = (q.data?.documents || []) as Record<string, unknown>[];
 
   if (q.isLoading) {
     return (
@@ -160,6 +161,57 @@ function CustomerDetailView() {
               mono
             />
           </div>
+        </section>
+
+        {/* מסמכים שהועלו לתיק הלקוח */}
+        <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-6 shadow-card">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h2 className="font-display text-xl font-bold">
+                מסמכים בתיק הלקוח ({documents.length})
+              </h2>
+            </div>
+            <span className="text-[11px] text-muted-foreground">מתעדכן לאחר העלאה</span>
+          </div>
+          {documents.length === 0 ? (
+            <p className="rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
+              עדיין לא הועלו מסמכים דרך נועה
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {documents.map((doc, index) => (
+                <div
+                  key={String(doc.fileId || (String(doc.fileName || "מסמך") + "-" + index))}
+                  className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-bold">{String(doc.originalFileName || doc.fileName || "מסמך")}</span>
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                        {String(doc.docTypeLabel || "מסמך")}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {doc.uploadedAt ? new Date(String(doc.uploadedAt)).toLocaleString("he-IL") : ""}
+                      {doc.status ? " · " + String(doc.status) : ""}
+                    </p>
+                  </div>
+                  {doc.driveUrl ? (
+                    <a
+                      href={String(doc.driveUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      פתיחת מסמך
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* תעודות משלוח חיות */}
