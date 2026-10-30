@@ -750,7 +750,7 @@ function Viewer() {
     }
     void manifestQuery.refetch().then((r) => {
       if (r.isError) toast.error("סנכרון קומקס נכשל", { description: r.error instanceof Error ? r.error.message : undefined });
-      else toast.success(`נטענו ${r.data?.length ?? 0} שורות מקומקס`);
+      else toast.success(`נטענו ${r.data?.items?.length ?? 0} שורות מקומקס`);
     });
   };
 
