@@ -89,7 +89,7 @@ function evidenceTemplates(finding: Finding): string[] {
 const MIN_EVIDENCE = 12;
 const isDocumented = (text: string | undefined) => {
   const value = (text || "").trim();
-  return value.length >= MIN_EVIDENCE && !/(\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן)/i.test(value);
+  return value.length >= MIN_EVIDENCE && !/(\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן)/i.test(value);
 };
 
 const BTN =
