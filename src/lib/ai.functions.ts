@@ -9,7 +9,7 @@ type SourceResult = { available: boolean; count: number; records?: unknown[]; er
 
 const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbzHhnovZE5I1K00P9hjRsMs0ZjE6E0Am7keslYoqkDz7pB1L3W1IpphWo1al2ghVhLJgg/exec";
+  "https://script.google.com/macros/s/AKfycbxol0amPbjcB1fU6xd-1p1ukfrmmAgvLfZL7d3FlhCsxIYfa03j8cAOv9TpgeE1_euq2Q/exec";
 
 function gasConfig() {
   const token = process.env["API_TOKEN"];
