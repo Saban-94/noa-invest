@@ -21,7 +21,7 @@ function extractSku(name: string, explicitSku?: string): string | undefined {
   return normalize(name).match(/(?:מק["״']?ט\s*)?(\d{5,8})/)?.[1];
 }
 
-export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
+export function buildLogisticsFindings(\n  note: DeliveryNote,\n  comaxItems: Array<{ sku: string; name?: string; qty: number; unit?: string }> = [],\n): LogisticsFinding[] {
   const findings: LogisticsFinding[] = [];
   const items = Array.isArray(note.items) ? note.items : [];
 
@@ -62,29 +62,18 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
     const sku = extractSku(item.name, item.sku);
     const title = sku ? `מק״ט ${sku}` : item.name || `שורה ${index + 1}`;
     const safeQty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : null;
-    const safeOrdered = Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null;
+    const comaxMatch = sku ? comaxItems.find((source) => normalize(source.sku) === sku) : undefined;\n    const safeOrdered = note.live\n      ? (comaxMatch && Number.isFinite(Number(comaxMatch.qty)) ? Number(comaxMatch.qty) : null)\n      : (Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null);
     const isTransport = /הובל|מנוף|משלוח|הובלה|הובלות/i.test(normalize(item.name));
     const id = `item:${sku || normalize(item.name).toLowerCase().replace(/\s+/g, "-") || index}`;
 
-    if (note.live) {
+    if (note.live && !comaxItems.length) {
       findings.push({
         id: `${id}:live-order-crosscheck`,
         category: "quantity",
-        title: `${title} — כמות הזמנה לא הוצלבה`,
-        detail: "בנתון החי הכמות הצפויה אינה מגיעה מהזמנה נפרדת. אין להסיק שהכמות תואמת רק משום שהשדות המקומיים זהים.",
-        expected: "כמות מהזמנת המקור",
+        title: `${title} — לא ניתן להשוות להזמנה`,
+        detail: "מניפסט קומקס לא נטען; הכמות בתעודה אינה יכולה לשמש ככמות ההזמנה.",
         observed: String(item.qty ?? "לא ידוע"),
-        sourceRequired: "הזמנת קומקס ותעודת PDF, אותו מק״ט ויחידת מידה",
-        severity: "blocker",
-      });
-      findings.push({
-        id: `${id}:catalog-crosscheck`,
-        category: "source",
-        title: `${title} — אימות מק״ט מול קטלוג`,
-        detail: "אין כרגע חיבור לקטלוג מק״טים מוסמך. התאמה מספרית/טקסטואלית בלבד אינה מאשרת שהמק״ט קיים, פעיל ומתאים לפריט.",
-        expected: sku || "מק״ט מקור חסר",
-        observed: item.name,
-        sourceRequired: "קטלוג מק״טים פעיל של קומקס ותיאור פריט תואם",
+        sourceRequired: "הזמנת קומקס מלאה עם מק״ט, כמות ויחידת מידה",
         severity: "blocker",
       });
     }
@@ -102,7 +91,7 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
       });
     }
 
-    if (safeQty === null || safeOrdered === null) {
+    if (note.live && comaxItems.length > 0 && sku && !comaxMatch) {\n      findings.push({\n        id: `${id}:not-in-order`,\n        category: "quantity",\n        title: `${title} — פריט לא מופיע בהזמנה`,\n        detail: "המק״ט מופיע בתעודת המשלוח אך לא נמצא במניפסט הזמנת קומקס.",\n        observed: String(item.qty ?? "לא ידוע"),\n        sourceRequired: "בדיקת שורת הפריט בתעודה ובהזמנת קומקס",\n        severity: "blocker",\n      });\n    }\n\n    if (safeQty === null || safeOrdered === null) {
       findings.push({
         id: `${id}:quantity-missing`,
         category: "quantity",
@@ -151,6 +140,24 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
       });
     }
   });
+
+  if (note.live && comaxItems.length > 0) {
+    const deliverySkus = new Set(items.map((item) => extractSku(item.name, item.sku)).filter(Boolean));
+    comaxItems.forEach((source) => {
+      const sourceSku = normalize(source.sku);
+      if (!sourceSku || deliverySkus.has(sourceSku)) return;
+      findings.push({
+        id: `order-item:${sourceSku}:missing-from-note`,
+        category: "quantity",
+        title: `מק״ט ${sourceSku} — חסר בתעודת המשלוח`,
+        detail: "הפריט מופיע בהזמנת קומקס אך לא זוהה בתעודת המשלוח.",
+        expected: String(source.qty),
+        observed: "לא מופיע בתעודה",
+        sourceRequired: "הזמנת קומקס מול כל שורות תעודת המשלוח",
+        severity: "blocker",
+      });
+    });
+  }
 
   // פיקדון הוא בדיקה אחת לכל מק״ט: נתונים חסרים, פער והצלבה מוצגים יחד.
   const deposits = [
