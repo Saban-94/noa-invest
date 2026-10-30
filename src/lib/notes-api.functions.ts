@@ -198,6 +198,10 @@ export const getManifestFn = createServerFn({ method: "POST" })
       }),
       source: String(result.source || ""),
       orderId: String(result.orderId || data.orderId),
+      customerNo: String(result.customerNo || ""),
+      customer: String(result.customer || ""),
+      address: String(result.address || ""),
+      date: String(result.date || ""),
     };
   });
 
