@@ -45,7 +45,7 @@ import { Button } from "@/components/ui/button";
 import { InquiryThread } from "@/components/InquiryThread";
 import { listWorkroomInquiriesFn, openOrCreateWorkroomTaskFn, ramiReplyFn } from "@/lib/inquiry-workflow.functions";
 import type { WorkroomInquiry } from "@/lib/inquiry-workflow";
-import { buildLogisticsFindings, isLogisticsAuditComplete } from "@/lib/logistics-audit";
+import { buildLogisticsFindings, isLogisticsAuditComplete, type RamiFindingDecision } from "@/lib/logistics-audit";
 
 export const Route = createFileRoute("/notes/$id")({
   head: ({ params }) => ({
@@ -294,14 +294,17 @@ function ApprovalStepper({ steps }: { steps: Step[] }) {
 interface AuditRowProps {
   finding: Finding;
   evidence: string;
+  decision: RamiFindingDecision;
   onChange: (id: string, value: string) => void;
+  onDecisionChange: (id: string, decision: RamiFindingDecision) => void;
   open: boolean;
   onToggle: (id: string) => void;
 }
 
-const AuditRow = memo(function AuditRow({ finding, evidence, onChange, open, onToggle }: AuditRowProps) {
+const AuditRow = memo(function AuditRow({ finding, evidence, decision, onChange, onDecisionChange, open, onToggle }: AuditRowProps) {
   const reduce = useReducedMotion();
   const documented = isDocumented(evidence);
+  const decisionDone = decision.status === "resolved" || (decision.status === "accepted_exception" && (decision.note || "").trim().length >= 3);
   const len = evidence.trim().length;
   const panelId = `audit-${finding.id}`;
 
@@ -336,7 +339,7 @@ const AuditRow = memo(function AuditRow({ finding, evidence, onChange, open, onT
             <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-bold">{finding.category}</span>
           </span>
           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-            {documented ? "אסמכתא תועדה" : "ממתין לאסמכתא"}
+            {documented ? "אסמכתא תועדה" : "ממתין לאסמכתא"} · {decisionDone ? "החלטת ראמי תועדה" : "ממתין להחלטת ראמי"}
           </span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300 ${open ? "rotate-180" : ""}`} aria-hidden="true" />
@@ -362,6 +365,32 @@ const AuditRow = memo(function AuditRow({ finding, evidence, onChange, open, onT
                   <strong>צפוי:</strong> {finding.expected || "לא הוגדר"} · <strong>נצפה:</strong> {finding.observed || "לא זוהה"}
                 </p>
               )}
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold">החלטת ראמי על הממצא</span>
+                <select
+                  value={decision.status}
+                  onChange={(e) => onDecisionChange(finding.id, { ...decision, status: e.target.value as RamiFindingDecision["status"] })}
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="pending">ממתין להחלטה</option>
+                  <option value="resolved">תוקן / נבדק ונמצא תואם</option>
+                  <option value="accepted_exception">ראמי מאשר את החריגה במודע</option>
+                  <option value="needs_fix">לא מאשר — נדרש תיקון</option>
+                </select>
+                {decision.status === "accepted_exception" && (
+                  <span className="block text-[10px] font-semibold text-amber-700 dark:text-amber-300">חובה להסביר מדוע החריגה מאושרת.</span>
+                )}
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold">הערת החלטה של ראמי {decision.status === "accepted_exception" ? "(חובה)" : "(אופציונלי)"}</span>
+                <textarea
+                  value={decision.note || ""}
+                  onChange={(e) => onDecisionChange(finding.id, { ...decision, note: e.target.value })}
+                  rows={2}
+                  placeholder={decision.status === "accepted_exception" ? "הסבר מפורש לאישור החריגה..." : "מה תוקן / מה נבדק / הערה לראמי..."}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs leading-5 outline-none transition-shadow duration-200 focus:ring-2 focus:ring-primary/30"
+                />
+              </label>
               <label className="block space-y-1.5">
                 <span className="text-xs font-bold">תשובה מוכנה מראש</span>
                 <select
@@ -465,6 +494,7 @@ function Viewer() {
   const [isSendingToHarel, setIsSendingToHarel] = useState(false);
   const [isOpeningTask, setIsOpeningTask] = useState(false);
   const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
+  const [auditDecisions, setAuditDecisions] = useState<Record<string, RamiFindingDecision>>({});
   const [auditLoaded, setAuditLoaded] = useState(false);
   const [showAllAuditFindings, setShowAllAuditFindings] = useState(false);
   const [onlyMissing, setOnlyMissing] = useState(false);
@@ -475,6 +505,8 @@ function Viewer() {
     try {
       const saved = localStorage.getItem(`noa-logistics-audit:${id}`);
       setAuditEvidence(saved ? (JSON.parse(saved) as Record<string, string>) : {});
+      const savedDecisions = localStorage.getItem(`noa-logistics-decisions:${id}`);
+      setAuditDecisions(savedDecisions ? (JSON.parse(savedDecisions) as Record<string, RamiFindingDecision>) : {});
     } catch {
       setAuditEvidence({});
     } finally {
@@ -486,10 +518,11 @@ function Viewer() {
     if (!auditLoaded) return;
     try {
       localStorage.setItem(`noa-logistics-audit:${id}`, JSON.stringify(auditEvidence));
+      localStorage.setItem(`noa-logistics-decisions:${id}`, JSON.stringify(auditDecisions));
     } catch {
       // Keep the gate active in memory if browser persistence is unavailable.
     }
-  }, [id, auditEvidence, auditLoaded]);
+  }, [id, auditEvidence, auditDecisions, auditLoaded]);
 
   const workroomQuery = useQuery({
     queryKey: ["workroom", "note-thread", id],
@@ -508,8 +541,10 @@ function Viewer() {
   useEffect(() => {
     if (!returnedToRami) return;
     setAuditEvidence({});
+    setAuditDecisions({});
     try {
       localStorage.removeItem(`noa-logistics-audit:${id}`);
+      localStorage.removeItem(`noa-logistics-decisions:${id}`);
     } catch {
       // The server-side return status remains authoritative if storage is unavailable.
     }
@@ -549,7 +584,7 @@ function Viewer() {
   const noteHasItems = (n?.items?.length ?? 0) > 0;
   const manifestQuery = useQuery({
     queryKey: ["comax-manifest", n?.comaxOrder],
-    enabled: !!n && !noteHasItems && !!n.comaxOrder,
+    enabled: !!n && !!n.comaxOrder,
     staleTime: 60_000,
     retry: 1,
     queryFn: () => fetchManifest(String(n!.comaxOrder)),
@@ -591,8 +626,13 @@ function Viewer() {
     toast.success("המענה נשמר בשרשור הבירור");
   };
 
-  const setEvidence = (findingId: string, value: string) =>
+  const setEvidence = (findingId: string, value: string) => {
     setAuditEvidence((previous) => ({ ...previous, [findingId]: value }));
+    setAuditDecisions((previous) => ({ ...previous, [findingId]: { status: "pending", note: "" } }));
+  };
+
+  const setDecision = (findingId: string, decision: RamiFindingDecision) =>
+    setAuditDecisions((previous) => ({ ...previous, [findingId]: decision }));
 
   const toggleRow = (findingId: string) =>
     setOpenRows((prev) => {
@@ -649,13 +689,20 @@ function Viewer() {
   const ap = apState[n.id];
   const ramiApprovalActive = Boolean(ap?.rami) && !returnedToRami;
   const a = auditNote(n);
-  const auditFindings = buildLogisticsFindings(n);
-  const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence);
-  const auditEvidenceCount = auditFindings.filter((finding) => isDocumented(auditEvidence[finding.id])).length;
-  const auditPct = auditFindings.length ? (auditEvidenceCount / auditFindings.length) * 100 : 0;
 
-  /* ── נתוני כרטיסי המדדים: מהתעודה אם קיימים, אחרת ממניפסט קומקס ── */
+  /* ── נתוני כרטיסי המדדים: תעודה מול הזמנת קומקס ── */
   const manifest = manifestQuery.data ?? [];
+  const auditFindings = buildLogisticsFindings(n, manifest);
+  const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence, auditDecisions);
+  const auditEvidenceCount = auditFindings.filter((finding) => isDocumented(auditEvidence[finding.id])).length;
+  const auditDecisionCount = auditFindings.filter((finding) => {
+    const decision = auditDecisions[finding.id];
+    return decision?.status === "resolved" ||
+      (decision?.status === "accepted_exception" && (decision.note || "").trim().length >= 3);
+  }).length;
+  const auditPct = auditFindings.length
+    ? ((auditEvidenceCount + auditDecisionCount) / (auditFindings.length * 2)) * 100
+    : 0;
   const syncing = manifestQuery.isFetching;
   const lineCount = noteHasItems ? n.items!.length : manifest.length;
   const itemsCount = noteHasItems ? noteItemsCount(n) : manifest.reduce((sum, r) => sum + r.qty, 0);
@@ -696,12 +743,12 @@ function Viewer() {
   };
 
   const visibleFindings = (() => {
-    const base = onlyMissing ? auditFindings.filter((f) => !isDocumented(auditEvidence[f.id])) : auditFindings;
+    const base = onlyMissing ? auditFindings.filter((f) => !isDocumented(auditEvidence[f.id]) || !isLogisticsAuditComplete([f], { [f.id]: auditEvidence[f.id] || "" }, { [f.id]: auditDecisions[f.id] || { status: "pending" } })) : auditFindings;
     return showAllAuditFindings || onlyMissing ? base : base.slice(0, 8);
   })();
 
   const steps: Step[] = [
-    { key: "audit", label: "בקרת נועה AI", hint: `${auditEvidenceCount}/${auditFindings.length} אסמכתאות`, done: auditComplete, icon: Brain },
+    { key: "audit", label: "בקרת נועה AI", hint: `${auditEvidenceCount}/${auditFindings.length} אסמכתאות · ${auditDecisionCount}/${auditFindings.length} החלטות ראמי`, done: auditComplete, icon: Brain },
     { key: "rami", label: "אישור ראמי", hint: ramiApprovalActive ? ap!.rami!.at : "ממתין לבדיקה / תיקון", done: ramiApprovalActive, icon: Stamp },
     { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel && !returnedToRami ? ap.harel.at : ramiApprovalActive || n.noteStage === "pending_harel" ? "ממתין להחלטת הראל" : "ממתין לאישור ראמי", done: Boolean(ap?.harel) && !returnedToRami, icon: Crown },
   ];
@@ -716,7 +763,21 @@ function Viewer() {
     setIsApprovingRami(true);
     let officialApprovalSaved = false;
     try {
-      await approveStrict(n.id, "rami", customNote.trim() || undefined, auditEvidence);
+      const approvalEvidence = Object.fromEntries(auditFindings.map((finding) => {
+        const decision = auditDecisions[finding.id];
+        const decisionLabel = decision?.status === "resolved"
+          ? "תוקן ואומת"
+          : decision?.status === "accepted_exception"
+            ? "מאשר חריגה"
+            : "ללא החלטה";
+        const decisionNote = String(decision?.note || "").trim();
+        return [finding.id, [
+          String(auditEvidence[finding.id] || "").trim(),
+          `החלטת ראמי: ${decisionLabel}`,
+          decisionNote ? `הסבר ראמי: ${decisionNote}` : "",
+        ].filter(Boolean).join("\n")];
+      }));
+      await approveStrict(n.id, "rami", customNote.trim() || undefined, approvalEvidence);
       officialApprovalSaved = true;
       approvals.ramiLocal(n.id, customNote.trim() || undefined);
       void playDispatchChime(0.85);
@@ -766,6 +827,10 @@ function Viewer() {
   };
 
   const handleRetryHarelHandoff = async () => {
+    if (!auditComplete) {
+      toast.error("העברה להראל חסומה: חסרות החלטות ראמי או אסמכתאות");
+      return;
+    }
     setIsSendingToHarel(true);
     try {
       await openOrCreateWorkroomTaskFn({
@@ -1196,7 +1261,7 @@ function Viewer() {
                 auditComplete ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"
               }`}
             >
-              {auditComplete ? "כל הבדיקות תועדו" : `נדרשות אסמכתאות · ${auditEvidenceCount}/${auditFindings.length}`}
+              {auditComplete ? "הבדיקות והחלטות ראמי הושלמו" : `אסמכתאות ${auditEvidenceCount}/${auditFindings.length} · החלטות ${auditDecisionCount}/${auditFindings.length}`}
             </span>
           </div>
 
@@ -1229,7 +1294,9 @@ function Viewer() {
                   key={finding.id}
                   finding={finding}
                   evidence={auditEvidence[finding.id] || ""}
+                  decision={auditDecisions[finding.id] || { status: "pending", note: "" }}
                   onChange={setEvidence}
+                  onDecisionChange={setDecision}
                   open={openRows.has(finding.id)}
                   onToggle={toggleRow}
                 />
@@ -1254,7 +1321,7 @@ function Viewer() {
           )}
 
           <p className="text-xs leading-6 text-muted-foreground">
-            חשוב: תיעוד זה נשמר כרגע בדפדפן המקומי בלבד ואינו הוכחה עצמאית לאימות. אין כאן חילוץ אוטומטי של PDF או הצלבה חיה מול קומקס/צי רכב; יש לצרף אסמכתאות אמיתיות. יש להשלים שמירה ואכיפה בצד השרת לפני שימוש כתהליך ביקורת מחייב.
+            האסמכתאות והחלטות ראמי נשמרות מקומית עד לחתימת ראמי. בעת האישור הן נשלחות לשרת ונרשמות ביומן בקרת הלוגיסטיקה. בחירה ב״מאשר חריגה״ מחייבת הסבר; בחירה ב״לא מאשר — נדרש תיקון״ משאירה את ההעברה להראל חסומה.
           </p>
         </section>
 
