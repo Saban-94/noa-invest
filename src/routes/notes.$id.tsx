@@ -492,7 +492,6 @@ function Viewer() {
         setAuditEvidence(saved ? (JSON.parse(saved) as Record<string, string>) : {});
       } catch {
         setAuditEvidence({});
-    setSavedAuditSignature(null);
       }
       setSavedAuditSignature(null);
     }
@@ -525,6 +524,7 @@ function Viewer() {
   useEffect(() => {
     if (!returnedToRami) return;
     setAuditEvidence({});
+    setSavedAuditSignature(null);
     try {
       localStorage.removeItem(`noa-logistics-audit:${id}`);
     } catch {
