@@ -138,7 +138,7 @@ export const openOrCreateWorkroomTaskFn = createServerFn({ method: "POST" })
   });
 
 export const ramiReplyFn = createServerFn({ method: "POST" })
-  .validator((d: { inquiryId: string; text: string; noteId?: string; replyToId?: string }) => {
+  .validator((d: { inquiryId: string; text: string; noteId?: string; replyToId?: string; handoffToHarel?: boolean }) => {
     if (!d.inquiryId || !String(d.text || "").trim()) {
       throw new Error("חסר מזהה בירור או טקסט מענה");
     }
@@ -150,6 +150,7 @@ export const ramiReplyFn = createServerFn({ method: "POST" })
       noteId: data.noteId,
       text: data.text.trim(),
       replyToId: data.replyToId || "",
+      handoffToHarel: data.handoffToHarel === true,
     });
     invalidateWorkroomListCache();
     return result;
