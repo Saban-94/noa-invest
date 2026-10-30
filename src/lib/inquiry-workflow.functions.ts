@@ -19,7 +19,7 @@ import {
 } from "./inquiry-workflow";
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxol0amPbjcB1fU6xd-1p1ukfrmmAgvLfZL7d3FlhCsxIYfa03j8cAOv9TpgeE1_euq2Q/exec";
+  "https://script.google.com/macros/s/AKfycbxRtYkH1-XUhnKV01wwFqYBJf-9j_3-RBzKNc87eMvvJKOtyH4Tog5AhbTtoKoLarYF7g/exec";
 
 // Per-warm-instance cache avoids repeating a full Apps Script + Sheets scan on
 // concurrent page loads. Mutations invalidate it immediately after GAS confirms.
