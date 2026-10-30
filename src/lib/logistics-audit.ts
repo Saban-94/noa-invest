@@ -23,10 +23,17 @@ function extractSku(name: string, explicitSku?: string): string | undefined {
 
 export function buildLogisticsFindings(
   note: DeliveryNote,
-  comaxItems: Array<{ sku: string; name?: string; qty: number; unit?: string }> = [],
+  comaxManifest?: {
+    items?: Array<{ sku: string; name?: string; qty: number; unit?: string }>;
+    customerNo?: string;
+    customer?: string;
+    address?: string;
+    date?: string;
+  } | null,
 ): LogisticsFinding[] {
   const findings: LogisticsFinding[] = [];
   const items = Array.isArray(note.items) ? note.items : [];
+  const comaxItems = Array.isArray(comaxManifest?.items) ? comaxManifest.items : [];
 
   if (note.live && (!comaxItems.length || !note.comaxOrder)) {
     findings.push({
@@ -40,17 +47,50 @@ export function buildLogisticsFindings(
   }
 
   if (note.live) {
+    const deliveryAddress = normalize(note.siteAddress);
+    const orderAddress = normalize(comaxManifest?.address);
+    const compactAddress = (value: string) => value.toLowerCase().replace(/[\\s,.'"/-]/g, "");
+    const addressMatches = Boolean(deliveryAddress && orderAddress &&
+      compactAddress(deliveryAddress) === compactAddress(orderAddress));
     findings.push({
       id: "address:verification",
       category: "source",
-      title: note.siteAddress ? "כתובת אספקה — אימות מול כרטיס לקוח" : "כתובת אספקה חסרה",
-      detail: note.siteAddress
-        ? "יש להשוות את הכתובת בתעודה לכרטיס הלקוח ולהזמנת קומקס. אם זו כתובת חדשה, יש לתעד זאת ולקבל אישור מפורש של ראמי."
-        : "לא זוהתה כתובת אספקה בתעודה. אין להעביר להראל עד להזנת כתובת מדויקת ואימותה.",
-      observed: note.siteAddress || "לא הוזנה כתובת",
+      title: !deliveryAddress
+        ? "כתובת אספקה חסרה"
+        : !orderAddress
+          ? "כתובת הזמנה חסרה להשוואה"
+          : addressMatches
+            ? "כתובת אספקה תואמת להזמנת קומקס"
+            : "פער כתובת בין התעודה להזמנה",
+      detail: !deliveryAddress
+        ? "לא זוהתה כתובת אספקה בתעודה. אין להעביר להראל עד להזנת כתובת מדויקת ואימותה."
+        : !orderAddress
+          ? "לא נמצאה כתובת בהזמנת קומקס. יש לבדוק מול כרטיס הלקוח; אם זו כתובת חדשה, לתעד ולקבל אישור מפורש מראמי."
+          : addressMatches
+            ? "הכתובת בתעודה תואמת לכתובת בהזמנת קומקס. יש להשלים אסמכתה ולאמת מול כרטיס הלקוח."
+            : "הכתובת בתעודה שונה מהכתובת בהזמנת קומקס. יש לברר אם מדובר בכתובת חדשה ומאושרת או בטעות הקלדה.",
+      expected: orderAddress || "כתובת בהזמנת קומקס לא זמינה",
+      observed: deliveryAddress || "לא הוזנה כתובת",
       sourceRequired: "כרטיס לקוח + כתובת בהזמנת קומקס; בכתובת חדשה — אישור ראמי ותיעוד הכתובת המלאה",
       severity: "blocker",
     });
+
+    const noteCustomerNo = normalize(note.customerNo);
+    const orderCustomerNo = normalize(comaxManifest?.customerNo);
+    if (!noteCustomerNo || !orderCustomerNo || noteCustomerNo !== orderCustomerNo) {
+      findings.push({
+        id: "source:customer-number",
+        category: "source",
+        title: !noteCustomerNo || !orderCustomerNo ? "מספר לקוח חסר בהצלבה" : "אי התאמה במספר לקוח",
+        detail: !noteCustomerNo || !orderCustomerNo
+          ? "מספר הלקוח חסר בתעודה או בהזמנת קומקס."
+          : `מספר הלקוח בתעודה (${noteCustomerNo}) שונה ממספר הלקוח בהזמנה (${orderCustomerNo}).`,
+        expected: orderCustomerNo || "לא זוהה",
+        observed: noteCustomerNo || "לא זוהה",
+        sourceRequired: "מספר לקוח בכרטיס הלקוח ובהזמנת קומקס",
+        severity: "blocker",
+      });
+    }
   }
 
   if (!note.comaxOrder) {
