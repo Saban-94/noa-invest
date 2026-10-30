@@ -339,7 +339,7 @@ const AuditRow = memo(function AuditRow({ finding, evidence, decision, onChange,
             <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-bold">{finding.category}</span>
           </span>
           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-            {documented ? "אסמכתא תועדה" : "ממתין לאסמכתא"} · {decisionDone ? "החלטת ראמי תועדה" : "ממתין להחלטת ראמי"}
+            {documented ? "אסמכתא תועדה" : "ממתין לאסמכתא"} · {decisionDone ? "החלטת ראמי תועדה" : decision.status === "needs_fix" ? "נדרש תיקון" : "ממתין להחלטת ראמי"}
           </span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300 ${open ? "rotate-180" : ""}`} aria-hidden="true" />
@@ -509,6 +509,7 @@ function Viewer() {
       setAuditDecisions(savedDecisions ? (JSON.parse(savedDecisions) as Record<string, RamiFindingDecision>) : {});
     } catch {
       setAuditEvidence({});
+      setAuditDecisions({});
     } finally {
       setAuditLoaded(true);
     }
@@ -700,6 +701,10 @@ function Viewer() {
     return decision?.status === "resolved" ||
       (decision?.status === "accepted_exception" && (decision.note || "").trim().length >= 3);
   }).length;
+  const auditPendingCount = auditFindings.filter((finding) =>
+    !isDocumented(auditEvidence[finding.id]) ||
+    !isLogisticsAuditComplete([finding], { [finding.id]: auditEvidence[finding.id] || "" }, { [finding.id]: auditDecisions[finding.id] || { status: "pending" } }),
+  ).length;
   const auditPct = auditFindings.length
     ? ((auditEvidenceCount + auditDecisionCount) / (auditFindings.length * 2)) * 100
     : 0;
@@ -864,11 +869,30 @@ function Viewer() {
           driveUrl: n.driveUrl,
         },
       });
+      const retrySummary = [
+        `העברה חוזרת לחמ״ל הראל — תעודה ${n.id}. אישור ראמי כבר נשמר.`,
+        ...auditFindings.map((finding) => {
+          const decision = auditDecisions[finding.id];
+          const decisionLabel = decision?.status === "resolved"
+            ? "תוקן ואומת"
+            : decision?.status === "accepted_exception"
+              ? "ראמי מאשר חריגה"
+              : "לא הושלם";
+          return [
+            finding.title,
+            `צפוי: ${finding.expected || "לא הוגדר"}`,
+            `נצפה: ${finding.observed || "לא זוהה"}`,
+            `החלטה: ${decisionLabel}`,
+            decision?.note ? `הערת ראמי: ${decision.note.trim()}` : "",
+            auditEvidence[finding.id] ? `אסמכתה: ${auditEvidence[finding.id].trim().slice(0, 90)}` : "",
+          ].filter(Boolean).join(" | ");
+        }),
+      ].filter(Boolean).join("\n").slice(0, 1950);
       await ramiReplyFn({
         data: {
           inquiryId: n.id,
           noteId: n.id,
-          text: "אישור ראמי כבר נשמר. העברת התיק לתור הראל בוצעה מחדש ללא איפוס האישור.",
+          text: retrySummary,
         },
       });
       await workroomQuery.refetch();
@@ -1302,7 +1326,7 @@ function Viewer() {
               }`}
             >
               <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-              רק חסרות ({auditFindings.length - auditEvidenceCount})
+              רק חסרות / ממתינות ({auditPendingCount})
             </button>
           </div>
 
