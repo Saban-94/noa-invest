@@ -30,6 +30,11 @@ const stamp = () => new Date().toLocaleString("he-IL", { dateStyle: "short", tim
 import { submitApproval } from "./api";
 
 export const approvals = {
+  // Update the local stamp only when a strict server approval was already awaited.
+  // Calling rami() in that flow would submit the same approval a second time.
+  ramiLocal: (id: string, note?: string) => {
+    set({ ...state, [id]: { ...state[id], rami: { at: stamp(), note } } });
+  },
   rami: (id: string, note?: string) => {
     set({ ...state, [id]: { ...state[id], rami: { at: stamp(), note } } });
     void submitApproval(id, "rami", note);

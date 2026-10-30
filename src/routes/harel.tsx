@@ -60,7 +60,10 @@ function HarelDashboard() {
   const q = useQuery({
     queryKey: ["workroom", "harel"],
     queryFn: () => listWorkroomInquiriesFn(),
-    staleTime: 120_000,
+    // Refresh immediately when arriving from a Rami approval; otherwise a fresh
+    // client cache could hide the newly queued document for up to two minutes.
+    staleTime: 0,
+    refetchOnMount: "always",
     refetchInterval: 120_000,
   });
 

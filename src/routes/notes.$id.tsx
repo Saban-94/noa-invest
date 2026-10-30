@@ -462,6 +462,7 @@ function Viewer() {
   const [customNote, setCustomNote] = useState("");
   const [showCelebration, setShowCelebration] = useState(false);
   const [isApprovingRami, setIsApprovingRami] = useState(false);
+  const [isSendingToHarel, setIsSendingToHarel] = useState(false);
   const [isOpeningTask, setIsOpeningTask] = useState(false);
   const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
   const [auditLoaded, setAuditLoaded] = useState(false);
@@ -702,7 +703,7 @@ function Viewer() {
   const steps: Step[] = [
     { key: "audit", label: "בקרת נועה AI", hint: `${auditEvidenceCount}/${auditFindings.length} אסמכתאות`, done: auditComplete, icon: Brain },
     { key: "rami", label: "אישור ראמי", hint: ramiApprovalActive ? ap!.rami!.at : "ממתין לבדיקה / תיקון", done: ramiApprovalActive, icon: Stamp },
-    { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel && !returnedToRami ? ap.harel.at : "ממתין לאישור ראמי", done: Boolean(ap?.harel) && !returnedToRami, icon: Crown },
+    { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel && !returnedToRami ? ap.harel.at : ramiApprovalActive || n.noteStage === "pending_harel" ? "ממתין להחלטת הראל" : "ממתין לאישור ראמי", done: Boolean(ap?.harel) && !returnedToRami, icon: Crown },
   ];
 
   const handleRamiApproval = async () => {
@@ -713,17 +714,87 @@ function Viewer() {
       return;
     }
     setIsApprovingRami(true);
+    let officialApprovalSaved = false;
     try {
       await approveStrict(n.id, "rami", customNote.trim() || undefined, auditEvidence);
-      approvals.rami(n.id, customNote.trim() || undefined);
+      officialApprovalSaved = true;
+      approvals.ramiLocal(n.id, customNote.trim() || undefined);
       void playDispatchChime(0.85);
-      toast.success(`ת.מ. ${n.id} נבדקה ואושרה אישית ע״י ראמי מסארווה`);
+
+      // Create/link the workroom record only after the official approval succeeds.
+      await openOrCreateWorkroomTaskFn({
+        data: {
+          noteId: n.id,
+          customer: n.customer,
+          customerNo: n.customerNo,
+          address: n.siteAddress,
+          driver: n.driver,
+          issue: customNote.trim() || n.craneTime || "בדיקה וטיפול בתעודת המשלוח",
+          fileId: n.fileId,
+          driveUrl: n.driveUrl,
+        },
+      });
+
+      // A Rami reply is the server-side transition to pending_harel.
+      await ramiReplyFn({
+        data: {
+          inquiryId: n.id,
+          noteId: n.id,
+          text: customNote.trim().length >= 3
+            ? customNote.trim()
+            : "אישור ראמי הושלם. התעודה והאסמכתאות הועברו להחלטת הראל.",
+        },
+      });
+      await workroomQuery.refetch();
+      toast.success(`ת.מ. ${n.id} אושרה והועברה לתור הראל`);
     } catch (err) {
-      toast.error("אישור ראמי נדחה ע״י השרת", {
+      if (officialApprovalSaved) {
+        // Do not misreport a saved official approval as rejected if only queue handoff failed.
+        approvals.ramiLocal(n.id, customNote.trim() || undefined);
+        await workroomQuery.refetch();
+        toast.warning("אישור ראמי נשמר, אך העברת התיק לתור הראל נכשלה", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      } else {
+        toast.error("אישור ראמי נדחה ע״י השרת", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } finally {
+      setIsApprovingRami(false);
+    }
+  };
+
+  const handleRetryHarelHandoff = async () => {
+    setIsSendingToHarel(true);
+    try {
+      await openOrCreateWorkroomTaskFn({
+        data: {
+          noteId: n.id,
+          customer: n.customer,
+          customerNo: n.customerNo,
+          address: n.siteAddress,
+          driver: n.driver,
+          issue: customNote.trim() || n.craneTime || "העברת אישור ראמי להחלטת הראל",
+          fileId: n.fileId,
+          driveUrl: n.driveUrl,
+        },
+      });
+      await ramiReplyFn({
+        data: {
+          inquiryId: n.id,
+          noteId: n.id,
+          text: "אישור ראמי כבר נשמר. העברת התיק לתור הראל בוצעה מחדש ללא איפוס האישור.",
+        },
+      });
+      await workroomQuery.refetch();
+      toast.success("התיק הועבר לתור האישור של הראל");
+    } catch (err) {
+      toast.error("לא ניתן להשלים את העברת התיק להראל", {
         description: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setIsApprovingRami(false);
+      setIsSendingToHarel(false);
     }
   };
 
@@ -1056,10 +1127,35 @@ function Viewer() {
                   </motion.button>
                 )}
 
-                {ramiApprovalActive && !ap?.harel && !returnedToRami && (
+                {(ramiApprovalActive || n.noteStage === "pending_harel") && !ap?.harel && !returnedToRami && (
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 text-xs leading-6 text-foreground">
-                    <div className="flex items-center gap-2 font-bold"><Crown className="h-4 w-4 text-primary" /> הועבר להראל להחלטה ניהולית</div>
-                    <p className="mt-1 text-muted-foreground">הראל יקבל את דוח נועה ואת אישור ראמי. אין צורך למלא מחדש את תשובות הבקרה במסך זה.</p>
+                    <div className="flex items-center gap-2 font-bold"><Crown className="h-4 w-4 text-primary" /> {relatedInquiry?.status === "pending_harel" ? "הועבר להראל להחלטה ניהולית" : "אישור ראמי נשמר — ממתין להשלמת העברה"}</div>
+                    <p className="mt-1 text-muted-foreground">
+                      {relatedInquiry?.status === "pending_harel"
+                        ? "הראל יקבל את דוח נועה ואת אישור ראמי. אין צורך למלא מחדש את תשובות הבקרה במסך זה."
+                        : "האישור הרשמי נשמר, אך טרם אומת שהמשימה נכנסה לתור הראל. יש לפתוח את תיק הבירור ולבדוק את מצב ההעברה."}
+                    </p>
+                    {relatedInquiry?.status === "pending_harel" ? (
+                      <Link
+                        to="/harel"
+                        search={{ task: n.id }}
+                        className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-xl border border-primary/20 bg-background px-3 py-1.5 font-bold text-primary transition hover:bg-primary/5"
+                      >
+                        פתח את התעודה בתור האישור של הראל
+                        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </Link>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void handleRetryHarelHandoff()}
+                        disabled={isSendingToHarel}
+                        className="mt-2 min-h-9 gap-2 rounded-xl px-3"
+                      >
+                        {isSendingToHarel ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}
+                        {isSendingToHarel ? "מעביר להראל..." : "נסה שוב להעביר לתור הראל"}
+                      </Button>
+                    )}
                   </div>
                 )}
               </AnimatePresence>
