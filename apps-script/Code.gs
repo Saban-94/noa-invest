@@ -1542,6 +1542,9 @@ function handleGetCustomerDocuments_(params) {
   const customerNo = String(params.customerNo || "").trim();
   if (!customerNo) return jsonResponse({ success: false, error: "חסר מספר לקוח" });
 
+  // סנכרון קבצים שכבר נמצאים בתיק הלקוח ב-Drive, כדי שגם העלאות קודמות יוצגו.
+  syncCustomerArchiveFolderToRegister_(customerNo);
+
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
   const sheet = ss.getSheetByName("ארכיון_מסמכי_לקוחות");
   if (!sheet || sheet.getLastRow() < 2) {
@@ -1586,6 +1589,81 @@ function handleGetCustomerDocuments_(params) {
     count: documents.length,
     fetchedAt: new Date().toISOString()
   });
+}
+
+
+
+function syncCustomerArchiveFolderToRegister_(customerNo) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return;
+
+  try {
+    const roots = DriveApp.getFoldersByName("תיקיות לקוחות");
+    if (!roots.hasNext()) return;
+    const root = roots.next();
+    const folders = root.getFolders();
+    let customerFolder = null;
+    const prefix = customerNo + " - ";
+    while (folders.hasNext()) {
+      const candidate = folders.next();
+      if (candidate.getName().indexOf(prefix) === 0) {
+        customerFolder = candidate;
+        break;
+      }
+    }
+    if (!customerFolder) return;
+
+    const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+    let sheet = ss.getSheetByName("ארכיון_מסמכי_לקוחות");
+    if (!sheet) return;
+    const values = sheet.getDataRange().getValues();
+    const headers = values.length ? values[0].map(value => String(value || "").trim()) : [];
+    const fileIdColumn = headers.indexOf("מזהה קובץ");
+    const knownIds = {};
+    if (fileIdColumn >= 0) {
+      values.slice(1).forEach(row => {
+        const id = String(row[fileIdColumn] || "").trim();
+        if (id) knownIds[id] = true;
+      });
+    }
+
+    const files = customerFolder.getFiles();
+    while (files.hasNext()) {
+      const file = files.next();
+      const fileId = file.getId();
+      if (knownIds[fileId]) continue;
+
+      const fileName = file.getName();
+      const normalized = fileName.toLowerCase();
+      let docType = "other";
+      let docTypeLabel = "מסמך";
+      if (normalized.indexOf("תעודת_משלוח_") === 0) {
+        docType = "delivery_note";
+        docTypeLabel = "תעודת משלוח";
+      } else if (normalized.indexOf("הזמנה_") === 0) {
+        docType = "order";
+        docTypeLabel = "הזמנה";
+      }
+
+      appendCustomerDocumentRegister_({
+        customerNo: customerNo,
+        customerName: customerFolder.getName().replace(prefix, ""),
+        docType: docType,
+        docTypeLabel: docTypeLabel,
+        fileId: fileId,
+        fileName: fileName,
+        originalFileName: fileName,
+        mimeType: file.getMimeType(),
+        driveUrl: file.getUrl(),
+        folderName: customerFolder.getName(),
+        uploadedAt: file.getDateCreated().toISOString(),
+        status: "סונכרן מתיק Drive"
+      });
+      knownIds[fileId] = true;
+    }
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function getOrCreateCustomerArchiveFolder_(customerNo, customerName) {
