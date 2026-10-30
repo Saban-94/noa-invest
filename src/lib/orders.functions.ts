@@ -61,7 +61,7 @@ function normalizeItem(value: unknown, index: number): SheetOrderItem {
   };
 }
 
-function normalizeOrder(value: unknown, index: number): SheetOrder {
+function normalizeOrder(value: unknown): SheetOrder {
   const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const rawItems = firstValue(row, "items", "פריטים");
   let items: SheetOrderItem[] = [];
