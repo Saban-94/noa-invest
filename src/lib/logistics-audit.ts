@@ -59,7 +59,7 @@ export function buildLogisticsFindings(
   if (note.live) {
     const deliveryAddress = normalize(note.siteAddress);
     const orderAddress = normalize(comaxManifest?.address);
-    const compactAddress = (value: string) => value.toLowerCase().replace(/[\\s,.'"/-]/g, "");
+    const compactAddress = (value: string) => value.toLowerCase().replace(/[\s,.'"/-]/g, "");
     const addressMatches = Boolean(deliveryAddress && orderAddress &&
       compactAddress(deliveryAddress) === compactAddress(orderAddress));
     findings.push({
