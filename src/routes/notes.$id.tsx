@@ -860,7 +860,7 @@ function Viewer() {
 
         {/* באנר אישור סופי */}
         <AnimatePresence>
-          {(ap?.harel || showCelebration) && (
+          {((ap?.harel && !returnedToRami) || showCelebration) && (
             <motion.div
               initial={reduce ? false : { opacity: 0, y: -16, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -950,7 +950,7 @@ function Viewer() {
 
                 {/* חותמות */}
                 <AnimatePresence>
-                  {ap?.rami && (
+                  {ap?.rami && !returnedToRami && (
                     <motion.div
                       key="rami-stamp"
                       {...stampMotion}
@@ -961,7 +961,7 @@ function Viewer() {
                       <span className="font-mono text-xs opacity-90">{ap.rami.at}</span>
                     </motion.div>
                   )}
-                  {ap?.harel && (
+                  {ap?.harel && !returnedToRami && (
                     <motion.div
                       key="harel-stamp"
                       {...stampMotion}
