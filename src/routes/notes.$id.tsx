@@ -389,7 +389,7 @@ const AuditRow = memo(function AuditRow({ finding, evidence, onChange, open, onT
                 <span className="flex items-center justify-between text-xs font-bold">
                   <span>הפניה לאסמכתא / תוצאת בדיקה</span>
                   <span className={`tabular-nums ${documented ? "text-emerald-700" : "text-muted-foreground"}`}>
-                    {Math.min(len, MIN_EVIDENCE)}/{MIN_EVIDENCE}
+                    {documented ? "אסמכתא תקינה" : len >= MIN_EVIDENCE ? "נדרשת השלמת פרטים" : `${len}/${MIN_EVIDENCE} תווים`}
                   </span>
                 </span>
                 <textarea
