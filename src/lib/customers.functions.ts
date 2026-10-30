@@ -40,6 +40,13 @@ export type LiveCustomer = {
   lastNoteId: string;
   lastNoteDate: string;
   sampleDriveUrl: string;
+  addresses?: string[];
+  lastActivity?: string;
+  lastDeliveryDate?: string;
+  totalWeightTons?: number;
+  balesDepositQty?: number;
+  palletsDepositQty?: number;
+  recentOrders?: Array<Record<string, unknown>>;
 };
 
 export const listCustomersFn = createServerFn({ method: "POST" }).handler(
@@ -54,6 +61,35 @@ export const listCustomersFn = createServerFn({ method: "POST" }).handler(
     };
   },
 );
+
+
+/** חיפוש לקוחות בשרת — GAS מסנן לפי שם, מספר, טלפון וכתובת. */
+export const searchCustomersFn = createServerFn({ method: "POST" })
+  .validator((d: { query: string }) => d)
+  .handler(async ({ data }) => {
+    const json = await gasGet("searchCustomers", { q: String(data.query || "").trim() });
+    const customers = (json.customers as LiveCustomer[]) || [];
+    return {
+      customers,
+      source: String(json.source || "gas"),
+      count: customers.length,
+      fetchedAt: String(json.fetchedAt || new Date().toISOString()),
+    };
+  });
+
+/** שליפת פרופיל יחיד לפי מספר קומקס יציב. */
+export const getCustomerFn = createServerFn({ method: "POST" })
+  .validator((d: { customerNo: string }) => d)
+  .handler(async ({ data }) => {
+    const customerNo = String(data.customerNo || "").trim();
+    if (!customerNo) throw new Error("חסר מספר לקוח");
+    const json = await gasGet("getCustomer", { customerNo });
+    return {
+      customer: (json.customer as LiveCustomer | null) || null,
+      found: Boolean(json.found),
+      fetchedAt: String(json.fetchedAt || new Date().toISOString()),
+    };
+  });
 
 export const getCustomerBundleFn = createServerFn({ method: "POST" })
   .validator((d: { customerNo: string }) => d)

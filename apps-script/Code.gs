@@ -10,7 +10,7 @@
  * 5. לחץ Deploy והעתק את הכתובת שמסתיימת ב-/exec.
  */
 
-const API_VERSION = "2026-10-25-v6-workroom";
+const API_VERSION = "2026-10-30-v9-customers";
 const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
 const TAB_GALYA = "ארכיון_תעודות_גליה";
 
@@ -62,6 +62,15 @@ function doGet(e) {
       case "getOrders":
         return handleGetOrders_(p);
 
+      case "getCustomers":
+        return handleGetCustomers_(p);
+
+      case "getCustomer":
+        return handleGetCustomer_(p);
+
+      case "searchCustomers":
+        return handleSearchCustomers_(p);
+
       case "getNotes":
         return handleGetNotes(p);
 
@@ -109,28 +118,72 @@ function doGet(e) {
  * מטפל בשליפת הזמנות עבור הממשק
  */
 function handleGetOrders_(params) {
+  params = params || {};
   const ss = SpreadsheetApp.openById(params.sheetId || MASTER_SHEET_ID);
   const sheet = ss.getSheetByName("הזמנות");
   if (!sheet) return jsonResponse({ success: false, error: "לא נמצא טאב 'הזמנות'" });
+
   const values = sheet.getDataRange().getDisplayValues();
   const fetchedAt = new Date().toISOString();
-  if (values.length <= 1) return jsonResponse({ success: true, tab: "הזמנות", fetchedAt: fetchedAt, orders: [] });
+  if (values.length <= 1) {
+    return jsonResponse({ success: true, tab: "הזמנות", fetchedAt: fetchedAt, orders: [] });
+  }
+
   const headers = values[0].map(h => String(h || "").trim());
-  const idCol = headers.indexOf("מס' הזמנה");
+  const headerIndex = function(names) {
+    for (let i = 0; i < names.length; i++) {
+      const index = headers.indexOf(names[i]);
+      if (index >= 0) return index;
+    }
+    return -1;
+  };
+  const idCol = headerIndex(["מס' הזמנה", "מס׳ הזמנה", "מספר הזמנה"]);
   if (idCol < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מס' הזמנה בטאב הזמנות" });
+
+  const cols = {
+    receivedDate: headerIndex(["תאריך קליטה"]),
+    deliveryDate: headerIndex(["תאריך אספקה"]),
+    deliveryTime: headerIndex(["שעה", "שעת אספקה"]),
+    customerNo: headerIndex(["מס' לקוח", "מס׳ לקוח", "מספר לקוח", "customerNo"]),
+    customer: headerIndex(["שם לקוח", "לקוח", "customer"]),
+    phone: headerIndex(["איש קשר וטלפון", "טלפון", "phone"]),
+    address: headerIndex(["כתובת אספקה", "כתובת", "address"]),
+    driver: headerIndex(["נהג / משאית", "נהג", "driver"]),
+    itemsText: headerIndex(["פירוט מוצרים", "פירוט מוצרים ומק״טים", "פרטי הזמנה"]),
+    weightTons: headerIndex(["משקל (טון)", "משקל"]),
+    bales60002: headerIndex(["פקדון בלות (60002)", "בלות פקדון (60002)"]),
+    pallets60060: headerIndex(["פקדון משטחים (60060/60006)", "פקדון משטחים (60060)", "משטחי סבן (60060)"]),
+    noteId: headerIndex(["מס' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח"]),
+    status: headerIndex(["סטטוס סידור", "סטטוס"]),
+    waze: headerIndex(["קישור Waze", "Waze", "waze"]),
+    notes: headerIndex(["הערות", "notes"])
+  };
+
   const orders = [];
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
     const id = String(row[idCol] || "").trim();
     if (!id || /^row-/i.test(id)) continue;
+
     const order = {};
-    headers.forEach((header, i) => { if (header) order[header] = row[i]; });
+    headers.forEach((header, i) => {
+      if (header) order[header] = row[i];
+    });
     order.id = id;
+    Object.keys(cols).forEach(function(key) {
+      const index = cols[key];
+      if (index >= 0) order[key] = row[index];
+    });
     orders.push(order);
   }
-  return jsonResponse({ success: true, tab: "הזמנות", fetchedAt: fetchedAt, orders: orders });
-}
 
+  return jsonResponse({
+    success: true,
+    tab: "הזמנות",
+    fetchedAt: fetchedAt,
+    orders: orders
+  });
+}
 function handleUpdateOrderStatus_(body) {
   const orderId = String(body.orderId || body.id || "").trim();
   const status = String(body.status || "").trim();
