@@ -1,12 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw/exec";
+  "https://script.google.com/macros/s/AKfycbxNMqeQDlOOswTPciJwfdyuIHYNmXxGc6tR8FXvtgm-PFNDhuuq50LUwyq_3-CsgLIViQ/exec";
 
 function gasUrl(): string {
   const envUrl = process.env["GAS_URL"];
   // Workflow endpoints added in v6 are not available in the older deployment.
-  if (envUrl && envUrl.includes("AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw")) {
+  if (envUrl && envUrl.includes("AKfycbxNMqeQDlOOswTPciJwfdyuIHYNmXxGc6tR8FXvtgm-PFNDhuuq50LUwyq_3-CsgLIViQ")) {
     return DEFAULT_GAS_URL;
   }
   return envUrl || DEFAULT_GAS_URL;
