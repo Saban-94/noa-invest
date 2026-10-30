@@ -715,7 +715,12 @@ function Viewer() {
     setIsApprovingRami(true);
     let officialApprovalSaved = false;
     try {
-      // Ensure a server-side workroom record exists before recording the official approval.
+      await approveStrict(n.id, "rami", customNote.trim() || undefined, auditEvidence);
+      officialApprovalSaved = true;
+      approvals.rami(n.id, customNote.trim() || undefined);
+      void playDispatchChime(0.85);
+
+      // Create/link the workroom record only after the official approval succeeds.
       await openOrCreateWorkroomTaskFn({
         data: {
           noteId: n.id,
@@ -728,11 +733,6 @@ function Viewer() {
           driveUrl: n.driveUrl,
         },
       });
-
-      await approveStrict(n.id, "rami", customNote.trim() || undefined, auditEvidence);
-      officialApprovalSaved = true;
-      approvals.rami(n.id, customNote.trim() || undefined);
-      void playDispatchChime(0.85);
 
       // A Rami reply is the server-side transition to pending_harel.
       await ramiReplyFn({
@@ -1093,16 +1093,31 @@ function Viewer() {
 
                 {ramiApprovalActive && !ap?.harel && !returnedToRami && (
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 text-xs leading-6 text-foreground">
-                    <div className="flex items-center gap-2 font-bold"><Crown className="h-4 w-4 text-primary" /> הועבר להראל להחלטה ניהולית</div>
-                    <p className="mt-1 text-muted-foreground">הראל יקבל את דוח נועה ואת אישור ראמי. אין צורך למלא מחדש את תשובות הבקרה במסך זה.</p>
-                    <Link
-                      to="/harel"
-                      search={{ task: n.id }}
-                      className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-xl border border-primary/20 bg-background px-3 py-1.5 font-bold text-primary transition hover:bg-primary/5"
-                    >
-                      פתח את התעודה בתור האישור של הראל
-                      <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                    </Link>
+                    <div className="flex items-center gap-2 font-bold"><Crown className="h-4 w-4 text-primary" /> {relatedInquiry?.status === "pending_harel" ? "הועבר להראל להחלטה ניהולית" : "אישור ראמי נשמר — ממתין להשלמת העברה"}</div>
+                    <p className="mt-1 text-muted-foreground">
+                      {relatedInquiry?.status === "pending_harel"
+                        ? "הראל יקבל את דוח נועה ואת אישור ראמי. אין צורך למלא מחדש את תשובות הבקרה במסך זה."
+                        : "האישור הרשמי נשמר, אך טרם אומת שהמשימה נכנסה לתור הראל. יש לפתוח את תיק הבירור ולבדוק את מצב ההעברה."}
+                    </p>
+                    {relatedInquiry?.status === "pending_harel" ? (
+                      <Link
+                        to="/harel"
+                        search={{ task: n.id }}
+                        className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-xl border border-primary/20 bg-background px-3 py-1.5 font-bold text-primary transition hover:bg-primary/5"
+                      >
+                        פתח את התעודה בתור האישור של הראל
+                        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </Link>
+                    ) : (
+                      <Link
+                        to="/inquiry"
+                        search={{ task: n.id, tab: "tasks" }}
+                        className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-xl border border-primary/20 bg-background px-3 py-1.5 font-bold text-primary transition hover:bg-primary/5"
+                      >
+                        פתח תיק בירור להשלמת ההעברה
+                        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </Link>
+                    )}
                   </div>
                 )}
               </AnimatePresence>
