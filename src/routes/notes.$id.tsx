@@ -65,6 +65,9 @@ type Finding = ReturnType<typeof buildLogisticsFindings>[number];
 
 function evidenceTemplates(finding: Finding): string[] {
   const title = finding.title;
+  if (finding.id === "address:verification") return [
+    `כתובת אספקה הושוותה מול כרטיס לקוח והזמנת קומקס | כתובת מלאה: [כתובת] | סיווג: [קיימת / חדשה] | מקור אימות: [כרטיס לקוח / הזמנה / אישור לקוח]`,
+  ];
   if (finding.category === "source") return [
     `הצלבה מול קומקס | הזמנה: [מספר הזמנה] | תאריך: [תאריך] | מסמך מקור: [קישור/עמוד] | תוצאה: [תוצאה]`,
     `מקור התעודה נבדק | קובץ: [שם/קישור] | עמוד: [מספר] | מספר תעודה: [מספר] | תוצאה: [תוצאה]`,
