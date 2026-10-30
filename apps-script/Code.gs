@@ -61,6 +61,8 @@ function doGet(e) {
     switch (action) {
       case "getOrders":
         return handleGetOrders_(p);
+      case "getLogisticsAuditEvidence":
+        return handleGetLogisticsAuditEvidence_(p);
       case "manifest":
         return handleGetComaxManifest_(p);
 
@@ -293,6 +295,10 @@ function doPost(e) {
       return handleUpdateOrderStatus_(body);
     }
 
+    if (action === "saveLogisticsAuditEvidence") {
+      return handleSaveLogisticsAuditEvidence_(body);
+    }
+
     if (action === "submitApproval") {
       return handleSubmitApproval(body);
     }
@@ -496,6 +502,62 @@ function handleGetFile(fileId) {
     base64: Utilities.base64Encode(blob.getBytes()),
     name: file.getName(),
   });
+}
+
+/**
+ * שמירת ראיות בקרה לוגיסטית בשרת, עם היסטוריית גרסאות לפי תעודה וממצא.
+ * הטקסט הוא דיווח משתמש/אסמכתא שסופקה; עצם השמירה אינה אימות עצמאי של המקור.
+ */
+function logisticsAuditEvidenceSheet_() {
+  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  let sheet = ss.getSheetByName("בקרת_לוגיסטיקה_טיוטה");
+  if (!sheet) sheet = ss.insertSheet("בקרת_לוגיסטיקה_טיוטה");
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["נשמר בתאריך", "מספר תעודה", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה"]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function handleGetLogisticsAuditEvidence_(params) {
+  const noteId = String(params.noteId || params.id || "").trim();
+  if (!noteId) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
+  const sheet = logisticsAuditEvidenceSheet_();
+  const values = sheet.getDataRange().getDisplayValues();
+  const evidence = {};
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][1] || "").trim() !== noteId) continue;
+    const findingId = String(values[r][2] || "").trim();
+    if (findingId) evidence[findingId] = String(values[r][3] || "");
+  }
+  return jsonResponse({ success: true, noteId: noteId, evidence: evidence });
+}
+
+function handleSaveLogisticsAuditEvidence_(body) {
+  const noteId = String(body.noteId || "").trim();
+  const evidence = body.evidence && typeof body.evidence === "object" && !Array.isArray(body.evidence) ? body.evidence : null;
+  if (!noteId || !evidence || !Object.keys(evidence).length) {
+    return jsonResponse({ success: false, error: "חסרים מספר תעודה או אסמכתאות" });
+  }
+  const entries = Object.entries(evidence).map(([findingId, raw]) => ({
+    findingId: String(findingId || "").trim().slice(0, 200),
+    value: String(raw || "").trim().slice(0, 2000)
+  }));
+  const invalid = entries.find(entry => !entry.findingId || entry.value.length < 12 ||
+    /\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(entry.value));
+  if (invalid) return jsonResponse({ success: false, error: "שמירת הבקרה נחסמה: קיימת אסמכתא חסרה או תבנית שלא הושלמה", findingId: invalid.findingId });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = logisticsAuditEvidenceSheet_();
+    const now = new Date().toISOString();
+    const rows = entries.map(entry => [now, noteId, entry.findingId, entry.value]);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
+    SpreadsheetApp.flush();
+    return jsonResponse({ success: true, noteId: noteId, savedAt: now, count: rows.length });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleSubmitApproval(body) {
