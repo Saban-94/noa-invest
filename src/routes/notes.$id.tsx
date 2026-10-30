@@ -89,7 +89,7 @@ function evidenceTemplates(finding: Finding): string[] {
 const MIN_EVIDENCE = 12;
 const isDocumented = (text: string | undefined) => {
   const value = (text || "").trim();
-  return value.length >= MIN_EVIDENCE && /(?:החלטת ראמי|מענה ראמי)\\s*:/i.test(value) && !/(\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן)/i.test(value);
+  return value.length >= MIN_EVIDENCE && /(?:החלטת ראמי|מענה ראמי)\s*:/i.test(value) && !/(\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן)/i.test(value);
 };
 
 const BTN =
@@ -492,6 +492,7 @@ function Viewer() {
         setAuditEvidence(saved ? (JSON.parse(saved) as Record<string, string>) : {});
       } catch {
         setAuditEvidence({});
+    setSavedAuditSignature(null);
       }
       setSavedAuditSignature(null);
     }
