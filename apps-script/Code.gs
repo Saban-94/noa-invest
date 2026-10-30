@@ -526,7 +526,7 @@ function logisticsAuditEvidenceSheet_() {
   let sheet = ss.getSheetByName("בקרת_לוגיסטיקה_טיוטה");
   if (!sheet) sheet = ss.insertSheet("בקרת_לוגיסטיקה_טיוטה");
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["נשמר בתאריך", "מספר תעודה", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה", "סטטוס החלטת ראמי", "הסבר ראמי"]);
+    sheet.appendRow(["נשמר בתאריך", "מספר תעודה", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה", "סטטוס החלטת ראמי", "הסבר ראמי", "מזהה סבב"]);
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -537,8 +537,13 @@ function readLatestLogisticsAuditState_(noteId) {
   const values = sheet.getDataRange().getDisplayValues();
   const evidence = {};
   const decisions = {};
+  let latestBatch = "";
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][1] || "").trim() === String(noteId)) latestBatch = String(values[r][6] || "");
+  }
   for (let r = 1; r < values.length; r++) {
     if (String(values[r][1] || "").trim() !== String(noteId)) continue;
+    if (latestBatch && String(values[r][6] || "") !== latestBatch) continue;
     const findingId = String(values[r][2] || "").trim();
     if (!findingId) continue;
     evidence[findingId] = String(values[r][3] || "");
@@ -570,6 +575,7 @@ function handleSaveLogisticsAuditEvidence_(body) {
     return jsonResponse({ success: false, error: "מספר האסמכתאות אינו תואם למספר החלטות ראמי" });
   }
   const rows = [];
+  const batchId = Utilities.getUuid();
   for (let i = 0; i < evidenceKeys.length; i++) {
     const findingId = evidenceKeys[i];
     const value = String(evidence[findingId] || "").trim().slice(0, 2000);
@@ -585,13 +591,13 @@ function handleSaveLogisticsAuditEvidence_(body) {
     if (status === "accepted_exception" && decisionNote.length < 3) {
       return jsonResponse({ success: false, error: "אישור חריגה מחייב הסבר ראמי", findingId: findingId });
     }
-    rows.push([new Date().toISOString(), noteId, findingId, value, status, decisionNote]);
+    rows.push([new Date().toISOString(), noteId, findingId, value, status, decisionNote, batchId]);
   }
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     const sheet = logisticsAuditEvidenceSheet_();
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 7).setValues(rows);
     SpreadsheetApp.flush();
     const saved = readLatestLogisticsAuditState_(noteId);
     if (Object.keys(saved.evidence).length !== evidenceKeys.length ||
