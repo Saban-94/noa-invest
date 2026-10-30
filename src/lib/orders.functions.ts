@@ -198,14 +198,36 @@ export const updateOrderStatusFn = createServerFn({ method: "POST" })
     } catch {
       throw new Error(`תשובה לא תקינה בעדכון הזמנה (HTTP ${response.status})`);
     }
-    if (!response.ok || result.success === false || result.ok === false || result.error) {
-      throw new Error(String(result.error || "עדכון הסטטוס בגיליון נכשל"));
+    if (response.ok !== true || result.success !== true ||
+        String(result.orderId || "") !== orderId || String(result.status || "") !== status) {
+      throw new Error(String(result.error || "Apps Script לא אישר שמירת סטטוס להזמנה"));
     }
-    const confirmed = String(result.status || status);
+
+    const verifyUrl = new URL(gasUrl);
+    verifyUrl.searchParams.set("action", "getOrders");
+    verifyUrl.searchParams.set("token", token);
+    const verifyResponse = await fetch(verifyUrl, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(30_000),
+    });
+    const verifyText = await verifyResponse.text();
+    let verifyData: Record<string, unknown>;
+    try {
+      verifyData = JSON.parse(verifyText) as Record<string, unknown>;
+    } catch {
+      throw new Error("העדכון נשלח, אך קריאת האימות החוזרת החזירה תשובה לא תקינה");
+    }
+    if (verifyResponse.ok !== true || verifyData.success !== true || !Array.isArray(verifyData.orders)) {
+      throw new Error(String(verifyData.error || "לא ניתן לאמת את העדכון מול הגיליון"));
+    }
+    const verified = verifyData.orders.map((row) => normalizeOrder(row)).filter((row) => row.id === orderId);
+    if (verified.length !== 1 || verified[0].status !== status) {
+      throw new Error("העדכון נשלח אך לא אומת בגיליון");
+    }
     return {
       success: true as const,
-      orderId: String(result.orderId || orderId),
-      status: confirmed,
+      orderId,
+      status,
       row: typeof result.row === "number" ? result.row : undefined,
       updatedAt: String(result.updatedAt || new Date().toISOString()),
     };
