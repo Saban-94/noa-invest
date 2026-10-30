@@ -177,6 +177,31 @@ export const listNotesFn = createServerFn({ method: "POST" }).handler(async () =
 });
 
 /** שליפת מניפסט קומקס דרך שרת מאומת; אין קריאת GAS ישירה מהדפדפן. */
+/** טיוטת ראיות בקרה לוגיסטית נשמרת בשרת/Google Sheets ומשותפת בין משתמשים. */
+export const getLogisticsAuditFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { noteId: string }) => {
+    const noteId = String(d?.noteId || "").trim();
+    if (!noteId) throw new Error("חסר מספר תעודה");
+    return { noteId };
+  })
+  .handler(async ({ data }) => {
+    const result = await gasGet({ action: "getLogisticsAuditEvidence", noteId: data.noteId });
+    return { evidence: (result.evidence && typeof result.evidence === "object" ? result.evidence : {}) as Record<string, string> };
+  });
+
+export const saveLogisticsAuditFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { noteId: string; evidence: Record<string, string> }) => {
+    const noteId = String(d?.noteId || "").trim();
+    if (!noteId || !d.evidence || typeof d.evidence !== "object" || Array.isArray(d.evidence)) {
+      throw new Error("חסרים פרטי שמירת בקרת לוגיסטיקה");
+    }
+    return { noteId, evidence: d.evidence };
+  })
+  .handler(async ({ data }) => {
+    const result = await gasPost({ action: "saveLogisticsAuditEvidence", noteId: data.noteId, evidence: data.evidence });
+    return { success: result.success === true, savedAt: String(result.savedAt || "") };
+  });
+
 export const getManifestFn = createServerFn({ method: "POST" })
   .inputValidator((d: { orderId: string }) => {
     const orderId = String(d?.orderId || "").trim();
