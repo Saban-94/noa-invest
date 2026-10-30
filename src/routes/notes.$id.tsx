@@ -689,10 +689,11 @@ function Viewer() {
     }
     setIsSavingAudit(true);
     try {
-      const activeEvidence = Object.fromEntries(auditFindings.map((finding) => [finding.id, auditEvidence[finding.id] || ""]));
-      const activeDecisions = Object.fromEntries(auditFindings.map((finding) => [
-        finding.id,
-        auditDecisions[finding.id] || { status: "pending" as const, note: "" },
+      const activeFindingIds = auditFindings.map((finding) => finding.id).sort();
+      const activeEvidence = Object.fromEntries(activeFindingIds.map((findingId) => [findingId, auditEvidence[findingId] || ""]));
+      const activeDecisions = Object.fromEntries(activeFindingIds.map((findingId) => [
+        findingId,
+        { status: auditDecisions[findingId]?.status || "pending", note: auditDecisions[findingId]?.note || "" },
       ]));
       const snapshot = { evidence: activeEvidence, decisions: activeDecisions };
       await saveLogisticsAuditFn({ data: { noteId: id, ...snapshot } });
@@ -767,11 +768,12 @@ function Viewer() {
   const manifest = manifestQuery.data?.items ?? [];
   const auditFindings = buildLogisticsFindings(n, manifestQuery.data);
   const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence, auditDecisions);
+  const activeFindingIds = auditFindings.map((finding) => finding.id).sort();
   const activeAuditSnapshot = {
-    evidence: Object.fromEntries(auditFindings.map((finding) => [finding.id, auditEvidence[finding.id] || ""])),
-    decisions: Object.fromEntries(auditFindings.map((finding) => [
-      finding.id,
-      auditDecisions[finding.id] || { status: "pending" as const, note: "" },
+    evidence: Object.fromEntries(activeFindingIds.map((findingId) => [findingId, auditEvidence[findingId] || ""])),
+    decisions: Object.fromEntries(activeFindingIds.map((findingId) => [
+      findingId,
+      { status: auditDecisions[findingId]?.status || "pending", note: auditDecisions[findingId]?.note || "" },
     ])),
   };
   const auditPersisted = auditComplete && savedAuditSignature === JSON.stringify(activeAuditSnapshot);
