@@ -152,55 +152,36 @@ export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
     }
   });
 
+  // פיקדון הוא בדיקה אחת לכל מק״ט: נתונים חסרים, פער והצלבה מוצגים יחד.
   const deposits = [
     { sku: "60002", label: "בלות פיקדון", data: note.deposits?.bales60002 },
     { sku: "60060", label: "משטחי עץ / פיקדון", data: note.deposits?.pallets60060 },
   ];
   deposits.forEach(({ sku, label, data }) => {
-    if (note.live) {
-      findings.push({
-        id: `deposit:${sku}:live-crosscheck`,
-        category: "deposit",
-        title: `${label} (${sku}) — הצלבה עצמאית נדרשת`,
-        detail: "רשומת הגיליון אינה מספקת שתי תנועות עצמאיות של אספקה וחיוב/זיכוי. אין להסיק התאמה מכך ששני הערכים נגזרו מאותו טקסט.",
-        sourceRequired: "תנועת פיקדון באספקה וגם תנועת חיוב/זיכוי ממקור נפרד, שתיהן מקושרות לתעודה",
-        severity: "blocker",
-      });
-    }
-    if (!data) {
-      findings.push({
-        id: `deposit:${sku}:missing`,
-        category: "deposit",
-        title: `${label} (${sku}) — נתוני פיקדון חסרים`,
-        detail: "אין נתון מספק/מחויב ברשומת התעודה. אין להסיק שכמות היא אפס.",
-        sourceRequired: "תנועת פיקדון, תעודת משלוח ורישום חיוב/זיכוי",
-        severity: "blocker",
-      });
-      return;
-    }
-    const delivered = Number(data.delivered);
-    const billed = Number(data.billed);
-    if (!Number.isFinite(delivered) || !Number.isFinite(billed)) {
-      findings.push({
-        id: `deposit:${sku}:invalid`,
-        category: "deposit",
-        title: `${label} (${sku}) — נתון לא תקין`,
-        detail: "כמות הפיקדון או החיוב אינה מספרית.",
-        sourceRequired: "רישום פיקדון וחיוב ממקור מוסמך",
-        severity: "blocker",
-      });
-    } else if (delivered !== billed) {
-      findings.push({
-        id: `deposit:${sku}:mismatch`,
-        category: "deposit",
-        title: `${label} (${sku}) — פער פיקדון`,
-        detail: `${delivered} נרשמו כסופקו לעומת ${billed} שנרשמו כחיוב; פער: ${delivered - billed}.`,
-        expected: String(billed),
-        observed: String(delivered),
-        sourceRequired: "תנועת פיקדון ותנועת חיוב/זיכוי המתייחסות לאותה תעודה",
-        severity: "blocker",
-      });
-    }
+    const hasDelivered = data?.delivered !== undefined && data?.delivered !== null && String(data.delivered).trim() !== "";
+    const hasBilled = data?.billed !== undefined && data?.billed !== null && String(data.billed).trim() !== "";
+    const delivered = hasDelivered ? Number(data?.delivered) : NaN;
+    const billed = hasBilled ? Number(data?.billed) : NaN;
+    const missing = !data || !hasDelivered || !hasBilled;
+    const invalid = !missing && (!Number.isFinite(delivered) || !Number.isFinite(billed));
+    const mismatch = !missing && !invalid && delivered !== billed;
+    const independentCheck = Boolean(note.live);
+    if (!missing && !invalid && !mismatch && !independentCheck) return;
+    const details: string[] = [];
+    if (missing) details.push("נתוני כמות שסופקה ו/או כמות שחויבה חסרים. אין להסיק שכמות חסרה היא אפס.");
+    if (invalid) details.push("כמות הפיקדון או החיוב אינה מספרית.");
+    if (mismatch) details.push(String(delivered) + " נרשמו כסופקו לעומת " + String(billed) + " שנרשמו כחיוב; פער: " + String(delivered - billed) + ".");
+    if (independentCheck) details.push("נדרשת הצלבה עצמאית בין תנועת אספקת הפיקדון לבין תנועת חיוב/זיכוי ממקור נפרד.");
+    findings.push({
+      id: "deposit:" + sku + ":audit",
+      category: "deposit",
+      title: label + " (" + sku + ") — " + (missing ? "נתונים חסרים" : mismatch ? "פער פיקדון" : invalid ? "נתון לא תקין" : "הצלבה עצמאית נדרשת"),
+      detail: details.join(" "),
+      expected: hasBilled && Number.isFinite(billed) ? String(billed) : undefined,
+      observed: hasDelivered && Number.isFinite(delivered) ? String(delivered) : undefined,
+      sourceRequired: "תנועת אספקת פיקדון ותנועת חיוב/זיכוי ממקור נפרד, עם מספר אסמכתא ותאריך, המקושרות לאותה תעודה",
+      severity: "blocker",
+    });
   });
 
   if (!note.gps || note.gps.status !== "ok" || note.live) {
