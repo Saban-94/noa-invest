@@ -528,6 +528,8 @@ function logisticsAuditEvidenceSheet_() {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(["נשמר בתאריך", "מספר תעודה", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה", "סטטוס החלטת ראמי", "הסבר ראמי", "מזהה סבב"]);
     sheet.setFrozenRows(1);
+  } else if (String(sheet.getRange(1, 7).getDisplayValue() || "").trim() !== "מזהה סבב") {
+    sheet.getRange(1, 7).setValue("מזהה סבב");
   }
   return sheet;
 }
@@ -574,6 +576,13 @@ function handleSaveLogisticsAuditEvidence_(body) {
   if (evidenceKeys.length !== decisionKeys.length || evidenceKeys.some((key, i) => key !== decisionKeys[i])) {
     return jsonResponse({ success: false, error: "מספר האסמכתאות אינו תואם למספר החלטות ראמי" });
   }
+  const sourceSheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName(TAB_GALYA);
+  if (!sourceSheet) return jsonResponse({ success: false, error: "לא נמצא גיליון ארכיון התעודות" });
+  const sourceHeaders = sourceSheet.getRange(1, 1, 1, Math.max(1, sourceSheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+  const docIdx = headerIndex_(sourceHeaders, ["מס' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח", "מספר ת.מ", "מספר תעודה", "מס׳ תעודה", "docNumber", "noteId", "id"]);
+  if (docIdx < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר תעודה בארכיון" });
+  workroomUniqueRowOrError_(sourceSheet, noteId, sourceHeaders, docIdx);
+
   const rows = [];
   const batchId = Utilities.getUuid();
   for (let i = 0; i < evidenceKeys.length; i++) {
