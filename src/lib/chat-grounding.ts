@@ -19,6 +19,7 @@ export type BackendMeta = {
   unmatchedStops?: number;
   date?: string | null;
   warning?: string;
+  ituranError?: string;
   duplicateNotes?: number;
 };
 
@@ -73,6 +74,7 @@ export function describeSources(meta: BackendMeta | null, fetchedAt: string | nu
     `• ביקורים מחושבים: ${meta.visitsCount ?? "\u2014"}`,
   ];
   if (meta.warning) lines.push(`• אזהרה: ${meta.warning}`);
+  if (meta.ituranError) lines.push(`• איתוראן: ${meta.ituranError}`);
   if (fetchedAt) lines.push(`• נמשך מהשרת ב: ${fetchedAt}`);
   lines.push("מיקום GPS חי (קואורדינות + מזהה רכב + זמן עדכון) אינו זמין במסלול זה.");
   return lines.join("\n");
@@ -115,6 +117,15 @@ export function buildNoaContext(input: {
     noteIds: v.noteIds,
     ituranArrive: v.ituranArriveTime,
     ituranDepart: v.ituranDepartTime,
+    ituranDurationMin: v.ituranDurationMin,
+    ptoOpenTime: v.ptoOpenTime,
+    ptoCloseTime: v.ptoCloseTime,
+    ptoDurationMin: v.ptoDurationMin,
+    handwrittenCraneRaw: v.handwrittenCraneRaw,
+    handwrittenUnloadMin: v.handwrittenUnloadMin,
+    handwrittenWaitingMin: v.handwrittenWaitingMin,
+    measurementSource: v.measurementSource,
+    qualityFlags: v.qualityFlags,
     customers: v.customers,
   }));
 

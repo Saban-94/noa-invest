@@ -1,25 +1,41 @@
-import { describe, it, expect } from "vitest";
-import { crossMatch } from "./ituran";
+import { describe, expect, it } from "vitest";
+import { mapLiveIturanVisit } from "./ituran";
 
-const stops = [{ plate: "615-41-002", address: "החרש 5 רמת גן", arrive: "08:00", depart: "08:30" }];
+describe("mapLiveIturanVisit", () => {
+  it("maps source-labelled Ituran rows with plate, date, address and times", () => {
+    const stop = mapLiveIturanVisit({
+      "מקור המדידה": "איתוראן",
+      "תאריך": "25/10/2026",
+      "משאית": "615-41-002 משאית מרצדס מנוף",
+      "כתובת": "רקפת 4, הוד השרון",
+      "איתוראן: הגעה": "25/10/2026 09:10:00",
+      "איתוראן: יציאה": "25/10/2026 09:42:00",
+      "PTO פתיחה": "25/10/2026 09:15:00",
+      "PTO סגירה": "25/10/2026 09:38:00",
+      "PTO משך (דק׳)": "23",
+    });
+    expect(stop?.truck).toBe("615-41-002");
+    expect(stop?.durationMin).toBe(32);
+    expect(stop?.ptoEvents[0]?.durationMin).toBe(23);
+    expect(stop?.address).toBe("רקפת 4, הוד השרון");
+  });
 
-describe("ituran cross-match", () => {
-  it("crane stay of 30 minutes with signature inside window is verified", () => {
-    expect(
-      crossMatch({ site: "רח׳ החרש 5, רמת גן", signedAt: "08:20" }, "crane", "615-41-002", stops)
-        .status,
-    ).toBe("ok");
+  it("does not treat rows without explicit Ituran source as verified", () => {
+    expect(mapLiveIturanVisit({
+      "תאריך": "25/10/2026",
+      "משאית": "615-41-002",
+      "כתובת": "רקפת 4, הוד השרון",
+      "איתוראן: הגעה": "25/10/2026 09:10:00",
+      "איתוראן: יציאה": "25/10/2026 09:42:00",
+    })).toBeNull();
   });
-  it("crane stay of 30 minutes is too long for nothing but too short? flatbed max 25 → warn", () => {
-    expect(
-      crossMatch({ site: "רח׳ החרש 5, רמת גן", signedAt: "08:20" }, "flatbed", "615-41-002", [
-        { ...stops[0]!, depart: "08:50" },
-      ]).status,
-    ).toBe("warn");
-  });
-  it("truck never at address fails", () => {
-    expect(
-      crossMatch({ site: "הים 8, בת ים", signedAt: "09:00" }, "crane", "615-41-002", stops).status,
-    ).toBe("fail");
+
+  it("rejects incomplete rows", () => {
+    expect(mapLiveIturanVisit({
+      "מקור המדידה": "איתוראן",
+      "תאריך": "25/10/2026",
+      "משאית": "615-41-002",
+      "כתובת": "רקפת 4, הוד השרון",
+    })).toBeNull();
   });
 });
