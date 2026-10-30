@@ -65,6 +65,9 @@ type Finding = ReturnType<typeof buildLogisticsFindings>[number];
 
 function evidenceTemplates(finding: Finding): string[] {
   const title = finding.title;
+  if (finding.id === "address:verification") return [
+    `כתובת אספקה הושוותה מול כרטיס לקוח והזמנת קומקס | כתובת: [כתובת מלאה] | סיווג: [קיימת / חדשה] | מקור: [מסמך/כרטיס לקוח] | החלטת ראמי: [מאשר / נדרש תיקון]`,
+  ];
   if (finding.category === "source") return [
     `הצלבה מול קומקס | הזמנה: [מספר הזמנה] | תאריך: [תאריך] | מסמך מקור: [קישור/עמוד] | תוצאה: [תוצאה] | החלטת ראמי: [תיקון / אישור חריגה / דחייה]`,
     `מקור התעודה נבדק | קובץ: [שם/קישור] | עמוד: [מספר] | מספר תעודה: [מספר] | תוצאה: [תוצאה] | החלטת ראמי: [תיקון / אישור חריגה / דחייה]`,
@@ -472,6 +475,12 @@ function Viewer() {
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(new Set());
   const [zoomed, setZoomed] = useState(false);
+
+  useEffect(() => {
+    setAuditLoaded(false);
+    setAuditEvidence({});
+    setSavedAuditSignature(null);
+  }, [id]);
 
   const auditEvidenceQuery = useQuery({
     queryKey: ["logistics-audit-evidence", id],
