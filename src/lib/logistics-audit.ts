@@ -21,17 +21,34 @@ function extractSku(name: string, explicitSku?: string): string | undefined {
   return normalize(name).match(/(?:מק["״']?ט\s*)?(\d{5,8})/)?.[1];
 }
 
-export function buildLogisticsFindings(\n  note: DeliveryNote,\n  comaxItems: Array<{ sku: string; name?: string; qty: number; unit?: string }> = [],\n): LogisticsFinding[] {
+export function buildLogisticsFindings(
+  note: DeliveryNote,
+  comaxItems: Array<{ sku: string; name?: string; qty: number; unit?: string }> = [],
+): LogisticsFinding[] {
   const findings: LogisticsFinding[] = [];
   const items = Array.isArray(note.items) ? note.items : [];
 
-  if (note.live) {
+  if (note.live && (!comaxItems.length || !note.comaxOrder)) {
     findings.push({
       id: "source:live",
       category: "source",
       title: "הצלבת מקור נדרשת",
-      detail: "הנתונים נטענו מהגיליון החי אך עדיין לא הוצלבו מול הזמנת המקור/קומקס ומסמך ה-PDF.",
-      sourceRequired: "מספר הזמנה ומסמך PDF מקוריים, כולל עמוד ושורת ראיה",
+      detail: "לא התקבלה הזמנת קומקס מאומתת להשוואה. נתוני התעודה לבדם אינם מוכיחים התאמה.",
+      sourceRequired: "הזמנת קומקס מלאה ומסמך PDF מקורי",
+      severity: "blocker",
+    });
+  }
+
+  if (note.live) {
+    findings.push({
+      id: "address:verification",
+      category: "source",
+      title: note.siteAddress ? "כתובת אספקה — אימות מול כרטיס לקוח" : "כתובת אספקה חסרה",
+      detail: note.siteAddress
+        ? "יש להשוות את הכתובת בתעודה לכרטיס הלקוח ולהזמנת קומקס. אם זו כתובת חדשה, יש לתעד זאת ולקבל אישור מפורש של ראמי."
+        : "לא זוהתה כתובת אספקה בתעודה. אין להעביר להראל עד להזנת כתובת מדויקת ואימותה.",
+      observed: note.siteAddress || "לא הוזנה כתובת",
+      sourceRequired: "כרטיס לקוח + כתובת בהזמנת קומקס; בכתובת חדשה — אישור ראמי ותיעוד הכתובת המלאה",
       severity: "blocker",
     });
   }
@@ -62,7 +79,10 @@ export function buildLogisticsFindings(\n  note: DeliveryNote,\n  comaxItems: Ar
     const sku = extractSku(item.name, item.sku);
     const title = sku ? `מק״ט ${sku}` : item.name || `שורה ${index + 1}`;
     const safeQty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : null;
-    const comaxMatch = sku ? comaxItems.find((source) => normalize(source.sku) === sku) : undefined;\n    const safeOrdered = note.live\n      ? (comaxMatch && Number.isFinite(Number(comaxMatch.qty)) ? Number(comaxMatch.qty) : null)\n      : (Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null);
+    const comaxMatch = sku ? comaxItems.find((source) => normalize(source.sku) === sku) : undefined;
+    const safeOrdered = note.live
+      ? (comaxMatch && Number.isFinite(Number(comaxMatch.qty)) ? Number(comaxMatch.qty) : null)
+      : (Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null);
     const isTransport = /הובל|מנוף|משלוח|הובלה|הובלות/i.test(normalize(item.name));
     const id = `item:${sku || normalize(item.name).toLowerCase().replace(/\s+/g, "-") || index}`;
 
@@ -91,7 +111,19 @@ export function buildLogisticsFindings(\n  note: DeliveryNote,\n  comaxItems: Ar
       });
     }
 
-    if (note.live && comaxItems.length > 0 && sku && !comaxMatch) {\n      findings.push({\n        id: `${id}:not-in-order`,\n        category: "quantity",\n        title: `${title} — פריט לא מופיע בהזמנה`,\n        detail: "המק״ט מופיע בתעודת המשלוח אך לא נמצא במניפסט הזמנת קומקס.",\n        observed: String(item.qty ?? "לא ידוע"),\n        sourceRequired: "בדיקת שורת הפריט בתעודה ובהזמנת קומקס",\n        severity: "blocker",\n      });\n    }\n\n    if (safeQty === null || safeOrdered === null) {
+    if (note.live && comaxItems.length > 0 && sku && !comaxMatch) {
+      findings.push({
+        id: `${id}:not-in-order`,
+        category: "quantity",
+        title: `${title} — פריט לא מופיע בהזמנה`,
+        detail: "המק״ט מופיע בתעודת המשלוח אך לא נמצא במניפסט הזמנת קומקס.",
+        observed: String(item.qty ?? "לא ידוע"),
+        sourceRequired: "בדיקת שורת הפריט בתעודה ובהזמנת קומקס",
+        severity: "blocker",
+      });
+    }
+
+    if (safeQty === null || safeOrdered === null) {
       findings.push({
         id: `${id}:quantity-missing`,
         category: "quantity",
@@ -205,10 +237,21 @@ export function buildLogisticsFindings(\n  note: DeliveryNote,\n  comaxItems: Ar
   return findings;
 }
 
+export type RamiFindingDecision = {
+  status: "pending" | "resolved" | "accepted_exception" | "needs_fix";
+  note?: string;
+};
+
 export function isLogisticsAuditComplete(
   findings: LogisticsFinding[],
   evidenceByFinding: Record<string, string>,
+  decisionsByFinding: Record<string, RamiFindingDecision> = {},
 ): boolean {
-  return findings.length > 0 &&
-    findings.every((finding) => normalize(evidenceByFinding[finding.id]).length >= 12);
+  return findings.length > 0 && findings.every((finding) => {
+    const evidence = normalize(evidenceByFinding[finding.id]);
+    const decision = decisionsByFinding[finding.id];
+    const decisionValid = decision?.status === "resolved" ||
+      (decision?.status === "accepted_exception" && normalize(decision.note).length >= 3);
+    return evidence.length >= 12 && decisionValid;
+  });
 }
