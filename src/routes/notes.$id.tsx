@@ -542,7 +542,7 @@ function Viewer() {
     enabled: !!n && !noteHasItems && !!n.comaxOrder,
     staleTime: 60_000,
     retry: 1,
-    queryFn: ({ signal }) => fetchManifest(String(n!.comaxOrder), signal),
+    queryFn: () => fetchManifest(String(n!.comaxOrder)),
   });
 
   const handleOpenTask = async () => {
