@@ -1,6 +1,5 @@
 import {
   BASE as DEFAULT_NOTES,
-  ORDERS as DEFAULT_ORDERS,
   type DeliveryNote,
   type DeliveryItem,
   type Order,
@@ -9,6 +8,7 @@ import {
 import { CUSTOMERS as DEFAULT_CUSTOMERS, type CustomerProfile } from "./customers-data";
 import { SAMPLE_STOPS as DEFAULT_GPS_STOPS, type GpsStop } from "./ituran";
 import { listNotesFn, approvalFn, saveSignedNoteFn, type SheetNote } from "./notes-api.functions";
+import { fetchLiveOrdersFromSheet } from "./google-orders";
 
 export const API_BASE =
   "https://script.google.com/macros/s/AKfycbxNMqeQDlOOswTPciJwfdyuIHYNmXxGc6tR8FXvtgm-PFNDhuuq50LUwyq_3-CsgLIViQ/exec";
@@ -16,7 +16,6 @@ export const API_BASE =
 export const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
 
 const CACHE_KEY_NOTES = "saban-live-notes-v4";
-const CACHE_KEY_ORDERS = "saban-live-orders-v4";
 const CACHE_KEY_GPS = "saban-live-gps-v4";
 const CACHE_KEY_CUSTOMERS = "saban-live-customers-v4";
 const CACHE_KEY_DASHBOARD = "saban-live-dashboard-v4";
@@ -260,76 +259,9 @@ export async function fetchNotes(): Promise<DeliveryNote[]> {
 /**
  * שליפת סידור והזמנות חיות מתוך הגיליון ("🚚_הזמנות_חיות_וסידור")
  */
+/** הזמנות חיות בלבד — מקור יחיד דרך orders.functions → GAS getOrders. */
 export async function fetchOrders(): Promise<Order[]> {
-  const cached = getFromStorage<Order[]>(CACHE_KEY_ORDERS, DEFAULT_ORDERS);
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-    const res = await fetch(`${API_BASE}?action=getOrders&sheetId=${MASTER_SHEET_ID}`, {
-      method: "GET",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      let rawList: Record<string, unknown>[] | null = null;
-      if (Array.isArray(data)) rawList = data as Record<string, unknown>[];
-      else if (
-        data &&
-        typeof data === "object" &&
-        Array.isArray((data as Record<string, unknown>).data)
-      ) {
-        rawList = (data as Record<string, unknown>).data as Record<string, unknown>[];
-      }
-
-      if (rawList && rawList.length > 0) {
-        const cleanOrders: Order[] = rawList.map((r: Record<string, unknown>, idx: number) => {
-          const id = String(r["מספר הזמנה"] || r.orderId || r.id || `621556${idx}`).trim();
-          const customer = String(r["שם לקוח"] || r.customer || "לקוח סבן").trim();
-          const phone = String(r["איש קשר וטלפון"] || r.phone || "050-6662300").trim();
-          const address = String(r["כתובת יעד ועיר"] || r.address || "הוד השרון").trim();
-          const date = "15/10/2026";
-          const window = String(r["סבב ושעה"] || r.window || "08:00–11:00").trim();
-          const yardRaw = String(r["מחסן מוצא"] || r.yard || "מחסן 4 החרש 10").trim();
-          const yard: Yard =
-            yardRaw.includes("התלמיד") || yardRaw.includes("1")
-              ? "מחסן 1 התלמיד 6"
-              : "מחסן 4 החרש 10";
-          const driverRaw = String(r["נהג משוייך"] || r.driver || "חכמת").trim();
-          const driverId = driverRaw.includes("עלי") ? "ali" : "hikmat";
-          const statusRaw = String(r["סטטוס ביצוע"] || r.status || "פתוחה").trim();
-          const status: "פתוחה" | "בהעמסה" | "בדרך" = statusRaw.includes("בהעמסה")
-            ? "בהעמסה"
-            : statusRaw.includes("בדרך")
-              ? "בדרך"
-              : "פתוחה";
-          const rawItems = r["פירוט מוצרים ומק״טים"] || r.items;
-          const items = parseItemsSummary(rawItems);
-
-          return {
-            id,
-            customer,
-            phone,
-            address,
-            date,
-            window,
-            yard,
-            driverId,
-            status,
-            items,
-          };
-        });
-
-        setToStorage(CACHE_KEY_ORDERS, cleanOrders);
-        return cleanOrders;
-      }
-    }
-  } catch (err) {
-    console.warn("[API] fetchOrders error, using cached orders:", err);
-  }
-  return cached && cached.length > 0 ? cached : DEFAULT_ORDERS;
+  return fetchLiveOrdersFromSheet();
 }
 
 export const fetchLiveOrders = fetchOrders;
