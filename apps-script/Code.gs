@@ -10,7 +10,7 @@
  * 5. לחץ Deploy והעתק את הכתובת שמסתיימת ב-/exec.
  */
 
-const API_VERSION = "2026-10-30-v10-customer-documents";
+const API_VERSION = "2026-10-30-v11-logistics-command-center";
 const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
 const TAB_GALYA = "ארכיון_תעודות_גליה";
 
