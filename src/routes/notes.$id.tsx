@@ -13,7 +13,7 @@ import { fetchLiveNotes, approveStrict } from "@/lib/api";
 import { getManifestFn, getScanFn } from "@/lib/notes-api.functions";
 import { scanToDataUrl } from "@/lib/scan-render";
 import { approvals, useApprovals } from "@/lib/store";
-import { playUrgentSignatureAlarm, playDispatchChime } from "@/lib/audio-alerts";
+import { playDispatchChime } from "@/lib/audio-alerts";
 import { PageHeader, StatusPill } from "@/components/AppShell";
 import {
   AlertTriangle,
@@ -462,7 +462,6 @@ function Viewer() {
   const [customNote, setCustomNote] = useState("");
   const [showCelebration, setShowCelebration] = useState(false);
   const [isApprovingRami, setIsApprovingRami] = useState(false);
-  const [isApprovingHarel, setIsApprovingHarel] = useState(false);
   const [isOpeningTask, setIsOpeningTask] = useState(false);
   const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
   const [auditLoaded, setAuditLoaded] = useState(false);
@@ -714,29 +713,6 @@ function Viewer() {
       });
     } finally {
       setIsApprovingRami(false);
-    }
-  };
-
-  const handleHarelApproval = async () => {
-    if (!auditComplete) {
-      toast.error("אישור מנכ״ל נחסם: הבדיקה הלוגיסטית לא הושלמה", {
-        description: `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.`,
-      });
-      return;
-    }
-    setIsApprovingHarel(true);
-    try {
-      await approveStrict(n.id, "harel", customNote.trim() || undefined, auditEvidence);
-      approvals.harel(n.id, customNote.trim() || undefined);
-      playUrgentSignatureAlarm();
-      setShowCelebration(true);
-      toast.success(`ת.מ. ${n.id} אושרה סופית לחיוב ע״י מנכ״ל`);
-    } catch (err) {
-      toast.error("אישור מנכ״ל נדחה ע״י השרת", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setIsApprovingHarel(false);
     }
   };
 
@@ -1070,28 +1046,11 @@ function Viewer() {
                 )}
 
                 {ap?.rami && !ap?.harel && (
-                  <motion.button
-                    key="harel-btn"
-                    type="button"
-                    onClick={handleHarelApproval}
-                    disabled={isApprovingHarel}
-                    aria-busy={isApprovingHarel}
-                    initial={reduce ? false : { opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
-                    className={`${BTN} bg-ceo text-ceo-foreground shadow-lift hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-ceo ${auditComplete ? "" : "opacity-80"}`}
-                  >
-                    <Shine />
-                    {isApprovingHarel ? (
-                      <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                    ) : (
-                      <Crown className="h-4 w-4" aria-hidden="true" />
-                    )}
-                    <span className="relative">{isApprovingHarel ? "מאשר בשרת..." : "אושר סופית לחיוב · הראל אידלסון"}</span>
-                  </motion.button>
-                )}
-              </AnimatePresence>
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 text-xs leading-6 text-foreground">
+                    <div className="flex items-center gap-2 font-bold"><Crown className="h-4 w-4 text-primary" /> הועבר להראל להחלטה ניהולית</div>
+                    <p className="mt-1 text-muted-foreground">הראל יקבל את דוח נועה ואת אישור ראמי. אין צורך למלא מחדש את תשובות הבקרה במסך זה.</p>
+                  </div>
+                )}              </AnimatePresence>
 
               {ap && (
                 <button
