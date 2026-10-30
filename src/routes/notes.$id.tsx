@@ -13,7 +13,7 @@ import { fetchLiveNotes, approveStrict } from "@/lib/api";
 import { getManifestFn, getScanFn } from "@/lib/notes-api.functions";
 import { scanToDataUrl } from "@/lib/scan-render";
 import { approvals, useApprovals } from "@/lib/store";
-import { playUrgentSignatureAlarm, playDispatchChime } from "@/lib/audio-alerts";
+import { playDispatchChime } from "@/lib/audio-alerts";
 import { PageHeader, StatusPill } from "@/components/AppShell";
 import {
   AlertTriangle,
@@ -462,7 +462,6 @@ function Viewer() {
   const [customNote, setCustomNote] = useState("");
   const [showCelebration, setShowCelebration] = useState(false);
   const [isApprovingRami, setIsApprovingRami] = useState(false);
-  const [isApprovingHarel, setIsApprovingHarel] = useState(false);
   const [isOpeningTask, setIsOpeningTask] = useState(false);
   const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
   const [auditLoaded, setAuditLoaded] = useState(false);
@@ -504,6 +503,16 @@ function Viewer() {
       String(item.id) === String(id) ||
       String(item.task?.noteId || "") === String(id),
   );
+  const returnedToRami = relatedInquiry?.status === "returned_to_rami";
+  useEffect(() => {
+    if (!returnedToRami) return;
+    setAuditEvidence({});
+    try {
+      localStorage.removeItem(`noa-logistics-audit:${id}`);
+    } catch {
+      // The server-side return status remains authoritative if storage is unavailable.
+    }
+  }, [returnedToRami, id]);
 
   // שליפת תעודות חיות מהגיליון לפי מזהה התעודה ללא נתוני דמה
   const {
@@ -637,6 +646,7 @@ function Viewer() {
   }
 
   const ap = apState[n.id];
+  const ramiApprovalActive = Boolean(ap?.rami) && !returnedToRami;
   const a = auditNote(n);
   const auditFindings = buildLogisticsFindings(n);
   const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence);
@@ -691,8 +701,8 @@ function Viewer() {
 
   const steps: Step[] = [
     { key: "audit", label: "בקרת נועה AI", hint: `${auditEvidenceCount}/${auditFindings.length} אסמכתאות`, done: auditComplete, icon: Brain },
-    { key: "rami", label: "אישור ראמי", hint: ap?.rami ? ap.rami.at : "ממתין לבדיקה", done: Boolean(ap?.rami), icon: Stamp },
-    { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel ? ap.harel.at : "ממתין לראמי", done: Boolean(ap?.harel), icon: Crown },
+    { key: "rami", label: "אישור ראמי", hint: ramiApprovalActive ? ap!.rami!.at : "ממתין לבדיקה / תיקון", done: ramiApprovalActive, icon: Stamp },
+    { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel && !returnedToRami ? ap.harel.at : "ממתין לאישור ראמי", done: Boolean(ap?.harel) && !returnedToRami, icon: Crown },
   ];
 
   const handleRamiApproval = async () => {
@@ -714,29 +724,6 @@ function Viewer() {
       });
     } finally {
       setIsApprovingRami(false);
-    }
-  };
-
-  const handleHarelApproval = async () => {
-    if (!auditComplete) {
-      toast.error("אישור מנכ״ל נחסם: הבדיקה הלוגיסטית לא הושלמה", {
-        description: `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.`,
-      });
-      return;
-    }
-    setIsApprovingHarel(true);
-    try {
-      await approveStrict(n.id, "harel", customNote.trim() || undefined, auditEvidence);
-      approvals.harel(n.id, customNote.trim() || undefined);
-      playUrgentSignatureAlarm();
-      setShowCelebration(true);
-      toast.success(`ת.מ. ${n.id} אושרה סופית לחיוב ע״י מנכ״ל`);
-    } catch (err) {
-      toast.error("אישור מנכ״ל נדחה ע״י השרת", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setIsApprovingHarel(false);
     }
   };
 
@@ -873,7 +860,7 @@ function Viewer() {
 
         {/* באנר אישור סופי */}
         <AnimatePresence>
-          {(ap?.harel || showCelebration) && (
+          {((ap?.harel && !returnedToRami) || showCelebration) && (
             <motion.div
               initial={reduce ? false : { opacity: 0, y: -16, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -963,7 +950,7 @@ function Viewer() {
 
                 {/* חותמות */}
                 <AnimatePresence>
-                  {ap?.rami && (
+                  {ap?.rami && !returnedToRami && (
                     <motion.div
                       key="rami-stamp"
                       {...stampMotion}
@@ -974,7 +961,7 @@ function Viewer() {
                       <span className="font-mono text-xs opacity-90">{ap.rami.at}</span>
                     </motion.div>
                   )}
-                  {ap?.harel && (
+                  {ap?.harel && !returnedToRami && (
                     <motion.div
                       key="harel-stamp"
                       {...stampMotion}
@@ -1044,7 +1031,7 @@ function Viewer() {
               )}
 
               <AnimatePresence mode="wait" initial={false}>
-                {!ap?.rami && (
+                {!ramiApprovalActive && (
                   <motion.button
                     key="rami-btn"
                     type="button"
@@ -1069,27 +1056,11 @@ function Viewer() {
                   </motion.button>
                 )}
 
-                {ap?.rami && !ap?.harel && (
-                  <motion.button
-                    key="harel-btn"
-                    type="button"
-                    onClick={handleHarelApproval}
-                    disabled={isApprovingHarel}
-                    aria-busy={isApprovingHarel}
-                    initial={reduce ? false : { opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
-                    className={`${BTN} bg-ceo text-ceo-foreground shadow-lift hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-ceo ${auditComplete ? "" : "opacity-80"}`}
-                  >
-                    <Shine />
-                    {isApprovingHarel ? (
-                      <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                    ) : (
-                      <Crown className="h-4 w-4" aria-hidden="true" />
-                    )}
-                    <span className="relative">{isApprovingHarel ? "מאשר בשרת..." : "אושר סופית לחיוב · הראל אידלסון"}</span>
-                  </motion.button>
+                {ramiApprovalActive && !ap?.harel && !returnedToRami && (
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 text-xs leading-6 text-foreground">
+                    <div className="flex items-center gap-2 font-bold"><Crown className="h-4 w-4 text-primary" /> הועבר להראל להחלטה ניהולית</div>
+                    <p className="mt-1 text-muted-foreground">הראל יקבל את דוח נועה ואת אישור ראמי. אין צורך למלא מחדש את תשובות הבקרה במסך זה.</p>
+                  </div>
                 )}
               </AnimatePresence>
 
