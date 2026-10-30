@@ -16,6 +16,7 @@ export type SheetOrderItem = {
 /** הזמנה מהגיליון — גל 1: שדות ממופים לכותרות האמיתיות */
 export type SheetOrder = {
   id: string;
+  receivedDate?: string;
   customerNo: string;
   customer: string;
   phone: string;
@@ -101,8 +102,9 @@ function normalizeOrder(value: unknown, index: number): SheetOrder {
   );
 
   return {
-    id: id || `row-${index + 1}`,
-    customerNo: String(firstValue(row, "customerNo", "customerId", "מס' לקוח", "מס׳ לקוח", "מספר לקוח")),
+    id: id.trim(),
+    receivedDate: String(firstValue(row, "receivedDate", "תאריך קליטה")),
+    customerNo: String(firstValue(row, "customerNo", "customerId", "מס' לקוח", "מס׳ לקוח", "מספר לקוח")).trim(),
     customer: String(firstValue(row, "customer", "customerName", "שם לקוח", "לקוח") || "לקוח ללא שם"),
     phone: String(firstValue(row, "phone", "customerPhone", "איש קשר וטלפון", "טלפון")),
     address: String(firstValue(row, "address", "deliveryAddress", "כתובת אספקה", "כתובת")),
