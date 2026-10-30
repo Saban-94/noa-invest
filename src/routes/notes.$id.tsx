@@ -462,20 +462,38 @@ interface ManifestRow {
   unitWeightKg: number;
 }
 
+interface ManifestData {
+  items: ManifestRow[];
+  source: string;
+  orderId: string;
+  customerNo: string;
+  customer: string;
+  address: string;
+  date: string;
+}
+
 const toNum = (v: unknown): number => {
   const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 };
 
-async function fetchManifest(orderId: string): Promise<ManifestRow[]> {
+async function fetchManifest(orderId: string): Promise<ManifestData> {
   const result = await getManifestFn({ data: { orderId } });
-  return result.items.map((row) => ({
-    sku: String(row.sku || "").trim(),
-    name: String(row.name || ""),
-    qty: toNum(row.qty),
-    unit: String(row.unit || "יח׳"),
-    unitWeightKg: toNum(row.unitWeightKg),
-  }));
+  return {
+    items: result.items.map((row) => ({
+      sku: String(row.sku || "").trim(),
+      name: String(row.name || ""),
+      qty: toNum(row.qty),
+      unit: String(row.unit || "יח׳"),
+      unitWeightKg: toNum(row.unitWeightKg),
+    })),
+    source: String(result.source || ""),
+    orderId: String(result.orderId || orderId),
+    customerNo: String(result.customerNo || ""),
+    customer: String(result.customer || ""),
+    address: String(result.address || ""),
+    date: String(result.date || ""),
+  };
 }
 
 const sumSku = (rows: ManifestRow[], sku: string) =>
@@ -692,8 +710,8 @@ function Viewer() {
   const a = auditNote(n);
 
   /* ── נתוני כרטיסי המדדים: תעודה מול הזמנת קומקס ── */
-  const manifest = manifestQuery.data ?? [];
-  const auditFindings = buildLogisticsFindings(n, manifest);
+  const manifest = manifestQuery.data?.items ?? [];
+  const auditFindings = buildLogisticsFindings(n, manifestQuery.data);
   const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence, auditDecisions);
   const auditEvidenceCount = auditFindings.filter((finding) => isDocumented(auditEvidence[finding.id])).length;
   const auditDecisionCount = auditFindings.filter((finding) => {
