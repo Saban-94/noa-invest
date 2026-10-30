@@ -10,7 +10,7 @@ import {
   type DeliveryNote,
 } from "@/lib/data";
 import { fetchLiveNotes, approveStrict } from "@/lib/api";
-import { getManifestFn, getScanFn } from "@/lib/notes-api.functions";
+import { getManifestFn, getScanFn, getLogisticsAuditFn, saveLogisticsAuditFn } from "@/lib/notes-api.functions";
 import { scanToDataUrl } from "@/lib/scan-render";
 import { approvals, useApprovals } from "@/lib/store";
 import { playDispatchChime } from "@/lib/audio-alerts";
@@ -466,28 +466,44 @@ function Viewer() {
   const [isOpeningTask, setIsOpeningTask] = useState(false);
   const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
   const [auditLoaded, setAuditLoaded] = useState(false);
+  const [isSavingAudit, setIsSavingAudit] = useState(false);
+  const [savedAuditSignature, setSavedAuditSignature] = useState<string | null>(null);
   const [showAllAuditFindings, setShowAllAuditFindings] = useState(false);
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(new Set());
   const [zoomed, setZoomed] = useState(false);
 
+  const auditEvidenceQuery = useQuery({
+    queryKey: ["logistics-audit-evidence", id],
+    queryFn: () => getLogisticsAuditFn({ data: { noteId: id } }),
+    staleTime: 0,
+    retry: 1,
+  });
+
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(`noa-logistics-audit:${id}`);
-      setAuditEvidence(saved ? (JSON.parse(saved) as Record<string, string>) : {});
-    } catch {
-      setAuditEvidence({});
-    } finally {
-      setAuditLoaded(true);
+    if (auditEvidenceQuery.isLoading) return;
+    const serverEvidence = auditEvidenceQuery.data?.evidence || {};
+    if (Object.keys(serverEvidence).length > 0) {
+      setAuditEvidence(serverEvidence);
+      setSavedAuditSignature(JSON.stringify(serverEvidence));
+    } else {
+      try {
+        const saved = localStorage.getItem(`noa-logistics-audit:${id}`);
+        setAuditEvidence(saved ? (JSON.parse(saved) as Record<string, string>) : {});
+      } catch {
+        setAuditEvidence({});
+      }
+      setSavedAuditSignature(null);
     }
-  }, [id]);
+    setAuditLoaded(true);
+  }, [id, auditEvidenceQuery.data, auditEvidenceQuery.isLoading]);
 
   useEffect(() => {
     if (!auditLoaded) return;
     try {
       localStorage.setItem(`noa-logistics-audit:${id}`, JSON.stringify(auditEvidence));
     } catch {
-      // Keep the gate active in memory if browser persistence is unavailable.
+      // Local cache is convenience only; server save is required before approval.
     }
   }, [id, auditEvidence, auditLoaded]);
 
@@ -591,8 +607,27 @@ function Viewer() {
     toast.success("המענה נשמר בשרשור הבירור");
   };
 
-  const setEvidence = (findingId: string, value: string) =>
+  const setEvidence = (findingId: string, value: string) => {
     setAuditEvidence((previous) => ({ ...previous, [findingId]: value }));
+    setSavedAuditSignature(null);
+  };
+
+  const handleSaveAudit = async () => {
+    if (!auditComplete) {
+      toast.error("לא ניתן לשמור: יש להשלים את כל ממצאי הבקרה");
+      return;
+    }
+    setIsSavingAudit(true);
+    try {
+      await saveLogisticsAuditFn({ data: { noteId: id, evidence: auditEvidence } });
+      setSavedAuditSignature(JSON.stringify(auditEvidence));
+      toast.success("ראיות הבקרה נשמרו בשרת ומשותפות למסכי העבודה");
+    } catch (err) {
+      toast.error("שמירת הבקרה נכשלה", { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setIsSavingAudit(false);
+    }
+  };
 
   const toggleRow = (findingId: string) =>
     setOpenRows((prev) => {
@@ -651,6 +686,7 @@ function Viewer() {
   const a = auditNote(n);
   const auditFindings = buildLogisticsFindings(n);
   const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence);
+  const auditPersisted = auditComplete && savedAuditSignature === JSON.stringify(auditEvidence);
   const auditEvidenceCount = auditFindings.filter((finding) => isDocumented(auditEvidence[finding.id])).length;
   const auditPct = auditFindings.length ? (auditEvidenceCount / auditFindings.length) * 100 : 0;
 
@@ -707,9 +743,9 @@ function Viewer() {
   ];
 
   const handleRamiApproval = async () => {
-    if (!auditComplete) {
-      toast.error("האישור נחסם: נדרשת השלמת בדיקת הלוגיסטיקה", {
-        description: `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.`,
+    if (!auditComplete || !auditPersisted) {
+      toast.error("האישור נחסם: יש להשלים ולשמור את בקרת הלוגיסטיקה בשרת", {
+        description: !auditComplete ? `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.` : "הנתונים השתנו מאז השמירה האחרונה. יש לשמור מחדש.",
       });
       return;
     }
@@ -1094,10 +1130,10 @@ function Viewer() {
                 />
               </label>
 
-              {!auditComplete && !ap?.rami && (
+              {(!auditComplete || !auditPersisted) && !ap?.rami && (
                 <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] leading-5 text-amber-900 dark:text-amber-200">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  האישור נעול עד שיתועדו אסמכתאות לכל בדיקות הלוגיסטיקה ({auditEvidenceCount}/{auditFindings.length}).
+                  האישור נעול עד להשלמת הבדיקות ושמירת האסמכתאות בשרת ({auditEvidenceCount}/{auditFindings.length}).
                 </p>
               )}
 
@@ -1107,7 +1143,7 @@ function Viewer() {
                     key="rami-btn"
                     type="button"
                     onClick={handleRamiApproval}
-                    disabled={isApprovingRami}
+                    disabled={isApprovingRami || !auditPersisted}
                     aria-busy={isApprovingRami}
                     initial={reduce ? false : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1222,6 +1258,22 @@ function Viewer() {
             </button>
           </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">
+              {auditPersisted ? "הבקרה נשמרה בשרת וזמינה גם למשתמשים אחרים." : "לאחר השלמת כל הממצאים יש לשמור את הבקרה בשרת לפני אישור ראמי."}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSaveAudit()}
+              disabled={!auditComplete || isSavingAudit || auditPersisted}
+              className="min-h-10 gap-2 rounded-full px-4"
+            >
+              {isSavingAudit ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              {isSavingAudit ? "שומר בקרה..." : auditPersisted ? "הבקרה נשמרה בשרת" : "שמור בדיקת בקרה"}
+            </Button>
+          </div>
+
           <ul className="space-y-3">
             <AnimatePresence initial={false}>
               {visibleFindings.map((finding) => (
@@ -1254,7 +1306,7 @@ function Viewer() {
           )}
 
           <p className="text-xs leading-6 text-muted-foreground">
-            חשוב: תיעוד זה נשמר כרגע בדפדפן המקומי בלבד ואינו הוכחה עצמאית לאימות. אין כאן חילוץ אוטומטי של PDF או הצלבה חיה מול קומקס/צי רכב; יש לצרף אסמכתאות אמיתיות. יש להשלים שמירה ואכיפה בצד השרת לפני שימוש כתהליך ביקורת מחייב.
+            הראיות נשמרות בשרת עם היסטוריית עדכונים ומשותפות למסכי ההזמנות והתעודות. שמירת דיווח אינה אימות עצמאי: נועה מציגה את מקור האסמכתה, וראמי אחראי להכריע בכל חריגה לפני העברה להראל.
           </p>
         </section>
 
