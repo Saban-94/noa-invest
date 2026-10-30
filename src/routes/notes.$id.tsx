@@ -10,7 +10,7 @@ import {
   type DeliveryNote,
 } from "@/lib/data";
 import { fetchLiveNotes, approveStrict } from "@/lib/api";
-import { getManifestFn, getScanFn } from "@/lib/notes-api.functions";
+import { getManifestFn, getScanFn, getLogisticsAuditFn, saveLogisticsAuditFn } from "@/lib/notes-api.functions";
 import { scanToDataUrl } from "@/lib/scan-render";
 import { approvals, useApprovals } from "@/lib/store";
 import { playDispatchChime } from "@/lib/audio-alerts";
@@ -514,24 +514,49 @@ function Viewer() {
   const [auditEvidence, setAuditEvidence] = useState<Record<string, string>>({});
   const [auditDecisions, setAuditDecisions] = useState<Record<string, RamiFindingDecision>>({});
   const [auditLoaded, setAuditLoaded] = useState(false);
+  const [isSavingAudit, setIsSavingAudit] = useState(false);
+  const [savedAuditSignature, setSavedAuditSignature] = useState<string | null>(null);
   const [showAllAuditFindings, setShowAllAuditFindings] = useState(false);
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(new Set());
   const [zoomed, setZoomed] = useState(false);
 
+  const auditEvidenceQuery = useQuery({
+    queryKey: ["logistics-audit-evidence", id],
+    queryFn: () => getLogisticsAuditFn({ data: { noteId: id } }),
+    staleTime: 0,
+    retry: 1,
+  });
+
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(`noa-logistics-audit:${id}`);
-      setAuditEvidence(saved ? (JSON.parse(saved) as Record<string, string>) : {});
-      const savedDecisions = localStorage.getItem(`noa-logistics-decisions:${id}`);
-      setAuditDecisions(savedDecisions ? (JSON.parse(savedDecisions) as Record<string, RamiFindingDecision>) : {});
-    } catch {
-      setAuditEvidence({});
-      setAuditDecisions({});
-    } finally {
-      setAuditLoaded(true);
-    }
+    setAuditLoaded(false);
+    setAuditEvidence({});
+    setAuditDecisions({});
+    setSavedAuditSignature(null);
   }, [id]);
+
+  useEffect(() => {
+    if (auditEvidenceQuery.isLoading) return;
+    const remoteEvidence = auditEvidenceQuery.data?.evidence || {};
+    const remoteDecisions = auditEvidenceQuery.data?.decisions || {};
+    if (Object.keys(remoteEvidence).length > 0) {
+      setAuditEvidence(remoteEvidence);
+      setAuditDecisions(remoteDecisions);
+      setSavedAuditSignature(JSON.stringify({ evidence: remoteEvidence, decisions: remoteDecisions }));
+    } else {
+      try {
+        const saved = localStorage.getItem(`noa-logistics-audit:${id}`);
+        const savedDecisions = localStorage.getItem(`noa-logistics-decisions:${id}`);
+        setAuditEvidence(saved ? (JSON.parse(saved) as Record<string, string>) : {});
+        setAuditDecisions(savedDecisions ? (JSON.parse(savedDecisions) as Record<string, RamiFindingDecision>) : {});
+      } catch {
+        setAuditEvidence({});
+        setAuditDecisions({});
+      }
+      setSavedAuditSignature(null);
+    }
+    setAuditLoaded(true);
+  }, [id, auditEvidenceQuery.data, auditEvidenceQuery.isLoading]);
 
   useEffect(() => {
     if (!auditLoaded) return;
@@ -539,7 +564,7 @@ function Viewer() {
       localStorage.setItem(`noa-logistics-audit:${id}`, JSON.stringify(auditEvidence));
       localStorage.setItem(`noa-logistics-decisions:${id}`, JSON.stringify(auditDecisions));
     } catch {
-      // Keep the gate active in memory if browser persistence is unavailable.
+      // Local storage is only a convenience cache; server save is required before approval.
     }
   }, [id, auditEvidence, auditDecisions, auditLoaded]);
 
@@ -561,6 +586,7 @@ function Viewer() {
     if (!returnedToRami) return;
     setAuditEvidence({});
     setAuditDecisions({});
+    setSavedAuditSignature(null);
     try {
       localStorage.removeItem(`noa-logistics-audit:${id}`);
       localStorage.removeItem(`noa-logistics-decisions:${id}`);
@@ -648,10 +674,30 @@ function Viewer() {
   const setEvidence = (findingId: string, value: string) => {
     setAuditEvidence((previous) => ({ ...previous, [findingId]: value }));
     setAuditDecisions((previous) => ({ ...previous, [findingId]: { status: "pending", note: "" } }));
+    setSavedAuditSignature(null);
   };
 
-  const setDecision = (findingId: string, decision: RamiFindingDecision) =>
+  const setDecision = (findingId: string, decision: RamiFindingDecision) => {
     setAuditDecisions((previous) => ({ ...previous, [findingId]: decision }));
+    setSavedAuditSignature(null);
+  };
+
+  const handleSaveAudit = async () => {
+    if (!auditComplete) {
+      toast.error("לא ניתן לשמור: חסרות אסמכתאות או החלטות ראמי");
+      return;
+    }
+    setIsSavingAudit(true);
+    try {
+      await saveLogisticsAuditFn({ data: { noteId: id, evidence: auditEvidence, decisions: auditDecisions } });
+      setSavedAuditSignature(JSON.stringify({ evidence: auditEvidence, decisions: auditDecisions }));
+      toast.success("האסמכתאות והחלטות ראמי נשמרו בשרת ומשותפות לצוות");
+    } catch (err) {
+      toast.error("שמירת בקרת הלוגיסטיקה נכשלה", { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setIsSavingAudit(false);
+    }
+  };
 
   const toggleRow = (findingId: string) =>
     setOpenRows((prev) => {
@@ -713,6 +759,7 @@ function Viewer() {
   const manifest = manifestQuery.data?.items ?? [];
   const auditFindings = buildLogisticsFindings(n, manifestQuery.data);
   const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence, auditDecisions);
+  const auditPersisted = auditComplete && savedAuditSignature === JSON.stringify({ evidence: auditEvidence, decisions: auditDecisions });
   const auditEvidenceCount = auditFindings.filter((finding) => isDocumented(auditEvidence[finding.id])).length;
   const auditDecisionCount = auditFindings.filter((finding) => {
     const decision = auditDecisions[finding.id];
@@ -777,9 +824,9 @@ function Viewer() {
   ];
 
   const handleRamiApproval = async () => {
-    if (!auditComplete) {
-      toast.error("האישור נחסם: נדרשת השלמת בדיקת הלוגיסטיקה", {
-        description: `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.`,
+    if (!auditComplete || !auditPersisted) {
+      toast.error("האישור חסום: יש להשלים ולשמור בשרת את כל האסמכתאות והחלטות ראמי", {
+        description: !auditComplete ? `תועדו אסמכתאות ל-${auditEvidenceCount} מתוך ${auditFindings.length} בדיקות.` : "הבקרה השתנתה מאז השמירה האחרונה. יש לשמור מחדש.",
       });
       return;
     }
@@ -870,8 +917,8 @@ function Viewer() {
   };
 
   const handleRetryHarelHandoff = async () => {
-    if (!auditComplete) {
-      toast.error("העברה להראל חסומה: חסרות החלטות ראמי או אסמכתאות");
+    if (!auditComplete || !auditPersisted) {
+      toast.error("העברה להראל חסומה: חסרות החלטות ראמי או שמירת בקרה בשרת");
       return;
     }
     setIsSendingToHarel(true);
@@ -1222,10 +1269,10 @@ function Viewer() {
                 />
               </label>
 
-              {!auditComplete && !ap?.rami && (
+              {(!auditComplete || !auditPersisted) && !ap?.rami && (
                 <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] leading-5 text-amber-900 dark:text-amber-200">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  האישור נעול עד שיתועדו אסמכתאות לכל בדיקות הלוגיסטיקה ({auditEvidenceCount}/{auditFindings.length}).
+                  האישור נעול עד להשלמת הבדיקות ושמירתן בשרת ({auditEvidenceCount}/{auditFindings.length}).
                 </p>
               )}
 
@@ -1235,18 +1282,18 @@ function Viewer() {
                     key="rami-btn"
                     type="button"
                     onClick={handleRamiApproval}
-                    disabled={isApprovingRami}
+                    disabled={isApprovingRami || !auditPersisted}
                     aria-busy={isApprovingRami}
                     initial={reduce ? false : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.2 }}
-                    className={`${BTN} bg-rami text-rami-foreground shadow-md hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-rami ${auditComplete ? "" : "opacity-80"}`}
+                    className={`${BTN} bg-rami text-rami-foreground shadow-md hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-rami ${auditPersisted ? "" : "opacity-80"}`}
                   >
                     <Shine />
                     {isApprovingRami ? (
                       <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                    ) : auditComplete ? (
+                    ) : auditPersisted ? (
                       <PenTool className="h-4 w-4" aria-hidden="true" />
                     ) : (
                       <Lock className="h-4 w-4" aria-hidden="true" />
@@ -1337,6 +1384,16 @@ function Viewer() {
                 transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 110, damping: 20 }}
               />
             </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSaveAudit()}
+              disabled={!auditComplete || isSavingAudit || auditPersisted}
+              className="min-h-10 gap-2 rounded-full px-4"
+            >
+              {isSavingAudit ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              {isSavingAudit ? "שומר בקרה..." : auditPersisted ? "הבקרה נשמרה בשרת" : "שמור בקרה לצוות"}
+            </Button>
             <button
               type="button"
               aria-pressed={onlyMissing}
@@ -1384,7 +1441,7 @@ function Viewer() {
           )}
 
           <p className="text-xs leading-6 text-muted-foreground">
-            האסמכתאות והחלטות ראמי נשמרות מקומית עד לחתימת ראמי. בעת האישור הן נשלחות לשרת ונרשמות ביומן בקרת הלוגיסטיקה. בחירה ב״מאשר חריגה״ מחייבת הסבר; בחירה ב״לא מאשר — נדרש תיקון״ משאירה את ההעברה להראל חסומה.
+            שמור את האסמכתאות והחלטות ראמי בשרת כדי לשתף אותן בין המשתמשים והמכשירים. שינוי של ממצא לאחר שמירה מחייב שמירה מחדש. בחירה ב״מאשר חריגה״ מחייבת הסבר; בחירה ב״לא מאשר — נדרש תיקון״ משאירה את ההעברה להראל חסומה.
           </p>
         </section>
 
