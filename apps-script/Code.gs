@@ -516,6 +516,10 @@ function handleSubmitApproval(body) {
   const ramiIdx = ensureHeader_(sheet, headers, ["אישור ראמי"], "אישור ראמי");
   const harelIdx = ensureHeader_(sheet, headers, ["אישור הראל"], "אישור הראל");
   const noteIdx = ensureHeader_(sheet, headers, ["הערת אישור"], "הערת אישור");
+  if (approver === "harel") {
+    const ramiValue = String(sheet.getRange(rowNum, ramiIdx + 1).getValue() || "").trim();
+    if (!ramiValue) return jsonResponse({ success: false, error: "אישור מנכ״ל חסום: חסר אישור ראמי רשמי בגיליון" });
+  }
   const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
   recordLogisticsAuditEvidence_(ss, noteId, approver, auditEvidence, nowStr);
 
@@ -1179,6 +1183,20 @@ function handleWorkroomHarelReply_(body) {
   }
 }
 
+function readLogisticsAuditEvidence_(noteId) {
+  const sheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName("בקרת_לוגיסטיקה");
+  if (!sheet || sheet.getLastRow() < 2) return {};
+  const rows = sheet.getDataRange().getDisplayValues();
+  const result = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1] || "").trim() !== String(noteId).trim()) continue;
+    const id = String(rows[i][3] || "").trim();
+    const evidence = String(rows[i][4] || "").trim();
+    if (id && evidence.length >= 12) result[id] = evidence;
+  }
+  return result;
+}
+
 function handleWorkroomHarelDecision_(body) {
   const key = String(body.noteId || body.inquiryId || "").trim();
   const decision = String(body.decision || "");
@@ -1197,9 +1215,12 @@ function handleWorkroomHarelDecision_(body) {
     let status = "pending_harel";
     let task = state.task;
     if (decision === "approve") {
+      const evidence = readLogisticsAuditEvidence_(key);
+      const official = JSON.parse(handleSubmitApproval({ noteId: key, approver: "harel", note: text || "אושר בדשבורד המנכ״ל", auditEvidence: evidence }).getContent());
+      if (!official || official.success !== true) return jsonResponse({ success: false, error: official && official.error ? official.error : "האישור הרשמי נכשל" });
       status = "approved";
       if (task && task.status === "open") task.status = "done";
-      state.thread.push(workroomMessage_("harel", text || "התעודה אושרה.", "approved"));
+      state.thread.push(workroomMessage_("harel", text || "התעודה אושרה ונרשמה כאישור רשמי לחיוב.", "approved"));
     } else if (decision === "reject") {
       status = "rejected";
       if (task && task.status === "open") task.status = "cancelled";
