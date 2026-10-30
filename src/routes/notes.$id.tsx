@@ -739,7 +739,9 @@ function Viewer() {
         data: {
           inquiryId: n.id,
           noteId: n.id,
-          text: customNote.trim() || "אישור ראמי הושלם. התעודה והאסמכתאות הועברו להחלטת הראל.",
+          text: customNote.trim().length >= 3
+            ? customNote.trim()
+            : "אישור ראמי הושלם. התעודה והאסמכתאות הועברו להחלטת הראל.",
         },
       });
       await workroomQuery.refetch();
