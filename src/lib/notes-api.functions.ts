@@ -7,7 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
  */
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxol0amPbjcB1fU6xd-1p1ukfrmmAgvLfZL7d3FlhCsxIYfa03j8cAOv9TpgeE1_euq2Q/exec";
+  "https://script.google.com/macros/s/AKfycbxRtYkH1-XUhnKV01wwFqYBJf-9j_3-RBzKNc87eMvvJKOtyH4Tog5AhbTtoKoLarYF7g/exec";
 
 let activeGasUrl: string | null = null;
 
@@ -18,7 +18,7 @@ function gasUrl(): string {
   if (
     envUrl &&
     (envUrl.includes("TwXhw") ||
-      envUrl.includes("AKfycbxol0amPbjcB1fU6xd-1p1ukfrmmAgvLfZL7d3FlhCsxIYfa03j8cAOv9TpgeE1_euq2Q"))
+      envUrl.includes("AKfycbxRtYkH1-XUhnKV01wwFqYBJf-9j_3-RBzKNc87eMvvJKOtyH4Tog5AhbTtoKoLarYF7g"))
   ) {
     return DEFAULT_GAS_URL;
   }
