@@ -1615,7 +1615,16 @@ function syncCustomerArchiveFolderToRegister_(customerNo) {
 
     const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
     let sheet = ss.getSheetByName("ארכיון_מסמכי_לקוחות");
-    if (!sheet) return;
+    if (!sheet) {
+      sheet = ss.insertSheet("ארכיון_מסמכי_לקוחות");
+      const headers = [
+        "תאריך העלאה", "מספר לקוח", "שם לקוח", "סוג מסמך",
+        "שם קובץ", "שם קובץ מקורי", "MIME", "קישור ל-Drive",
+        "מזהה קובץ", "שם תיקייה", "סטטוס"
+      ];
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.setFrozenRows(1);
+    }
     const values = sheet.getDataRange().getValues();
     const headers = values.length ? values[0].map(value => String(value || "").trim()) : [];
     const fileIdColumn = headers.indexOf("מזהה קובץ");
