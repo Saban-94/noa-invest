@@ -249,9 +249,11 @@ export function isLogisticsAuditComplete(
 ): boolean {
   return findings.length > 0 && findings.every((finding) => {
     const evidence = normalize(evidenceByFinding[finding.id]);
+    const hasUsableEvidence = evidence.length >= 12 &&
+      !/(\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן)/i.test(evidence);
     const decision = decisionsByFinding[finding.id];
     const decisionValid = decision?.status === "resolved" ||
       (decision?.status === "accepted_exception" && normalize(decision.note).length >= 3);
-    return evidence.length >= 12 && decisionValid;
+    return hasUsableEvidence && decisionValid;
   });
 }
