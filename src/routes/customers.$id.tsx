@@ -3,7 +3,9 @@
  * מפתח: מספר לקוח (customerNo)
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState, type ChangeEvent } from "react";
+import { uploadCustomerDocumentFn, type CustomerDocumentType } from "@/lib/customer-documents.functions";
 import { PageHeader } from "@/components/AppShell";
 import { getCustomerBundleFn } from "@/lib/customers.functions";
 import {
@@ -17,6 +19,9 @@ import {
   RefreshCw,
   Package,
   Truck,
+  UploadCloud,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -112,6 +117,7 @@ function CustomerDetailView() {
               )}
             </div>
             <div className="flex flex-wrap gap-2">
+              <CustomerDocumentUpload customerNo={id} customerName={name} />
               {phone && (
                 <a
                   href={`tel:${phone}`}
@@ -298,6 +304,114 @@ function Stat({
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+
+function CustomerDocumentUpload({
+  customerNo,
+  customerName,
+}: {
+  customerNo: string;
+  customerName: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const [docType, setDocType] = useState<CustomerDocumentType>("delivery_note");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState(false);
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+
+    const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setError(true);
+      setMessage("אפשר להעלות PDF או תמונה בלבד");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setError(true);
+      setMessage("הקובץ גדול מדי. המגבלה היא 12MB");
+      return;
+    }
+
+    setBusy(true);
+    setError(false);
+    setMessage("מעלה ושומר בתיקיית הלקוח…");
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("לא ניתן לקרוא את הקובץ"));
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.split(",")[1] || "";
+      const result = await uploadCustomerDocumentFn({
+        data: {
+          customerNo,
+          customerName,
+          docType,
+          fileName: file.name,
+          mimeType: file.type,
+          base64,
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: ["customer-bundle", customerNo] });
+      setError(false);
+      setMessage(`נשמר בתיקיית הלקוח · ${result.folderName || customerName}`);
+    } catch (err) {
+      setError(true);
+      setMessage(err instanceof Error ? err.message : "העלאת המסמך נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label="סוג המסמך להעלאה"
+          value={docType}
+          onChange={(event) => setDocType(event.target.value as CustomerDocumentType)}
+          disabled={busy}
+          className="min-h-10 max-w-36 rounded-xl border border-border bg-background px-2 text-xs font-semibold"
+        >
+          <option value="delivery_note">תעודת משלוח</option>
+          <option value="order">הזמנה</option>
+          <option value="other">מסמך אחר</option>
+        </select>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="application/pdf,image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <UploadCloud className="h-4 w-4" />
+          {busy ? "מעלה…" : "העלה לתיק לקוח"}
+        </button>
+      </div>
+      {message && (
+        <p
+          role={error ? "alert" : "status"}
+          className={`flex items-center gap-1 text-[11px] ${error ? "text-destructive" : "text-emerald-700"}`}
+        >
+          {error ? <AlertCircle className="h-3.5 w-3.5 shrink-0" /> : !busy ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : null}
+          {message}
+        </p>
+      )}
     </div>
   );
 }

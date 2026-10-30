@@ -306,6 +306,10 @@ function doPost(e) {
       return handleSaveSignedNote(body);
     }
 
+    if (action === "archiveCustomerDocument") {
+      return handleArchiveCustomerDocument_(body);
+    }
+
     if (action === "getWorkroomInquiry") {
       return handleGetWorkroomInquiry_(body);
     }
@@ -1428,4 +1432,90 @@ function handleSaveInquiryAnnotations(body) {
     annotationUrl: layerFile.getUrl(),
     metadataUrl: jsonFile.getUrl(),
   });
+}
+
+
+/* ------------------------------------------------------------------ */
+/* ארכיון מסמכי לקוח — העלאת PDF/תמונה מתוך תיק הלקוח                  */
+/* ------------------------------------------------------------------ */
+
+function handleArchiveCustomerDocument_(body) {
+  const customerNo = String(body.customerNo || "").trim();
+  const customerName = String(body.customerName || "").trim();
+  const docType = String(body.docType || "").trim();
+  const fileName = String(body.fileName || "מסמך לקוח").trim();
+  const mimeType = String(body.mimeType || "").trim().toLowerCase();
+  const base64 = String(body.base64 || "").trim();
+
+  if (!customerNo || !customerName) {
+    return jsonResponse({ success: false, error: "חסר מספר לקוח או שם לקוח" });
+  }
+  if (!["order", "delivery_note", "other"].includes(docType)) {
+    return jsonResponse({ success: false, error: "סוג מסמך לא תקין" });
+  }
+  if (!["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
+    return jsonResponse({ success: false, error: "ניתן להעלות PDF או תמונה בלבד" });
+  }
+  if (!base64 || base64.length > 17000000) {
+    return jsonResponse({ success: false, error: "הקובץ ריק או גדול מדי (מקסימום 12MB)" });
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    return jsonResponse({ success: false, error: "ארכיון הלקוחות עסוק. נסו שוב בעוד רגע." });
+  }
+
+  try {
+    const bytes = Utilities.base64Decode(base64);
+    const safeName = fileName.replace(/[\\/:*?"<>|#%{}~&]/g, "_").slice(0, 140);
+    const typeLabel = docType === "order" ? "הזמנה" : docType === "delivery_note" ? "תעודת_משלוח" : "מסמך";
+    const timestamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "yyyyMMdd_HHmmss");
+    const blob = Utilities.newBlob(bytes, mimeType, typeLabel + "_" + customerNo + "_" + timestamp + "_" + safeName);
+
+    const folder = getOrCreateCustomerArchiveFolder_(customerNo, customerName);
+    const file = folder.createFile(blob);
+    file.setDescription(
+      "נועה AI | מסמך לקוח | מספר לקוח: " + customerNo +
+      " | סוג: " + typeLabel +
+      " | הועלה: " + new Date().toISOString()
+    );
+
+    return jsonResponse({
+      success: true,
+      customerNo: customerNo,
+      customerName: customerName,
+      docType: docType,
+      fileId: file.getId(),
+      fileName: file.getName(),
+      driveUrl: file.getUrl(),
+      folderName: folder.getName(),
+      uploadedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    return jsonResponse({
+      success: false,
+      error: "שמירת המסמך נכשלה: " + String(err && err.message ? err.message : err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getOrCreateCustomerArchiveFolder_(customerNo, customerName) {
+  const rootName = "תיקיות לקוחות";
+  const rootMatches = DriveApp.getFoldersByName(rootName);
+  const root = rootMatches.hasNext() ? rootMatches.next() : DriveApp.createFolder(rootName);
+
+  const canonicalName = customerNo + " - " + customerName;
+  const canonicalMatches = root.getFoldersByName(canonicalName);
+  if (canonicalMatches.hasNext()) return canonicalMatches.next();
+
+  // תאימות לתיקיות הוותיקות שנוצרו לפי שם לקוח בלבד.
+  const legacyMatches = root.getFoldersByName(customerName);
+  if (legacyMatches.hasNext()) {
+    const legacy = legacyMatches.next();
+    if (!legacyMatches.hasNext()) return legacy;
+  }
+
+  return root.createFolder(canonicalName);
 }
