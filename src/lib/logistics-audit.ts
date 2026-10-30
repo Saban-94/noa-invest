@@ -21,6 +21,16 @@ function extractSku(name: string, explicitSku?: string): string | undefined {
   return normalize(name).match(/(?:מק["״']?ט\s*)?(\d{5,8})/)?.[1];
 }
 
+function normalizeUnit(value: unknown): string {
+  const unit = normalize(value).toLowerCase().replace(/[.'״׳]/g, "");
+  if (/^(יח|יחידה|יחידות)$/.test(unit)) return "יח";
+  if (/^(שק|שקים)$/.test(unit)) return "שק";
+  if (/^(משטח|משטחים)$/.test(unit)) return "משטח";
+  if (/^(בלה|בלות)$/.test(unit)) return "בלה";
+  if (/^(מטר|מטרים)$/.test(unit)) return "מטר";
+  return unit;
+}
+
 export function buildLogisticsFindings(
   note: DeliveryNote,
   comaxManifest?: {
@@ -168,7 +178,7 @@ export function buildLogisticsFindings(
       comaxMatch &&
       normalize(item.unit) &&
       normalize(comaxMatch.unit) &&
-      normalize(item.unit) !== normalize(comaxMatch.unit)
+      normalizeUnit(item.unit) !== normalizeUnit(comaxMatch.unit)
     ) {
       findings.push({
         id: `${id}:unit-mismatch`,
