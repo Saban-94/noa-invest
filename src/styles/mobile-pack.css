@@ -1,0 +1,87 @@
+/* Mobile type & CTA package — connected via styles.css */
+@utility type-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  font-size: 1.25rem;
+}
+@utility type-title-lg {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  font-size: 1.5rem;
+}
+@utility type-body {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  font-weight: 500;
+}
+@utility type-meta {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+@utility type-num {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+}
+@utility sticky-cta {
+  position: sticky;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 0.5rem);
+  z-index: 20;
+  margin-inline: 0.75rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 28px color-mix(in oklab, var(--foreground) 12%, transparent);
+  padding: 0.75rem;
+}
+@utility btn-mobile-primary {
+  display: inline-flex;
+  min-height: 2.75rem;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.875rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.9375rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  box-shadow: 0 4px 14px color-mix(in oklab, var(--primary) 35%, transparent);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  &:active {
+    transform: scale(0.98);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:active {
+      transform: none;
+    }
+  }
+}
+@utility card-mobile {
+  border-radius: 1.25rem;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  background: var(--card);
+  padding: 1rem;
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+@media (max-width: 1023px) {
+  input[type="text"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="number"],
+  input:not([type]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
