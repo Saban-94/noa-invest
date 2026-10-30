@@ -250,13 +250,19 @@ export const saveSignedNoteFn = createServerFn({ method: "POST" })
   });
 
 export const approvalFn = createServerFn({ method: "POST" })
-  .inputValidator((d: { noteId: string; approver: "rami" | "harel"; note?: string }) => {
+  .inputValidator((d: { 
+    noteId: string; 
+    approver: "rami" | "harel"; 
+    note?: string; 
+    auditEvidence?: Record<string, string>; // 👈 הוספת השדה
+  }) => {
     if (!String(d?.noteId || "")) throw new Error("חסר מספר תעודה");
     if (d.approver !== "rami" && d.approver !== "harel") throw new Error("approver לא תקין");
     return {
       noteId: String(d.noteId),
       approver: d.approver,
       note: String(d.note || "").slice(0, 500),
+      auditEvidence: d.auditEvidence && typeof d.auditEvidence === "object" ? d.auditEvidence : {}, // 👈 העברה הלאה ל-GAS
     };
   })
   .handler(async ({ data }) => {
