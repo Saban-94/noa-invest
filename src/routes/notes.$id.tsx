@@ -1061,7 +1061,8 @@ function Viewer() {
                     <div className="flex items-center gap-2 font-bold"><Crown className="h-4 w-4 text-primary" /> הועבר להראל להחלטה ניהולית</div>
                     <p className="mt-1 text-muted-foreground">הראל יקבל את דוח נועה ואת אישור ראמי. אין צורך למלא מחדש את תשובות הבקרה במסך זה.</p>
                   </div>
-                )}              </AnimatePresence>
+                )}
+              </AnimatePresence>
 
               {ap && (
                 <button
