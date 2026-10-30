@@ -622,7 +622,7 @@ function approvalEvidenceFromSavedState_(state) {
       String(state.evidence[findingId] || "").trim(),
       "החלטת ראמי: " + label,
       String(decision.note || "").trim() ? "הסבר ראמי: " + String(decision.note).trim() : ""
-    ].filter(Boolean).join("\\n");
+    ].filter(Boolean).join("\n");
   });
   return output;
 }
