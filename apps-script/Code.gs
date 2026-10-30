@@ -544,7 +544,7 @@ function handleSaveLogisticsAuditEvidence_(body) {
     value: String(raw || "").trim().slice(0, 2000)
   }));
   const invalid = entries.find(entry => !entry.findingId || entry.value.length < 12 ||
-    /\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(entry.value));
+    !/(?:החלטת ראמי|מענה ראמי)\\s*:/i.test(entry.value) || /\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(entry.value));
   if (invalid) return jsonResponse({ success: false, error: "שמירת הבקרה נחסמה: קיימת אסמכתא חסרה או תבנית שלא הושלמה", findingId: invalid.findingId });
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -560,6 +560,18 @@ function handleSaveLogisticsAuditEvidence_(body) {
   }
 }
 
+function readLatestLogisticsAuditEvidence_(noteId) {
+  const sheet = logisticsAuditEvidenceSheet_();
+  const values = sheet.getDataRange().getDisplayValues();
+  const evidence = {};
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][1] || "").trim() !== String(noteId)) continue;
+    const findingId = String(values[r][2] || "").trim();
+    if (findingId) evidence[findingId] = String(values[r][3] || "");
+  }
+  return evidence;
+}
+
 function handleSubmitApproval(body) {
   const noteId = String(body.noteId || "").trim();
   const approver = String(body.approver || "");
@@ -573,6 +585,15 @@ function handleSubmitApproval(body) {
       Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
     return jsonResponse({ success: false, error: "האישור נחסם: חסרות אסמכתאות בדיקת לוגיסטיקה" });
   }
+
+  const savedEvidence = readLatestLogisticsAuditEvidence_(noteId);
+  const submittedKeys = Object.keys(auditEvidence).sort();
+  const savedKeys = Object.keys(savedEvidence).sort();
+  if (submittedKeys.length !== savedKeys.length ||
+      submittedKeys.some((key, index) => key !== savedKeys[index] || String(auditEvidence[key] || "").trim() !== String(savedEvidence[key] || "").trim())) {
+    return jsonResponse({ success: false, error: "האישור נחסם: יש לשמור את כל אסמכתאות הבקרה בשרת לפני אישור" });
+  }
+  auditEvidence = savedEvidence;
 
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
   const sheet = ss.getSheetByName(TAB_GALYA);
