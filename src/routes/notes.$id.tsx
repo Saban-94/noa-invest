@@ -689,8 +689,16 @@ function Viewer() {
     }
     setIsSavingAudit(true);
     try {
-      await saveLogisticsAuditFn({ data: { noteId: id, evidence: auditEvidence, decisions: auditDecisions } });
-      setSavedAuditSignature(JSON.stringify({ evidence: auditEvidence, decisions: auditDecisions }));
+      const activeEvidence = Object.fromEntries(auditFindings.map((finding) => [finding.id, auditEvidence[finding.id] || ""]));
+      const activeDecisions = Object.fromEntries(auditFindings.map((finding) => [
+        finding.id,
+        auditDecisions[finding.id] || { status: "pending" as const, note: "" },
+      ]));
+      const snapshot = { evidence: activeEvidence, decisions: activeDecisions };
+      await saveLogisticsAuditFn({ data: { noteId: id, ...snapshot } });
+      setAuditEvidence(activeEvidence);
+      setAuditDecisions(activeDecisions);
+      setSavedAuditSignature(JSON.stringify(snapshot));
       toast.success("האסמכתאות והחלטות ראמי נשמרו בשרת ומשותפות לצוות");
     } catch (err) {
       toast.error("שמירת בקרת הלוגיסטיקה נכשלה", { description: err instanceof Error ? err.message : String(err) });
@@ -759,7 +767,14 @@ function Viewer() {
   const manifest = manifestQuery.data?.items ?? [];
   const auditFindings = buildLogisticsFindings(n, manifestQuery.data);
   const auditComplete = isLogisticsAuditComplete(auditFindings, auditEvidence, auditDecisions);
-  const auditPersisted = auditComplete && savedAuditSignature === JSON.stringify({ evidence: auditEvidence, decisions: auditDecisions });
+  const activeAuditSnapshot = {
+    evidence: Object.fromEntries(auditFindings.map((finding) => [finding.id, auditEvidence[finding.id] || ""])),
+    decisions: Object.fromEntries(auditFindings.map((finding) => [
+      finding.id,
+      auditDecisions[finding.id] || { status: "pending" as const, note: "" },
+    ])),
+  };
+  const auditPersisted = auditComplete && savedAuditSignature === JSON.stringify(activeAuditSnapshot);
   const auditEvidenceCount = auditFindings.filter((finding) => isDocumented(auditEvidence[finding.id])).length;
   const auditDecisionCount = auditFindings.filter((finding) => {
     const decision = auditDecisions[finding.id];
