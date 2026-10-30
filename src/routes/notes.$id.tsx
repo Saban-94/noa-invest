@@ -796,14 +796,33 @@ function Viewer() {
         },
       });
 
-      // A Rami reply is the server-side transition to pending_harel.
+      // Harel receives a compact, itemized record of Noa's findings and Rami's explicit decisions.
+      const handoffSummary = [
+        `סיכום חמ״ל נועה לתעודה ${n.id} — ראמי השלים מענה לכל הממצאים.`,
+        customNote.trim() ? `הערת ראמי: ${customNote.trim()}` : "",
+        ...auditFindings.map((finding) => {
+          const decision = auditDecisions[finding.id];
+          const decisionLabel = decision?.status === "resolved"
+            ? "תוקן ואומת"
+            : decision?.status === "accepted_exception"
+              ? "ראמי מאשר חריגה"
+              : "לא הושלם";
+          const evidence = String(auditEvidence[finding.id] || "").trim();
+          return [
+            finding.title,
+            `צפוי: ${finding.expected || "לא הוגדר"}`,
+            `נצפה: ${finding.observed || "לא זוהה"}`,
+            `החלטה: ${decisionLabel}`,
+            decision?.note ? `הערת ראמי: ${decision.note.trim()}` : "",
+            evidence ? `אסמכתה: ${evidence.slice(0, 110)}` : "",
+          ].filter(Boolean).join(" | ");
+        }),
+      ].filter(Boolean).join("\n").slice(0, 1950);
       await ramiReplyFn({
         data: {
           inquiryId: n.id,
           noteId: n.id,
-          text: customNote.trim().length >= 3
-            ? customNote.trim()
-            : "אישור ראמי הושלם. התעודה והאסמכתאות הועברו להחלטת הראל.",
+          text: handoffSummary,
         },
       });
       await workroomQuery.refetch();
