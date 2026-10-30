@@ -176,6 +176,31 @@ export const listNotesFn = createServerFn({ method: "POST" }).handler(async () =
   return { notes: (Array.isArray(data.notes) ? data.notes : []) as SheetNote[] };
 });
 
+/** שליפת מניפסט קומקס דרך שרת מאומת; אין קריאת GAS ישירה מהדפדפן. */
+export const getManifestFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { orderId: string }) => {
+    const orderId = String(d?.orderId || "").trim();
+    if (!/^\\d{4,20}$/.test(orderId)) throw new Error("מספר הזמנת קומקס לא תקין");
+    return { orderId };
+  })
+  .handler(async ({ data }) => {
+    const result = await gasGet({ action: "manifest", order: data.orderId });
+    return {
+      items: (Array.isArray(result.items) ? result.items : []).map((value) => {
+        const row = value as Record<string, unknown>;
+        return {
+          sku: String(row.sku || ""),
+          name: String(row.name || ""),
+          qty: Number(row.qty || 0),
+          unit: String(row.unit || "יח׳"),
+          unitWeightKg: Number(row.unitWeightKg || 0),
+        };
+      }),
+      source: String(result.source || ""),
+      orderId: String(result.orderId || data.orderId),
+    };
+  });
+
 /** אירועי פתיחה/סגירה של PTO מהטאב איתוראן_PTO (נקלטים ממיילי איתוראן) */
 export const listPtoFn = createServerFn({ method: "POST" })
   .inputValidator((d: { since?: string; truck?: string } | undefined) => {

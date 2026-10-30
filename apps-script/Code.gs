@@ -61,6 +61,8 @@ function doGet(e) {
     switch (action) {
       case "getOrders":
         return handleGetOrders_(p);
+      case "manifest":
+        return handleGetComaxManifest_(p);
 
       case "getCustomers":
         return handleGetCustomers_(p);
@@ -184,6 +186,50 @@ function handleGetOrders_(params) {
     orders: orders
   });
 }
+/**
+ * מניפסט קומקס להזמנה: נתוני מקור מתוך טאב "הזמנות".
+ * מחזיר רק שורות עם מק"ט וכמות מפורשים; אינו ממציא משקל.
+ */
+function handleGetComaxManifest_(params) {
+  const orderId = String(params.order || params.orderId || "").trim();
+  if (!orderId) return jsonResponse({ success: false, error: "חסר מספר הזמנת קומקס" });
+  const sheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName("הזמנות");
+  if (!sheet) return jsonResponse({ success: false, error: "לא נמצא טאב 'הזמנות'" });
+  const values = sheet.getDataRange().getDisplayValues();
+  if (values.length < 2) return jsonResponse({ success: true, orderId: orderId, source: "הזמנות", items: [] });
+  const headers = values[0].map(h => String(h || "").trim());
+  const idx = names => headerIndex_(headers, names);
+  const idCol = idx(["מס' הזמנה", "מס׳ הזמנה", "מספר הזמנה", "orderId", "id"]);
+  if (idCol < 0) return jsonResponse({ success: false, error: "לא נמצאה עמודת מספר הזמנה" });
+  const matches = values.slice(1).filter(row => String(row[idCol] || "").trim() === orderId);
+  if (matches.length !== 1) return jsonResponse({ success: false, error: matches.length ? "מספר הזמנה כפול בגיליון" : "הזמנת קומקס לא נמצאה בטאב הזמנות" });
+  const row = matches[0];
+  const itemsCol = idx(["פריטים", "items", "פירוט מוצרים", "פירוט מוצרים ומק״טים", "פרטי הזמנה"]);
+  const itemsTextCol = idx(["פירוט מוצרים", "פירוט מוצרים ומק״טים", "פרטי הזמנה", "itemsText"]);
+  let raw = itemsCol >= 0 ? row[itemsCol] : "";
+  let items = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) items = parsed.map(item => ({
+        sku: String(item.sku || item["מק״ט"] || item["מק''ט"] || "").trim(),
+        name: String(item.name || item["שם מוצר"] || item["מוצר"] || ""),
+        qty: Number(item.qty != null ? item.qty : item.quantity != null ? item.quantity : item["כמות"]),
+        unit: String(item.unit || item["יחידה"] || "יח׳"),
+        unitWeightKg: Number(item.unitWeightKg || item.weightKg || 0)
+      })).filter(item => item.sku && Number.isFinite(item.qty));
+    } catch (err) {}
+  }
+  const textValue = itemsTextCol >= 0 ? String(row[itemsTextCol] || "") : String(raw || "");
+  if (!items.length && textValue) {
+    textValue.split(/\r?\n/).forEach(line => {
+      const m = line.match(/^\s*(?:\d+\s+)?(\d{4,10})\s+(.+?)\s+(שק|בלה|משטח|יח['׳]|דלי|לוח|מטר)\s+(-?\d+(?:[.,]\d+)?)\s*$/);
+      if (m) items.push({ sku: m[1], name: m[2].trim(), unit: m[3], qty: Number(m[4].replace(",", ".")), unitWeightKg: 0 });
+    });
+  }
+  return jsonResponse({ success: true, orderId: orderId, source: "הזמנות", items: items });
+}
+
 function handleUpdateOrderStatus_(body) {
   const orderId = String(body.orderId || body.id || "").trim();
   const status = String(body.status || "").trim();
@@ -455,7 +501,7 @@ function handleSubmitApproval(body) {
     ? body.auditEvidence
     : null;
   if (!auditEvidence || Object.keys(auditEvidence).length === 0 ||
-      Object.values(auditEvidence).some(value => String(value || "").trim().length < 12)) {
+      Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
     return jsonResponse({ success: false, error: "האישור נחסם: חסרות אסמכתאות בדיקת לוגיסטיקה" });
   }
 
@@ -470,6 +516,10 @@ function handleSubmitApproval(body) {
   const ramiIdx = ensureHeader_(sheet, headers, ["אישור ראמי"], "אישור ראמי");
   const harelIdx = ensureHeader_(sheet, headers, ["אישור הראל"], "אישור הראל");
   const noteIdx = ensureHeader_(sheet, headers, ["הערת אישור"], "הערת אישור");
+  if (approver === "harel") {
+    const ramiValue = String(sheet.getRange(rowNum, ramiIdx + 1).getValue() || "").trim();
+    if (!ramiValue) return jsonResponse({ success: false, error: "אישור מנכ״ל חסום: חסר אישור ראמי רשמי בגיליון" });
+  }
   const nowStr = Utilities.formatDate(new Date(), "Asia/Jerusalem", "dd/MM/yyyy HH:mm");
   recordLogisticsAuditEvidence_(ss, noteId, approver, auditEvidence, nowStr);
 
@@ -1133,6 +1183,20 @@ function handleWorkroomHarelReply_(body) {
   }
 }
 
+function readLogisticsAuditEvidence_(noteId) {
+  const sheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName("בקרת_לוגיסטיקה");
+  if (!sheet || sheet.getLastRow() < 2) return {};
+  const rows = sheet.getDataRange().getDisplayValues();
+  const result = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1] || "").trim() !== String(noteId).trim()) continue;
+    const id = String(rows[i][3] || "").trim();
+    const evidence = String(rows[i][4] || "").trim();
+    if (id && evidence.length >= 12) result[id] = evidence;
+  }
+  return result;
+}
+
 function handleWorkroomHarelDecision_(body) {
   const key = String(body.noteId || body.inquiryId || "").trim();
   const decision = String(body.decision || "");
@@ -1151,9 +1215,12 @@ function handleWorkroomHarelDecision_(body) {
     let status = "pending_harel";
     let task = state.task;
     if (decision === "approve") {
+      const evidence = readLogisticsAuditEvidence_(key);
+      const official = JSON.parse(handleSubmitApproval({ noteId: key, approver: "harel", note: text || "אושר בדשבורד המנכ״ל", auditEvidence: evidence }).getContent());
+      if (!official || official.success !== true) return jsonResponse({ success: false, error: official && official.error ? official.error : "האישור הרשמי נכשל" });
       status = "approved";
       if (task && task.status === "open") task.status = "done";
-      state.thread.push(workroomMessage_("harel", text || "התעודה אושרה.", "approved"));
+      state.thread.push(workroomMessage_("harel", text || "התעודה אושרה ונרשמה כאישור רשמי לחיוב.", "approved"));
     } else if (decision === "reject") {
       status = "rejected";
       if (task && task.status === "open") task.status = "cancelled";
