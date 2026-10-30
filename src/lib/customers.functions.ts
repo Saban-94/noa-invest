@@ -42,7 +42,7 @@ export type LiveCustomer = {
   sampleDriveUrl: string;
 };
 
-export const listCustomersFn = createServerFn({ method: "GET" }).handler(
+export const listCustomersFn = createServerFn({ method: "POST" }).handler(
   async () => {
     const json = await gasGet("getCustomers");
     const customers = (json.customers as LiveCustomer[]) || [];
@@ -55,7 +55,7 @@ export const listCustomersFn = createServerFn({ method: "GET" }).handler(
   },
 );
 
-export const getCustomerBundleFn = createServerFn({ method: "GET" })
+export const getCustomerBundleFn = createServerFn({ method: "POST" })
   .validator((d: { customerNo: string }) => d)
   .handler(async ({ data }) => {
     const no = String(data.customerNo || "").trim();
@@ -75,7 +75,6 @@ export const getCustomerBundleFn = createServerFn({ method: "GET" })
       (n) => String(n.customerNo || "").trim() === no,
     );
 
-    // הזמנות: לפי customerNo אם קיים, אחרת לפי שם
     const allOrders = (ordersJson.orders as Record<string, unknown>[]) || [];
     const name = customer?.name || "";
     const orders = allOrders.filter((o) => {
@@ -92,5 +91,4 @@ export const getCustomerBundleFn = createServerFn({ method: "GET" })
       customerNo: no,
       fetchedAt: new Date().toISOString(),
     };
-  }),
-);
+  });
