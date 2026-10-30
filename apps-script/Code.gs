@@ -61,6 +61,8 @@ function doGet(e) {
     switch (action) {
       case "getOrders":
         return handleGetOrders_(p);
+      case "getLogisticsAuditEvidence":
+        return handleGetLogisticsAuditEvidence_(p);
       case "manifest":
         return handleGetComaxManifest_(p);
 
@@ -306,6 +308,10 @@ function doPost(e) {
       return handleUpdateOrderStatus_(body);
     }
 
+    if (action === "saveLogisticsAuditEvidence") {
+      return handleSaveLogisticsAuditEvidence_(body);
+    }
+
     if (action === "submitApproval") {
       return handleSubmitApproval(body);
     }
@@ -511,6 +517,110 @@ function handleGetFile(fileId) {
   });
 }
 
+/**
+ * טיוטת בקרת לוגיסטיקה משותפת. כל שמירה היא גרסה חדשה; השליפה מחזירה את
+ * הגרסה האחרונה לכל ממצא. הראיות הן דיווחים/אסמכתאות שסופקו, לא אימות אוטומטי.
+ */
+function logisticsAuditEvidenceSheet_() {
+  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  let sheet = ss.getSheetByName("בקרת_לוגיסטיקה_טיוטה");
+  if (!sheet) sheet = ss.insertSheet("בקרת_לוגיסטיקה_טיוטה");
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["נשמר בתאריך", "מספר תעודה", "מזהה בדיקה", "אסמכתא / תוצאת בדיקה", "סטטוס החלטת ראמי", "הסבר ראמי"]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function readLatestLogisticsAuditState_(noteId) {
+  const sheet = logisticsAuditEvidenceSheet_();
+  const values = sheet.getDataRange().getDisplayValues();
+  const evidence = {};
+  const decisions = {};
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][1] || "").trim() !== String(noteId)) continue;
+    const findingId = String(values[r][2] || "").trim();
+    if (!findingId) continue;
+    evidence[findingId] = String(values[r][3] || "");
+    decisions[findingId] = {
+      status: String(values[r][4] || "pending"),
+      note: String(values[r][5] || "")
+    };
+  }
+  return { evidence: evidence, decisions: decisions };
+}
+
+function handleGetLogisticsAuditEvidence_(params) {
+  const noteId = String(params.noteId || params.id || "").trim();
+  if (!noteId) return jsonResponse({ success: false, error: "חסר מספר תעודה" });
+  const state = readLatestLogisticsAuditState_(noteId);
+  return jsonResponse({ success: true, noteId: noteId, evidence: state.evidence, decisions: state.decisions });
+}
+
+function handleSaveLogisticsAuditEvidence_(body) {
+  const noteId = String(body.noteId || "").trim();
+  const evidence = body.evidence && typeof body.evidence === "object" && !Array.isArray(body.evidence) ? body.evidence : null;
+  const decisions = body.decisions && typeof body.decisions === "object" && !Array.isArray(body.decisions) ? body.decisions : null;
+  if (!noteId || !evidence || !decisions || !Object.keys(evidence).length) {
+    return jsonResponse({ success: false, error: "חסרים מספר תעודה, אסמכתאות או החלטות ראמי" });
+  }
+  const evidenceKeys = Object.keys(evidence).sort();
+  const decisionKeys = Object.keys(decisions).sort();
+  if (evidenceKeys.length !== decisionKeys.length || evidenceKeys.some((key, i) => key !== decisionKeys[i])) {
+    return jsonResponse({ success: false, error: "מספר האסמכתאות אינו תואם למספר החלטות ראמי" });
+  }
+  const rows = [];
+  for (let i = 0; i < evidenceKeys.length; i++) {
+    const findingId = evidenceKeys[i];
+    const value = String(evidence[findingId] || "").trim().slice(0, 2000);
+    const decision = decisions[findingId] && typeof decisions[findingId] === "object" ? decisions[findingId] : {};
+    const status = String(decision.status || "pending");
+    const decisionNote = String(decision.note || "").trim().slice(0, 1000);
+    if (!findingId || value.length < 12 || /\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(value)) {
+      return jsonResponse({ success: false, error: "שמירת הבקרה נחסמה: אסמכתה חסרה או תבנית לא הושלמה", findingId: findingId });
+    }
+    if (status !== "resolved" && status !== "accepted_exception") {
+      return jsonResponse({ success: false, error: "שמירת הבקרה נחסמה: כל ממצא מחייב החלטת ראמי", findingId: findingId });
+    }
+    if (status === "accepted_exception" && decisionNote.length < 3) {
+      return jsonResponse({ success: false, error: "אישור חריגה מחייב הסבר ראמי", findingId: findingId });
+    }
+    rows.push([new Date().toISOString(), noteId, findingId, value, status, decisionNote]);
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = logisticsAuditEvidenceSheet_();
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
+    SpreadsheetApp.flush();
+    const saved = readLatestLogisticsAuditState_(noteId);
+    if (Object.keys(saved.evidence).length !== evidenceKeys.length ||
+        evidenceKeys.some(key => saved.evidence[key] !== String(evidence[key] || "").trim() ||
+          saved.decisions[key].status !== String(decisions[key].status || "") ||
+          saved.decisions[key].note !== String(decisions[key].note || "").trim())) {
+      return jsonResponse({ success: false, error: "שמירת הבקרה נשלחה אך אימות הקריאה החוזרת נכשל" });
+    }
+    return jsonResponse({ success: true, noteId: noteId, savedAt: new Date().toISOString(), count: rows.length });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function approvalEvidenceFromSavedState_(state) {
+  const output = {};
+  Object.keys(state.evidence || {}).sort().forEach(findingId => {
+    const decision = state.decisions[findingId] || {};
+    const label = decision.status === "resolved" ? "תוקן ואומת" :
+      decision.status === "accepted_exception" ? "מאשר חריגה" : "ללא החלטה";
+    output[findingId] = [
+      String(state.evidence[findingId] || "").trim(),
+      "החלטת ראמי: " + label,
+      String(decision.note || "").trim() ? "הסבר ראמי: " + String(decision.note).trim() : ""
+    ].filter(Boolean).join("\\n");
+  });
+  return output;
+}
+
 function handleSubmitApproval(body) {
   const noteId = String(body.noteId || "").trim();
   const approver = String(body.approver || "");
@@ -534,6 +644,16 @@ function handleSubmitApproval(body) {
       success: false,
       error: "האישור נחסם: לכל ממצא נדרשות אסמכתה והחלטת ראמי מפורשת. אישור חריגה מחייב הסבר."
     });
+  }
+
+  const savedState = readLatestLogisticsAuditState_(noteId);
+  const savedApprovalEvidence = approvalEvidenceFromSavedState_(savedState);
+  const submittedKeys = Object.keys(auditEvidence).sort();
+  const savedKeys = Object.keys(savedApprovalEvidence).sort();
+  if (submittedKeys.length !== savedKeys.length ||
+      submittedKeys.some((key, index) => key !== savedKeys[index] ||
+        String(auditEvidence[key] || "").trim() !== String(savedApprovalEvidence[key] || "").trim())) {
+    return jsonResponse({ success: false, error: "האישור נחסם: יש לשמור את כל האסמכתאות והחלטות ראמי בשרת לפני האישור" });
   }
 
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
