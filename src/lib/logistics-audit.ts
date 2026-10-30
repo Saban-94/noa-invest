@@ -123,6 +123,25 @@ export function buildLogisticsFindings(
       });
     }
 
+    if (
+      note.live &&
+      comaxMatch &&
+      normalize(item.unit) &&
+      normalize(comaxMatch.unit) &&
+      normalize(item.unit) !== normalize(comaxMatch.unit)
+    ) {
+      findings.push({
+        id: `${id}:unit-mismatch`,
+        category: "quantity",
+        title: `${title} — יחידת מידה שונה`,
+        detail: `יחידת המידה בתעודה: ${item.unit}; יחידת המידה בהזמנת קומקס: ${comaxMatch.unit}.`,
+        expected: String(comaxMatch.unit),
+        observed: String(item.unit),
+        sourceRequired: "שורת פריט בהזמנת קומקס ובתעודת המשלוח, כולל יחידת מידה",
+        severity: "blocker",
+      });
+    }
+
     if (safeQty === null || safeOrdered === null) {
       findings.push({
         id: `${id}:quantity-missing`,
