@@ -129,7 +129,10 @@ export function buildLogisticsFindings(
     const sku = extractSku(item.name, item.sku);
     const title = sku ? `מק״ט ${sku}` : item.name || `שורה ${index + 1}`;
     const safeQty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : null;
-    const comaxMatch = sku ? comaxItems.find((source) => normalize(source.sku) === sku) : undefined;
+    const comaxMatches = sku ? comaxItems.filter((source) => normalize(source.sku) === sku) : [];
+    const comaxMatch = comaxMatches.length
+      ? { ...comaxMatches[0], qty: comaxMatches.reduce((sum, source) => sum + Number(source.qty || 0), 0) }
+      : undefined;
     const safeOrdered = note.live
       ? (comaxMatch && Number.isFinite(Number(comaxMatch.qty)) ? Number(comaxMatch.qty) : null)
       : (Number.isFinite(Number(item.ordered)) ? Number(item.ordered) : null);
