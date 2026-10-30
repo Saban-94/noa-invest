@@ -1,128 +1,61 @@
-import { ORDERS, type Order } from "./data";
-
-// כתובת ה-Apps Script המוגדרת במשתני הסביבה (Vite)
-export const ORDERS_API_URL = import.meta.env.VITE_ORDERS_API_URL || "";
-export const ITURAN_TOKEN = import.meta.env.ITURAN_TOKEN || import.meta.env.ITURAN_TOKEN || "saban-ituran-secret-2026";
-
-export const hasLiveOrdersEndpoint = Boolean(ORDERS_API_URL.trim());
+import { listOrdersFn, updateOrderStatusFn } from "./orders.functions";
+import type { Order } from "./data";
 
 /**
- * פונקציה לשליפה חיה של טאב "הזמנות" מתוך Google Apps Script / Google Sheets
+ * תאימות לאחור למודולים ישנים: כל קריאה עוברת דרך Server Functions.
+ * אין כתובת GAS או token בקוד לקוח, ואין fallback להזמנות דמה.
  */
+export const ORDERS_API_URL = "";
+export const ITURAN_TOKEN = "";
+export const hasLiveOrdersEndpoint = true;
+
 export async function fetchLiveOrdersFromSheet(): Promise<Order[]> {
-  if (!hasLiveOrdersEndpoint) {
-    console.info("מצב הדגמה: NOA_ORDERS_API_URL אינו מוגדר. טוען נתונים סטטיים.");
-    return ORDERS;
-  }
+  const { orders } = await listOrdersFn();
+  return orders.map((order) => {
+    const parsedWeight = Number(String(order.weightTons || "").replace(",", "."));
+    const status = ["פתוחה", "בהעמסה", "בדרך", "סופק"].includes(order.status)
+      ? (order.status as Order["status"])
+      : "פתוחה";
 
-  try {
-    const separator = ORDERS_API_URL.includes("?") ? "&" : "?";
-    const url = `${ORDERS_API_URL}${separator}action=getOrders&token=${encodeURIComponent(ITURAN_TOKEN)}`;
-    
-    console.log("[DEBUG] Fetching orders from:", url);
-
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`שגיאת שרת בקבלת ההזמנות (${res.status})`);
-    }
-
-    const data = await res.json();
-
-    if (!data.success || !Array.isArray(data.orders)) {
-      throw new Error(data.error || "מבנה הנתונים שהתקבל מהשרת אינו תקין");
-    }
-
-    // מיפוי נתוני הגיליון הגולמיים למבנה הטיפוס Order במערכת
-    return data.orders.map((item: any, idx: number) => {
-      const receivedDate = String(item["תאריך קליטה"] || "").trim();
-      const date = String(item["תאריך אספקה"] || "").trim();
-      const time = String(item["שעה"] || "08:00").trim();
-      const orderId = String(item["מס' הזמנה"] || "").trim();
-      const customerNo = String(item["מס' לקוח"] || "").trim();
-      const customerName = String(item["שם לקוח"] || "לקוח מזדמן").trim();
-      const phone = String(item["איש קשר וטלפון"] || "").replace(/[^\d-]/g, "");
-      const address = String(item["כתובת אספקה"] || "").trim();
-      const yard = String(item["מחסן מוצא"] || "").trim();
-      const driverStr = String(item["נהג / משאית"] || "").trim();
-      const rawItems = String(item["פירוט מוצרים"] || "").trim();
-      const weightTons = parseFloat(item["משקל (טון)"] || "0");
-      const depositBales = String(item["פקדון בלות (60002)"] || "").trim();
-      const depositPallets = String(item["פקדון משטחים (60060/60006)"] || "").trim();
-      const noteId = String(item["מס' תעודת משלוח"] || "").trim();
-      const status = String(item["סטטוס סידור"] || "פתוחה").trim();
-      const wazeLink = String(item["קישור Waze"] || "");
-      const notes = String(item["הערות"] || "").trim();
-
-      // פיצול שורות מוצרים גולמיות
-      const parsedItems = rawItems
-        ? rawItems.split(/[,;]/).map((part) => {
-            const trimmed = part.trim();
-            const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(יח'|שק|בלות|לוח|דלי|מטר)?\s*(.+)$/);
-            return {
-              name: match ? match[3].trim() : trimmed,
-              qty: match ? parseFloat(match[1]) : 1,
-              unit: match && match[2] ? match[2] : "יח'",
-              weightKg: 50,
-              deposit: /בלות|פקדון|משטחים/i.test(trimmed),
-            };
-          })
-        : [{ name: "סחורה כללית", qty: 1, unit: "מנה", weightKg: 100, deposit: false }];
-
-      return {
-        id: orderId, // Assuming ID is the order ID for now
-        receivedDate,
-        date,
-        window: time,
-        orderId,
-        noteId,
-        customerNo,
-        customer: customerName,
-        phone,
-        address,
-        yard: yard as any,
-        driverId: null,
-        driverName: driverStr,
-        status: status as any,
-        items: parsedItems,
-        notes,
-        weightTons,
-        wazeLink,
-        depositBales,
-        depositPallets,
-      };
-    });
-  } catch (err) {
-    console.error("שגיאה בסנכרון ההזמנות מול Google Sheets:", err);
-    throw err;
-  }
+    return {
+      id: order.id,
+      receivedDate: order.receivedDate || "",
+      date: order.date,
+      window: order.window,
+      orderId: order.id,
+      noteId: order.noteId || "",
+      customerNo: order.customerNo,
+      customer: order.customer,
+      phone: order.phone,
+      address: order.address,
+      yard: order.yard as Order["yard"],
+      driverId: null,
+      driverName: order.driver,
+      status,
+      items: order.items.map((item) => ({
+        name: item.catalogName || item.name,
+        qty: item.qty,
+        ordered: item.qty,
+        unit: item.unit,
+        weightKg: item.weightKg,
+      })),
+      notes: order.notes || "",
+      weightTons: Number.isFinite(parsedWeight) ? parsedWeight : 0,
+      wazeLink: order.waze || "",
+      depositBales: "",
+      depositPallets: "",
+    };
+  });
 }
 
-/**
- * עדכון סטטוס הזמנה בגיליון
- */
-export async function updateOrderStatus(orderId: string, status: string): Promise<{ success: boolean; error?: string }> {
-  if (!hasLiveOrdersEndpoint) {
-    console.info("מצב הדגמה: לא ניתן לעדכן סטטוס הזמנה.");
-    return { success: true };
-  }
-
+export async function updateOrderStatus(
+  orderId: string,
+  status: string,
+): Promise<{ success: boolean; error?: string }> {
   try {
-    const separator = ORDERS_API_URL.includes("?") ? "&" : "?";
-    const url = `${ORDERS_API_URL}${separator}action=updateOrderStatus&orderId=${encodeURIComponent(orderId)}&status=${encodeURIComponent(status)}&token=${encodeURIComponent(ITURAN_TOKEN)}`;
-
-    const res = await fetch(url, { method: "GET" });
-    if (!res.ok) throw new Error("שגיאת שרת בעדכון הסטטוס");
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error || "עדכון הסטטוס נכשל");
+    await updateOrderStatusFn({ data: { id: orderId, status } });
     return { success: true };
-  } catch (err) {
-    console.error("שגיאה בעדכון הסטטוס:", err);
-    return { success: false, error: String(err) };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
