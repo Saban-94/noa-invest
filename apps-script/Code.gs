@@ -1227,6 +1227,14 @@ function handleWorkroomHarelDecision_(body) {
       state.thread.push(workroomMessage_("harel", text || reason || "התעודה נדחתה.", "rejected"));
     } else {
       status = "returned_to_rami";
+      // החזרה לתיקון מבטלת את סבב האישור הקודם; ראמי חייב לאשר מחדש.
+      const approvalHeaders = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+      const approvalRamiIdx = headerIndex_(approvalHeaders, ["אישור ראמי"]);
+      const approvalHarelIdx = headerIndex_(approvalHeaders, ["אישור הראל"]);
+      const approvalStatusIdx = headerIndex_(approvalHeaders, ["סטטוס אישור"]);
+      if (approvalRamiIdx >= 0) sheet.getRange(rowNum, approvalRamiIdx + 1).clearContent();
+      if (approvalHarelIdx >= 0) sheet.getRange(rowNum, approvalHarelIdx + 1).clearContent();
+      if (approvalStatusIdx >= 0) sheet.getRange(rowNum, approvalStatusIdx + 1).setValue("הוחזר לתיקון ראמי");
       task = {
         id: "task_" + new Date().getTime() + "_" + Math.random().toString(36).slice(2, 8),
         inquiryId: key,
