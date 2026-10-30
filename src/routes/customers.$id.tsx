@@ -4,7 +4,7 @@
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { uploadCustomerDocumentFn, type CustomerDocumentType } from "@/lib/customer-documents.functions";
 import { PageHeader } from "@/components/AppShell";
 import { getCustomerBundleFn } from "@/lib/customers.functions";
@@ -323,7 +323,7 @@ function CustomerDocumentUpload({
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
 
-  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (!file) return;
