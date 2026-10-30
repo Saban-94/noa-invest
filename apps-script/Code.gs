@@ -544,7 +544,7 @@ function handleSaveLogisticsAuditEvidence_(body) {
     value: String(raw || "").trim().slice(0, 2000)
   }));
   const invalid = entries.find(entry => !entry.findingId || entry.value.length < 12 ||
-    !/(?:החלטת ראמי|מענה ראמי)\\s*:/i.test(entry.value) || /\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(entry.value));
+    !/(?:החלטת ראמי|מענה ראמי)\s*:/i.test(entry.value) || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(entry.value));
   if (invalid) return jsonResponse({ success: false, error: "שמירת הבקרה נחסמה: קיימת אסמכתא חסרה או תבנית שלא הושלמה", findingId: invalid.findingId });
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -578,11 +578,11 @@ function handleSubmitApproval(body) {
   const note = String(body.note || "").trim();
   if (!noteId) return jsonResponse({ success: false, error: "Missing noteId" });
   if (approver !== "rami" && approver !== "harel") return jsonResponse({ success: false, error: "approver לא תקין" });
-  const auditEvidence = body.auditEvidence && typeof body.auditEvidence === "object" && !Array.isArray(body.auditEvidence)
+  let auditEvidence = body.auditEvidence && typeof body.auditEvidence === "object" && !Array.isArray(body.auditEvidence)
     ? body.auditEvidence
     : null;
   if (!auditEvidence || Object.keys(auditEvidence).length === 0 ||
-      Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
+      Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || !/(?:החלטת ראמי|מענה ראמי)\s*:/i.test(text) || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
     return jsonResponse({ success: false, error: "האישור נחסם: חסרות אסמכתאות בדיקת לוגיסטיקה" });
   }
 
