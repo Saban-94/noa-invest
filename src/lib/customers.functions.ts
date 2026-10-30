@@ -97,10 +97,11 @@ export const getCustomerBundleFn = createServerFn({ method: "POST" })
     const no = String(data.customerNo || "").trim();
     if (!no) throw new Error("חסר מספר לקוח");
 
-    const [custJson, notesJson, ordersJson] = await Promise.all([
+    const [custJson, notesJson, ordersJson, documentsJson] = await Promise.all([
       gasGet("getCustomers").catch(() => ({ customers: [] as LiveCustomer[] })),
       gasGet("getNotes").catch(() => ({ notes: [] as unknown[] })),
       gasGet("getOrders").catch(() => ({ orders: [] as unknown[] })),
+      gasGet("getCustomerDocuments", { customerNo: no }).catch(() => ({ documents: [] as unknown[] })),
     ]);
 
     const customers = (custJson.customers as LiveCustomer[]) || [];
@@ -111,6 +112,7 @@ export const getCustomerBundleFn = createServerFn({ method: "POST" })
       (n) => String(n.customerNo || "").trim() === no,
     );
 
+    const documents = (documentsJson.documents as Record<string, unknown>[]) || [];
     const allOrders = (ordersJson.orders as Record<string, unknown>[]) || [];
     const name = customer?.name || "";
     const orders = allOrders.filter((o) => {
@@ -124,6 +126,7 @@ export const getCustomerBundleFn = createServerFn({ method: "POST" })
       customer,
       notes,
       orders,
+      documents,
       customerNo: no,
       fetchedAt: new Date().toISOString(),
     };
