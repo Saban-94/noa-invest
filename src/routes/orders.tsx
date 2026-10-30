@@ -149,7 +149,7 @@ function normalizeOrder(raw: import("@/lib/orders.functions").SheetOrder): Order
     if (!Number.isNaN(parsedDate.getTime())) updatedAt = parsedDate.toISOString();
   }
   return {
-    id: String(raw.id), customerId: "", customerNo: String(raw.customerNo || ""),
+    id: String(raw.id), noteId: raw.noteId ? String(raw.noteId).trim() : undefined, customerId: "", customerNo: String(raw.customerNo || ""),
     receivedDate: String(raw.receivedDate || ""), deliveryDate: String(raw.date || ""),
     deliveryTime: String(raw.window || ""), driver: String(raw.driver || ""),
     customer: String(raw.customer || "לקוח ללא שם"),
