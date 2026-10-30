@@ -24,6 +24,30 @@ function extractSku(name: string, explicitSku?: string): string | undefined {
 export function buildLogisticsFindings(note: DeliveryNote): LogisticsFinding[] {
   const findings: LogisticsFinding[] = [];
   const items = Array.isArray(note.items) ? note.items : [];
+  const address = normalize(note.siteAddress);
+  if (!address) {
+    findings.push({
+      id: "address:missing",
+      category: "source",
+      title: "כתובת אספקה חסרה",
+      detail: "לא הוזנה כתובת יעד בתעודה. אין להעביר את התיק עד לקבלת כתובת מדויקת ואימותה.",
+      observed: "לא הוזנה",
+      sourceRequired: "הזמנת קומקס / כרטיס לקוח / אישור ראמי לכתובת",
+      severity: "blocker",
+    });
+  } else {
+    findings.push({
+      id: "address:verification",
+      category: "source",
+      title: "אימות כתובת אספקה",
+      detail: "יש להשוות את הכתובת מול כרטיס הלקוח והזמנת קומקס, ולתעד אם זו כתובת קיימת או כתובת חדשה. כתובת חדשה מחייבת אישור מפורש של ראמי לפני העברה להראל.",
+      observed: address,
+      sourceRequired: "כרטיס לקוח והזמנת קומקס; אם הכתובת חדשה — אישור ראמי מפורש",
+      severity: "blocker",
+    });
+  }
+
+
 
   if (note.live) {
     findings.push({
