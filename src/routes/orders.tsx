@@ -52,6 +52,11 @@ interface OrderItem {
 interface Order {
   id: string;
   customerId: string;
+  customerNo: string;
+  receivedDate: string;
+  deliveryDate: string;
+  deliveryTime: string;
+  driver: string;
   customer: string;
   address: string;
   phone: string;
@@ -144,7 +149,10 @@ function normalizeOrder(raw: import("@/lib/orders.functions").SheetOrder): Order
     if (!Number.isNaN(parsedDate.getTime())) updatedAt = parsedDate.toISOString();
   }
   return {
-    id: String(raw.id), customerId: "", customer: String(raw.customer || "לקוח ללא שם"),
+    id: String(raw.id), customerId: "", customerNo: String(raw.customerNo || ""),
+    receivedDate: String(raw.receivedDate || ""), deliveryDate: String(raw.date || ""),
+    deliveryTime: String(raw.window || ""), driver: String(raw.driver || ""),
+    customer: String(raw.customer || "לקוח ללא שם"),
     address: String(raw.address || ""), phone: String(raw.phone || ""), yard: String(raw.yard || ""),
     status: toStatus(raw.status), updatedAt, items,
   };

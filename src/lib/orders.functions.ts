@@ -16,6 +16,7 @@ export type SheetOrderItem = {
 /** הזמנה מהגיליון — גל 1: שדות ממופים לכותרות האמיתיות */
 export type SheetOrder = {
   id: string;
+  receivedDate?: string;
   customerNo: string;
   customer: string;
   phone: string;
@@ -60,7 +61,7 @@ function normalizeItem(value: unknown, index: number): SheetOrderItem {
   };
 }
 
-function normalizeOrder(value: unknown, index: number): SheetOrder {
+function normalizeOrder(value: unknown): SheetOrder {
   const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const rawItems = firstValue(row, "items", "פריטים");
   let items: SheetOrderItem[] = [];
@@ -101,8 +102,9 @@ function normalizeOrder(value: unknown, index: number): SheetOrder {
   );
 
   return {
-    id: id || `row-${index + 1}`,
-    customerNo: String(firstValue(row, "customerNo", "customerId", "מס' לקוח", "מס׳ לקוח", "מספר לקוח")),
+    id: id.trim(),
+    receivedDate: String(firstValue(row, "receivedDate", "תאריך קליטה")),
+    customerNo: String(firstValue(row, "customerNo", "customerId", "מס' לקוח", "מס׳ לקוח", "מספר לקוח")).trim(),
     customer: String(firstValue(row, "customer", "customerName", "שם לקוח", "לקוח") || "לקוח ללא שם"),
     phone: String(firstValue(row, "phone", "customerPhone", "איש קשר וטלפון", "טלפון")),
     address: String(firstValue(row, "address", "deliveryAddress", "כתובת אספקה", "כתובת")),
@@ -164,7 +166,7 @@ export const listOrdersFn = createServerFn({ method: "POST" }).handler(async () 
   return {
     tab: String(data.tab || "הזמנות"),
     fetchedAt: String(data.fetchedAt || new Date().toISOString()),
-    orders: data.orders.map(normalizeOrder),
+    orders: data.orders.map((row) => normalizeOrder(row)).filter((order) => order.id.length > 0 && !/^row-/i.test(order.id)),
   };
 });
 
@@ -173,7 +175,8 @@ export const updateOrderStatusFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const orderId = assertWritableOrderId(data.id);
     const status = String(data.status || "").trim();
-    if (!status) throw new Error("חסר סטטוס לעדכון");
+    const allowedStatuses = ["פתוחה", "בהעמסה", "בדרך", "סופק"];
+    if (!allowedStatuses.includes(status)) throw new Error("סטטוס לא מוכר. העדכון נחסם");
 
     const { token, gasUrl } = await getServerConfig();
     const response = await fetch(gasUrl, {
@@ -196,14 +199,29 @@ export const updateOrderStatusFn = createServerFn({ method: "POST" })
     } catch {
       throw new Error(`תשובה לא תקינה בעדכון הזמנה (HTTP ${response.status})`);
     }
-    if (!response.ok || result.success === false || result.ok === false || result.error) {
-      throw new Error(String(result.error || "עדכון הסטטוס בגיליון נכשל"));
+    if (!response.ok || result.success !== true || String(result.orderId || "") !== orderId || String(result.status || "") !== status) {
+      throw new Error(String(result.error || "Apps Script לא אישר שמירת סטטוס להזמנה"));
     }
-    const confirmed = String(result.status || status);
+    const verifyUrl = new URL(gasUrl);
+    verifyUrl.searchParams.set("action", "getOrders");
+    verifyUrl.searchParams.set("token", token);
+    const verifyResponse = await fetch(verifyUrl, { redirect: "follow", signal: AbortSignal.timeout(30_000) });
+    const verifyText = await verifyResponse.text();
+    let verifyData: Record<string, unknown>;
+    try {
+      verifyData = JSON.parse(verifyText) as Record<string, unknown>;
+    } catch {
+      throw new Error("העדכון נשלח, אך קריאת האימות החוזרת החזירה תשובה לא תקינה");
+    }
+    if (!verifyResponse.ok || verifyData.success !== true || !Array.isArray(verifyData.orders)) {
+      throw new Error(String(verifyData.error || "לא ניתן לאמת את העדכון מול הגיליון"));
+    }
+    const verified = verifyData.orders.map((row) => normalizeOrder(row)).filter((row) => row.id === orderId);
+    if (verified.length !== 1 || verified[0].status !== status) throw new Error("העדכון נשלח אך לא אומת בגיליון");
     return {
       success: true as const,
-      orderId: String(result.orderId || orderId),
-      status: confirmed,
+      orderId,
+      status,
       row: typeof result.row === "number" ? result.row : undefined,
       updatedAt: String(result.updatedAt || new Date().toISOString()),
     };
