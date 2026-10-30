@@ -508,8 +508,19 @@ function handleSubmitApproval(body) {
     ? body.auditEvidence
     : null;
   if (!auditEvidence || Object.keys(auditEvidence).length === 0 ||
-      Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
-    return jsonResponse({ success: false, error: "האישור נחסם: חסרות אסמכתאות בדיקת לוגיסטיקה" });
+      Object.values(auditEvidence).some(value => {
+        const text = String(value || "").trim();
+        const hasRamiDecision = /החלטת ראמי:\s*(תוקן ואומת|מאשר חריגה)/.test(text);
+        const acceptedExceptionHasReason = !/החלטת ראמי:\s*מאשר חריגה/.test(text) ||
+          /הסבר ראמי:\s*\S{3,}/.test(text);
+        return text.length < 12 ||
+          /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text) ||
+          !hasRamiDecision || !acceptedExceptionHasReason;
+      })) {
+    return jsonResponse({
+      success: false,
+      error: "האישור נחסם: לכל ממצא נדרשות אסמכתה והחלטת ראמי מפורשת. אישור חריגה מחייב הסבר."
+    });
   }
 
   const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
