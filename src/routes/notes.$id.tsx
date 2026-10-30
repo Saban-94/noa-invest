@@ -718,7 +718,7 @@ function Viewer() {
     try {
       await approveStrict(n.id, "rami", customNote.trim() || undefined, auditEvidence);
       officialApprovalSaved = true;
-      approvals.rami(n.id, customNote.trim() || undefined);
+      approvals.ramiLocal(n.id, customNote.trim() || undefined);
       void playDispatchChime(0.85);
 
       // Create/link the workroom record only after the official approval succeeds.
@@ -750,7 +750,7 @@ function Viewer() {
     } catch (err) {
       if (officialApprovalSaved) {
         // Do not misreport a saved official approval as rejected if only queue handoff failed.
-        approvals.rami(n.id, customNote.trim() || undefined);
+        approvals.ramiLocal(n.id, customNote.trim() || undefined);
         await workroomQuery.refetch();
         toast.warning("אישור ראמי נשמר, אך העברת התיק לתור הראל נכשלה", {
           description: err instanceof Error ? err.message : String(err),
