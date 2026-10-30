@@ -110,27 +110,84 @@ function doGet(e) {
  */
 function handleGetOrders_(params) {
   const ss = SpreadsheetApp.openById(params.sheetId || MASTER_SHEET_ID);
-  const sheet = ss.getSheetByName("הזמנות"); 
-  if (!sheet) {
-    return jsonResponse({ success: false, error: "לא נמצא טאב 'הזמנות'" });
-  }
+  const sheet = ss.getSheetByName("הזמנות");
+  if (!sheet) return jsonResponse({ success: false, error: "לא נמצא טאב 'הזמנות'" });
 
-  const values = sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getDisplayValues();
+  const fetchedAt = new Date().toISOString();
   if (values.length <= 1) {
-    return jsonResponse({ success: true, orders: [] });
+    return jsonResponse({ success: true, tab: "הזמנות", fetchedAt: fetchedAt, orders: [] });
   }
 
   const headers = values[0].map(h => String(h || "").trim());
-  
-  const orders = values.slice(1).map((row) => {
-    const order = {};
-    headers.forEach((h, i) => {
-      order[h] = row[i];
-    });
-    return order;
-  });
+  const orderIdCol = headers.indexOf("מס' הזמנה");
+  if (orderIdCol < 0) {
+    return jsonResponse({ success: false, error: "לא נמצאה עמודת מס' הזמנה בטאב הזמנות" });
+  }
 
-  return jsonResponse({ success: true, orders: orders });
+  const orders = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const id = String(row[orderIdCol] || "").trim();
+    if (!id || /^row-/i.test(id)) continue;
+    const order = {};
+    headers.forEach((header, i) => { if (header) order[header] = row[i]; });
+    order.id = id;
+    orders.push(order);
+  }
+  return jsonResponse({ success: true, tab: "הזמנות", fetchedAt: fetchedAt, orders: orders });
+}
+
+function handleUpdateOrderStatus_(body) {
+  const orderId = String(body.orderId || body.id || "").trim();
+  const status = String(body.status || "").trim();
+  const allowedStatuses = ["פתוחה", "בהעמסה", "בדרך", "סופק"];
+  if (!orderId || /^row-/i.test(orderId)) {
+    return jsonResponse({ success: false, error: "invalid_order_id" });
+  }
+  if (!allowedStatuses.includes(status)) {
+    return jsonResponse({ success: false, error: "invalid_order_status" });
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return jsonResponse({ success: false, error: "orders_sheet_busy" });
+  try {
+    const sheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName("הזמנות");
+    if (!sheet) return jsonResponse({ success: false, error: "לא נמצא טאב 'הזמנות'" });
+
+    const values = sheet.getDataRange().getDisplayValues();
+    const headers = values[0].map(h => String(h || "").trim());
+    const idCol = headers.indexOf("מס' הזמנה");
+    const statusCol = headers.indexOf("סטטוס סידור");
+    if (idCol < 0 || statusCol < 0) {
+      return jsonResponse({ success: false, error: "required_order_columns_not_found" });
+    }
+
+    const matches = [];
+    for (let r = 1; r < values.length; r++) {
+      if (String(values[r][idCol] || "").trim() === orderId) matches.push(r + 1);
+    }
+    if (matches.length === 0) return jsonResponse({ success: false, error: "order_not_found", orderId: orderId });
+    if (matches.length !== 1) return jsonResponse({ success: false, error: "duplicate_order_id", orderId: orderId });
+
+    const rowNumber = matches[0];
+    const cell = sheet.getRange(rowNumber, statusCol + 1);
+    cell.setValue(status);
+    SpreadsheetApp.flush();
+    const savedStatus = String(cell.getDisplayValue() || "").trim();
+    if (savedStatus !== status) {
+      return jsonResponse({ success: false, error: "write_verification_failed", orderId: orderId, status: savedStatus });
+    }
+    return jsonResponse({
+      success: true,
+      orderId: orderId,
+      status: savedStatus,
+      row: rowNumber,
+      updatedAt: new Date().toISOString()
+    });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -153,6 +210,10 @@ function doPost(e) {
 
     if (action === "ping") {
       return jsonResponse({ success: true, version: API_VERSION });
+    }
+
+    if (action === "updateOrderStatus") {
+      return handleUpdateOrderStatus_(body);
     }
 
     if (action === "submitApproval") {
