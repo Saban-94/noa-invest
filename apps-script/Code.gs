@@ -10,7 +10,7 @@
  * 5. לחץ Deploy והעתק את הכתובת שמסתיימת ב-/exec.
  */
 
-const API_VERSION = "2026-10-30-v9-customers";
+const API_VERSION = "2026-10-30-v10-customer-documents";
 const MASTER_SHEET_ID = "1FsLseQrKbIj_AvlE6-dW4J12Gr88P3uaoFVBjEcUjsw";
 const TAB_GALYA = "ארכיון_תעודות_גליה";
 
@@ -75,6 +75,9 @@ function doGet(e) {
 
       case "getNotes":
         return handleGetNotes(p);
+
+      case "getCustomerDocuments":
+        return handleGetCustomerDocuments_(p);
 
       case "getCatalog":
         return jsonResponse(getCatalog_());
@@ -1474,23 +1477,30 @@ function handleArchiveCustomerDocument_(body) {
 
     const folder = getOrCreateCustomerArchiveFolder_(customerNo, customerName);
     const file = folder.createFile(blob);
+    const uploadedAt = new Date().toISOString();
     file.setDescription(
       "נועה AI | מסמך לקוח | מספר לקוח: " + customerNo +
       " | סוג: " + typeLabel +
-      " | הועלה: " + new Date().toISOString()
+      " | הועלה: " + uploadedAt
     );
 
-    return jsonResponse({
-      success: true,
+    const document = {
       customerNo: customerNo,
       customerName: customerName,
       docType: docType,
+      docTypeLabel: typeLabel.replace("_", " "),
       fileId: file.getId(),
       fileName: file.getName(),
+      originalFileName: fileName,
+      mimeType: mimeType,
       driveUrl: file.getUrl(),
       folderName: folder.getName(),
-      uploadedAt: new Date().toISOString()
-    });
+      uploadedAt: uploadedAt,
+      status: "נשמר בתיק לקוח"
+    };
+    appendCustomerDocumentRegister_(document);
+
+    return jsonResponse({ success: true, ...document });
   } catch (err) {
     return jsonResponse({
       success: false,
@@ -1499,6 +1509,83 @@ function handleArchiveCustomerDocument_(body) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+
+function appendCustomerDocumentRegister_(document) {
+  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  const tabName = "ארכיון_מסמכי_לקוחות";
+  let sheet = ss.getSheetByName(tabName);
+  const headers = [
+    "תאריך העלאה", "מספר לקוח", "שם לקוח", "סוג מסמך",
+    "שם קובץ", "שם קובץ מקורי", "MIME", "קישור ל-Drive",
+    "מזהה קובץ", "שם תיקייה", "סטטוס"
+  ];
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  } else if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  }
+  sheet.appendRow([
+    document.uploadedAt, document.customerNo, document.customerName,
+    document.docTypeLabel, document.fileName, document.originalFileName,
+    document.mimeType, document.driveUrl, document.fileId,
+    document.folderName, document.status
+  ]);
+}
+
+function handleGetCustomerDocuments_(params) {
+  const customerNo = String(params.customerNo || "").trim();
+  if (!customerNo) return jsonResponse({ success: false, error: "חסר מספר לקוח" });
+
+  const ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  const sheet = ss.getSheetByName("ארכיון_מסמכי_לקוחות");
+  if (!sheet || sheet.getLastRow() < 2) {
+    return jsonResponse({ success: true, customerNo: customerNo, documents: [], count: 0 });
+  }
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(value => String(value || "").trim());
+  const indexOf = name => headers.indexOf(name);
+  const indexes = {
+    uploadedAt: indexOf("תאריך העלאה"),
+    customerNo: indexOf("מספר לקוח"),
+    customerName: indexOf("שם לקוח"),
+    docTypeLabel: indexOf("סוג מסמך"),
+    fileName: indexOf("שם קובץ"),
+    originalFileName: indexOf("שם קובץ מקורי"),
+    mimeType: indexOf("MIME"),
+    driveUrl: indexOf("קישור ל-Drive"),
+    fileId: indexOf("מזהה קובץ"),
+    folderName: indexOf("שם תיקייה"),
+    status: indexOf("סטטוס")
+  };
+  const documents = values.slice(1)
+    .filter(row => String(row[indexes.customerNo] || "").trim() === customerNo)
+    .map(row => {
+      const item = {};
+      Object.keys(indexes).forEach(key => {
+        const index = indexes[key];
+        if (index >= 0) {
+          const value = row[index];
+          item[key] = value instanceof Date ? value.toISOString() : String(value == null ? "" : value);
+        }
+      });
+      return item;
+    })
+    .reverse();
+
+  return jsonResponse({
+    success: true,
+    customerNo: customerNo,
+    documents: documents,
+    count: documents.length,
+    fetchedAt: new Date().toISOString()
+  });
 }
 
 function getOrCreateCustomerArchiveFolder_(customerNo, customerName) {
