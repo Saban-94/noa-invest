@@ -5,13 +5,7 @@ import {
   ClipboardList,
   MessageCircle,
   Users,
-  Truck,
   Edit3,
-  Send,
-  Sparkles,
-  Settings,
-  RefreshCw,
-  Server,
   Sun,
   Moon,
   Search,
@@ -21,23 +15,10 @@ import { type ReactNode, useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "@tanstack/react-router";
 import noa from "@/assets/noa.jpg";
 import { PWAInstallButton } from "./PWAInstallButton";
-import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "@/hooks/use-theme";
 
 import { playDispatchChime } from "@/lib/audio-alerts";
 import { toast } from "sonner";
-import { useApprovals } from "@/lib/store";
-import { fetchLiveNotes } from "@/lib/api";
-import { pingFn } from "@/lib/notes-api.functions";
-import { type DeliveryNote } from "@/lib/data";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Sheet,
   SheetContent,
@@ -66,18 +47,11 @@ const MOBILE_NAV = [
   { to: "/harel", label: "הראל", icon: Crown },
 ] as const;
 
-// Everything the bottom bar does not show is reachable from the "more" sheet,
-// so no destination exists on desktop only.
 const MOBILE_MORE = DESKTOP_NAV.filter((d) => !MOBILE_NAV.some((m) => m.to === d.to));
-
-const prefersReducedMotion = () =>
-  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const approvalsState = useApprovals();
   const { theme, toggleTheme } = useTheme();
-  
   const [moreOpen, setMoreOpen] = useState(false);
 
   const active = (to: string) => {
@@ -97,46 +71,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   };
 
-  const nowLabel = () =>
-    new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-
   useEffect(() => {
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       toast.message("מערכת נועה מוכנה", {
-        description: `סטטוס נטען · ${nowLabel()}`,
+        description: `סטטוס נטען · ${new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`,
       });
       void playDispatchChime(0.8);
     }, 600);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(timer);
   }, []);
-
-  const { data: notes } = useQuery<DeliveryNote[]>({
-    queryKey: ["live-notes-appshell"],
-    queryFn: fetchLiveNotes,
-    staleTime: 120000,
-  });
-
-  const notesList = notes || [];
-
-  const readyNotesCount = notesList.filter(
-    (n) =>
-      n.billingStatus === "ממתין לאישור מנכ״ל" ||
-      (approvalsState[n.id]?.rami && !approvalsState[n.id]?.harel),
-  ).length;
-
-  const {
-    data: pingData,
-    isLoading: isPingLoading,
-    isError: isPingError,
-    refetch: refetchPing,
-  } = useQuery({
-    queryKey: ["apps-script-ping"],
-    queryFn: async () => {
-      return await pingFn();
-    },
-    staleTime: 60000,
-    retry: 1,
-  });
 
   return (
     <div className="flex min-h-dvh bg-background">
