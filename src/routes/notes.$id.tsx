@@ -846,6 +846,7 @@ function Viewer() {
           inquiryId: n.id,
           noteId: n.id,
           text: handoffSummary,
+          handoffToHarel: true,
         },
       });
       await workroomQuery.refetch();
@@ -911,6 +912,7 @@ function Viewer() {
           inquiryId: n.id,
           noteId: n.id,
           text: retrySummary,
+          handoffToHarel: true,
         },
       });
       await workroomQuery.refetch();
