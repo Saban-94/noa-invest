@@ -230,7 +230,20 @@ function handleGetComaxManifest_(params) {
       if (m) items.push({ sku: m[1], name: m[2].trim(), unit: m[3], qty: Number(m[4].replace(",", ".")), unitWeightKg: 0 });
     });
   }
-  return jsonResponse({ success: true, orderId: orderId, source: "הזמנות", items: items });
+  const customerNoCol = idx(["מס' לקוח", "מס׳ לקוח", "מספר לקוח", "customerNo"]);
+  const customerCol = idx(["שם לקוח", "לקוח", "customer", "customerName"]);
+  const addressCol = idx(["כתובת אספקה", "כתובת", "address", "deliveryAddress"]);
+  const dateCol = idx(["תאריך אספקה", "תאריך", "date", "deliveryDate"]);
+  return jsonResponse({
+    success: true,
+    orderId: orderId,
+    source: "הזמנות",
+    customerNo: customerNoCol >= 0 ? String(row[customerNoCol] || "").trim() : "",
+    customer: customerCol >= 0 ? String(row[customerCol] || "").trim() : "",
+    address: addressCol >= 0 ? String(row[addressCol] || "").trim() : "",
+    date: dateCol >= 0 ? String(row[dateCol] || "").trim() : "",
+    items: items
+  });
 }
 
 function handleUpdateOrderStatus_(body) {
