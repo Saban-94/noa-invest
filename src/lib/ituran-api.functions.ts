@@ -9,11 +9,11 @@ import { createServerFn } from "@tanstack/react-start";
 import type { GpsStop, IturanVisit, PlateSummary } from "./ituran";
 
 const DEFAULT_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw/exec";
+  "https://script.google.com/macros/s/AKfycbxNMqeQDlOOswTPciJwfdyuIHYNmXxGc6tR8FXvtgm-PFNDhuuq50LUwyq_3-CsgLIViQ/exec";
 
 const BROKEN_GAS_MARKERS = [
   "TwXhw",
-  "AKfycbyh-8mU90O1gvfO20bbnoPHrmb_pgIMucWmE_S7fRxjhwztelp1v93Q6-2ayQU-ElrgIw",
+  "AKfycbxNMqeQDlOOswTPciJwfdyuIHYNmXxGc6tR8FXvtgm-PFNDhuuq50LUwyq_3-CsgLIViQ",
 ];
 
 function gasUrl(): string {
