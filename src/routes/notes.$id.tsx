@@ -10,7 +10,7 @@ import {
   type DeliveryNote,
 } from "@/lib/data";
 import { fetchLiveNotes, approveStrict } from "@/lib/api";
-import { getScanFn } from "@/lib/notes-api.functions";
+import { getManifestFn, getScanFn } from "@/lib/notes-api.functions";
 import { scanToDataUrl } from "@/lib/scan-render";
 import { approvals, useApprovals } from "@/lib/store";
 import { playUrgentSignatureAlarm, playDispatchChime } from "@/lib/audio-alerts";
@@ -62,8 +62,35 @@ export const Route = createFileRoute("/notes/$id")({
 /* ───────────────────────────── Helpers ───────────────────────────── */
 
 type Finding = ReturnType<typeof buildLogisticsFindings>[number];
+
+function evidenceTemplates(finding: Finding): string[] {
+  const title = finding.title;
+  if (finding.category === "source") return [
+    `הצלבה מול קומקס | הזמנה: [מספר הזמנה] | תאריך: [תאריך] | מסמך מקור: [קישור/עמוד] | תוצאה: [תוצאה]`,
+    `מקור התעודה נבדק | קובץ: [שם/קישור] | עמוד: [מספר] | מספר תעודה: [מספר] | תוצאה: [תוצאה]`,
+  ];
+  if (finding.category === "deposit") return [
+    `פיקדון ${title} נבדק מול תנועת אספקה | אסמכתא: [מספר] | כמות: [כמות] | תאריך: [תאריך]`,
+    `פיקדון ${title} הוצלב מול חיוב/זיכוי נפרד | אסמכתא: [מספר] | כמות: [כמות] | תוצאה: [תוצאה]`,
+  ];
+  if (finding.category === "tracking") return [
+    `איתוראן נבדק | נהג: [שם] | רכב: [מספר רישוי] | שעה: [שעה] | כתובת: [כתובת] | תוצאה: [תוצאה]`,
+    `ביצוע הובלה אומת | נהג: [שם] | רכב: [מספר] | מקור: [קישור/דוח] | תאריך ושעה: [מועד]`,
+  ];
+  if (finding.category === "transport") return [
+    `שירות הובלה נבדק מול הזמנה | מק״ט: [מק״ט] | הזמנה: [מספר] | ביצוע: [אסמכתא] | תוצאה: [תוצאה]`,
+    `ביצוע שירות אומת | נהג/רכב: [פרטים] | תאריך: [תאריך] | אסמכתא: [קישור/מסמך]`,
+  ];
+  return [
+    `כמות הוצלבה מול הזמנת קומקס | מק״ט: [מק״ט] | צפוי: [כמות] | סופק: [כמות] | אסמכתא: [מקור]`,
+    `מק״ט נבדק מול קטלוג פעיל | מק״ט: [מספר] | תיאור: [תיאור] | גרסת קטלוג: [תאריך] | תוצאה: [תוצאה]`,
+  ];
+}
 const MIN_EVIDENCE = 12;
-const isDocumented = (text: string | undefined) => (text || "").trim().length >= MIN_EVIDENCE;
+const isDocumented = (text: string | undefined) => {
+  const value = (text || "").trim();
+  return value.length >= MIN_EVIDENCE && !/(\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן)/i.test(value);
+};
 
 const BTN =
   "group relative inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-2xl px-4 font-display text-sm font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60 motion-reduce:transform-none motion-reduce:transition-none";
@@ -336,6 +363,23 @@ const AuditRow = memo(function AuditRow({ finding, evidence, onChange, open, onT
                 </p>
               )}
               <label className="block space-y-1.5">
+                <span className="text-xs font-bold">תשובה מוכנה מראש</span>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) onChange(finding.id, e.target.value);
+                    e.currentTarget.value = "";
+                  }}
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="">בחר תבנית למילוי…</option>
+                  {evidenceTemplates(finding).map((template, index) => (
+                    <option key={index} value={template}>{index + 1}. {template.split("|")[0]}</option>
+                  ))}
+                </select>
+                <span className="block text-[10px] text-muted-foreground">התבנית אינה נחשבת אסמכתא עד להחלפת כל הסוגריים בפרטי בדיקה אמיתיים.</span>
+              </label>
+              <label className="block space-y-1.5">
                 <span className="flex items-center justify-between text-xs font-bold">
                   <span>הפניה לאסמכתא / תוצאת בדיקה</span>
                   <span className={`tabular-nums ${documented ? "text-emerald-700" : "text-muted-foreground"}`}>
@@ -377,12 +421,7 @@ function CenterState({ icon, title, text, action }: { icon: ReactNode; title: st
   );
 }
 
-/* ───────────────────────────── Comax manifest sync ─────────────────────────────
- * תעודות חיות מהגיליון לא תמיד נושאות שורות פריטים. כשחסרות — המניפסט נשלף לפי מספר הזמנת קומקס:
- *   GET {VITE_SHEETS_ORDERS_URL}?action=manifest&order=<comaxOrder> → { items: [{sku,name,qty,unit,unitWeightKg}] }
- */
-
-const SHEETS_URL: string = (import.meta.env?.VITE_SHEETS_ORDERS_URL as string | undefined) ?? "";
+/* ───────────────────────────── Comax manifest sync ───────────────────────────── */
 const SKU_BALES = "60002";
 const SKU_PALLETS = "60060";
 
@@ -399,29 +438,14 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-async function fetchManifest(orderId: string, signal?: AbortSignal): Promise<ManifestRow[]> {
-  if (!SHEETS_URL) throw new Error("לא הוגדר VITE_SHEETS_ORDERS_URL");
-  const res = await fetch(`${SHEETS_URL}?action=manifest&order=${encodeURIComponent(orderId)}`, { signal });
-  if (!res.ok) throw new Error(`שגיאת שרת ${res.status}`);
-  const text = await res.text();
-  let json: { items?: Record<string, unknown>[]; error?: string };
-  try {
-    json = JSON.parse(text) as typeof json;
-  } catch {
-    const looksHtml = text.trimStart().startsWith("<");
-    throw new Error(
-      looksHtml
-        ? "השרת החזיר דף HTML במקום JSON — ודא ש-VITE_SHEETS_ORDERS_URL היא כתובת /exec של Apps Script, שהפריסה פתוחה ל-Anyone, ושה-doGet תומך ב-action=manifest"
-        : "תשובת השרת אינה JSON תקין",
-    );
-  }
-  if (json.error) throw new Error(json.error);
-  return (json.items ?? []).map((r) => ({
-    sku: String(r.sku ?? "").trim(),
-    name: String(r.name ?? ""),
-    qty: toNum(r.qty),
-    unit: String(r.unit ?? "יח׳"),
-    unitWeightKg: toNum(r.unitWeightKg ?? r.weightKg ?? r.unitWeight),
+async function fetchManifest(orderId: string): Promise<ManifestRow[]> {
+  const result = await getManifestFn({ data: { orderId } });
+  return result.items.map((row) => ({
+    sku: String(row.sku || "").trim(),
+    name: String(row.name || ""),
+    qty: toNum(row.qty),
+    unit: String(row.unit || "יח׳"),
+    unitWeightKg: toNum(row.unitWeightKg),
   }));
 }
 
@@ -515,7 +539,7 @@ function Viewer() {
   const noteHasItems = (n?.items?.length ?? 0) > 0;
   const manifestQuery = useQuery({
     queryKey: ["comax-manifest", n?.comaxOrder],
-    enabled: !!n && !noteHasItems && !!n.comaxOrder && !!SHEETS_URL,
+    enabled: !!n && !noteHasItems && !!n.comaxOrder,
     staleTime: 60_000,
     retry: 1,
     queryFn: ({ signal }) => fetchManifest(String(n!.comaxOrder), signal),
@@ -634,19 +658,13 @@ function Viewer() {
   const depositState: MetricState = depositsKnown ? "ok" : syncing ? "loading" : "missing";
   const missingHint = !n.comaxOrder
     ? "אין מספר הזמנת קומקס בתעודה"
-    : !SHEETS_URL
-      ? "חסר VITE_SHEETS_ORDERS_URL"
-      : manifestQuery.isError
+    : manifestQuery.isError
         ? `שגיאת סנכרון: ${manifestQuery.error instanceof Error ? manifestQuery.error.message : "כשל"}`
         : "לחץ לסנכרון מקומקס";
 
   const syncManifest = () => {
     if (!n.comaxOrder) {
       toast.error("לתעודה אין מספר הזמנת קומקס לסנכרון");
-      return;
-    }
-    if (!SHEETS_URL) {
-      toast.error("לא הוגדר VITE_SHEETS_ORDERS_URL", { description: "הגדר את כתובת ה-Apps Script כדי למשוך מניפסט." });
       return;
     }
     void manifestQuery.refetch().then((r) => {
@@ -744,7 +762,7 @@ function Viewer() {
           <ul className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 [scrollbar-width:none] md:grid md:grid-cols-4 md:overflow-visible [&::-webkit-scrollbar]:hidden">
             <MetricCard
               index={0}
-              label="כמות פריטים"
+              label="כמות פריטים · יחידות"
               icon={Layers}
               tone="text-sky-700 dark:text-sky-300"
               surface="bg-sky-500/10"
