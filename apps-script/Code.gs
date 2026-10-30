@@ -501,7 +501,7 @@ function handleSubmitApproval(body) {
     ? body.auditEvidence
     : null;
   if (!auditEvidence || Object.keys(auditEvidence).length === 0 ||
-      Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || /\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
+      Object.values(auditEvidence).some(value => { const text = String(value || "").trim(); return text.length < 12 || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(text); })) {
     return jsonResponse({ success: false, error: "האישור נחסם: חסרות אסמכתאות בדיקת לוגיסטיקה" });
   }
 
