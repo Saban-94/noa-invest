@@ -1187,8 +1187,8 @@ function handleWorkroomRamiReply_(body) {
       const evidenceValues = Object.values(savedEvidence);
       if (!evidenceValues.length || evidenceValues.some(value => {
         const text = String(value || "").trim();
-        return !/החלטת ראמי:\\s*(תוקן ואומת|מאשר חריגה)/.test(text) ||
-          (/החלטת ראמי:\\s*מאשר חריגה/.test(text) && !/הסבר ראמי:\\s*\\S{3,}/.test(text));
+        return !/החלטת ראמי:\s*(תוקן ואומת|מאשר חריגה)/.test(text) ||
+          (/החלטת ראמי:\s*מאשר חריגה/.test(text) && !/הסבר ראמי:\s*\S{3,}/.test(text));
       })) {
         throw new Error("העברה להראל חסומה: חסרות אסמכתאות או החלטות מפורשות של ראמי");
       }
