@@ -582,7 +582,7 @@ function handleSaveLogisticsAuditEvidence_(body) {
     const decision = decisions[findingId] && typeof decisions[findingId] === "object" ? decisions[findingId] : {};
     const status = String(decision.status || "pending");
     const decisionNote = String(decision.note || "").trim().slice(0, 1000);
-    if (!findingId || value.length < 12 || /\\[[^\\]]+\\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(value)) {
+    if (!findingId || value.length < 12 || /\[[^\]]+\]|_{3,}|להשלים|בחר מקור|יש למלא|הקלד כאן/i.test(value)) {
       return jsonResponse({ success: false, error: "שמירת הבקרה נחסמה: אסמכתה חסרה או תבנית לא הושלמה", findingId: findingId });
     }
     if (status !== "resolved" && status !== "accepted_exception") {
