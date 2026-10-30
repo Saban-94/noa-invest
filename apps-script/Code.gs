@@ -1228,13 +1228,18 @@ function handleWorkroomHarelDecision_(body) {
     } else {
       status = "returned_to_rami";
       // החזרה לתיקון מבטלת את סבב האישור הקודם; ראמי חייב לאשר מחדש.
-      const approvalHeaders = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+      const officialSheet = SpreadsheetApp.openById(MASTER_SHEET_ID).getSheetByName(TAB_GALYA);
+      if (!officialSheet) throw new Error("לא נמצא גיליון התעודות לאיפוס אישורים");
+      const approvalHeaders = officialSheet.getRange(1, 1, 1, Math.max(1, officialSheet.getLastColumn())).getValues()[0].map(h => String(h || "").trim());
+      const approvalDocIdx = headerIndex_(approvalHeaders, ["מס\' תעודת משלוח", "מס׳ תעודת משלוח", "מספר תעודת משלוח", "מספר ת.מ", "מספר תעודה", "מס׳ תעודה", "docNumber", "noteId", "id"]);
+      if (approvalDocIdx < 0) throw new Error("לא נמצאה עמודת מספר תעודה לאיפוס אישורים");
+      const officialRowNum = workroomUniqueRowOrError_(officialSheet, key, approvalHeaders, approvalDocIdx);
       const approvalRamiIdx = headerIndex_(approvalHeaders, ["אישור ראמי"]);
       const approvalHarelIdx = headerIndex_(approvalHeaders, ["אישור הראל"]);
       const approvalStatusIdx = headerIndex_(approvalHeaders, ["סטטוס אישור"]);
-      if (approvalRamiIdx >= 0) sheet.getRange(rowNum, approvalRamiIdx + 1).clearContent();
-      if (approvalHarelIdx >= 0) sheet.getRange(rowNum, approvalHarelIdx + 1).clearContent();
-      if (approvalStatusIdx >= 0) sheet.getRange(rowNum, approvalStatusIdx + 1).setValue("הוחזר לתיקון ראמי");
+      if (approvalRamiIdx >= 0) officialSheet.getRange(officialRowNum, approvalRamiIdx + 1).clearContent();
+      if (approvalHarelIdx >= 0) officialSheet.getRange(officialRowNum, approvalHarelIdx + 1).clearContent();
+      if (approvalStatusIdx >= 0) officialSheet.getRange(officialRowNum, approvalStatusIdx + 1).setValue("הוחזר לתיקון ראמי");
       task = {
         id: "task_" + new Date().getTime() + "_" + Math.random().toString(36).slice(2, 8),
         inquiryId: key,
