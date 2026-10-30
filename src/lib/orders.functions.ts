@@ -163,10 +163,14 @@ export const listOrdersFn = createServerFn({ method: "POST" }).handler(async () 
     throw new Error("Apps Script לא החזיר מערך orders. יש לבדוק שהפעולה getOrders מחוברת לטאב ההזמנות.");
   }
 
+  const orders = data.orders
+    .map((row) => normalizeOrder(row))
+    .filter((order) => order.id.length > 0 && !/^row-/i.test(order.id));
+
   return {
     tab: String(data.tab || "הזמנות"),
     fetchedAt: String(data.fetchedAt || new Date().toISOString()),
-    orders: data.orders.map(normalizeOrder),
+    orders,
   };
 });
 
@@ -175,7 +179,10 @@ export const updateOrderStatusFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const orderId = assertWritableOrderId(data.id);
     const status = String(data.status || "").trim();
-    if (!status) throw new Error("חסר סטטוס לעדכון");
+    const allowedStatuses = ["פתוחה", "בהעמסה", "בדרך", "סופק"];
+    if (!allowedStatuses.includes(status)) {
+      throw new Error("סטטוס לא מוכר. העדכון נחסם");
+    }
 
     const { token, gasUrl } = await getServerConfig();
     const response = await fetch(gasUrl, {
