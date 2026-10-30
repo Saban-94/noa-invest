@@ -703,7 +703,7 @@ function Viewer() {
   const steps: Step[] = [
     { key: "audit", label: "בקרת נועה AI", hint: `${auditEvidenceCount}/${auditFindings.length} אסמכתאות`, done: auditComplete, icon: Brain },
     { key: "rami", label: "אישור ראמי", hint: ramiApprovalActive ? ap!.rami!.at : "ממתין לבדיקה / תיקון", done: ramiApprovalActive, icon: Stamp },
-    { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel && !returnedToRami ? ap.harel.at : ramiApprovalActive ? "ממתין להחלטת הראל" : "ממתין לאישור ראמי", done: Boolean(ap?.harel) && !returnedToRami, icon: Crown },
+    { key: "harel", label: "אישור מנכ״ל", hint: ap?.harel && !returnedToRami ? ap.harel.at : ramiApprovalActive || n.noteStage === "pending_harel" ? "ממתין להחלטת הראל" : "ממתין לאישור ראמי", done: Boolean(ap?.harel) && !returnedToRami, icon: Crown },
   ];
 
   const handleRamiApproval = async () => {
