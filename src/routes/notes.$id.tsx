@@ -365,10 +365,16 @@ const AuditRow = memo(function AuditRow({ finding, evidence, onChange, open, onT
               <label className="block space-y-1.5">
                 <span className="text-xs font-bold">תשובה מוכנה מראש</span>
                 <select
-                  defaultValue=""
+                  value=""
                   onChange={(e) => {
-                    if (e.target.value) onChange(finding.id, e.target.value);
-                    e.currentTarget.value = "";
+                    const template = e.target.value;
+                    if (!template) return;
+                    // תבניות הן שלבי בדיקה מצטברים: בחירת השנייה לא תדרוס את הראשונה.
+                    const existing = evidence.trim();
+                    const entries = existing ? existing.split("\n").map((line) => line.trim()) : [];
+                    if (!entries.includes(template.trim())) {
+                      onChange(finding.id, existing ? `${existing}\n${template}` : template);
+                    }
                   }}
                   className="h-11 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary/30"
                 >
