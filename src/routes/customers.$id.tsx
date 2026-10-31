@@ -115,7 +115,7 @@ const wazeUrl = (address: string) => `https://waze.com/ul?q=${encodeURIComponent
 
 /* ------------------------------- דף ------------------------------- */
 
-type Tab = "overview" | "notes" | "orders" | "documents";
+type Tab = "overview" | "notes" | "orders" | "documents" | "history";
 
 function CustomerDetailView() {
   const { id } = Route.useParams();
@@ -133,6 +133,26 @@ function CustomerDetailView() {
   const rawNotes = (q.data?.notes || []) as Rec[];
   const orders = (q.data?.orders || []) as Rec[];
   const documents = (q.data?.documents || []) as Rec[];
+  const visits = (q.data?.visits || []) as Rec[];
+  const visitHistory = (q.data?.history || []) as Rec[];
+  const sites = (q.data?.sites || []) as Rec[];
+  const historyAvailable = q.data?.historyAvailable === true;
+  const unloadBySite = useMemo(() => {
+    const grouped = new Map<string, { address: string; values: number[] }>();
+    for (const row of visitHistory) {
+      const address = s(row.address);
+      const minutes = Number(String(row.unloadMinutes || "").replace(",", "."));
+      if (!address || !Number.isFinite(minutes) || minutes <= 0) continue;
+      const entry = grouped.get(normAddr(address)) || { address, values: [] };
+      entry.values.push(minutes);
+      grouped.set(normAddr(address), entry);
+    }
+    return [...grouped.values()].map((site) => ({
+      ...site,
+      average: Math.round(site.values.reduce((sum, value) => sum + value, 0) / site.values.length),
+      samples: site.values.length,
+    }));
+  }, [visitHistory]);
 
   /* ---- ניתוח הלקוח מכל הטאבים ---- */
   const intel = useMemo(() => {
@@ -258,6 +278,7 @@ function CustomerDetailView() {
     { key: "notes", label: "תעודות", icon: <FileText className="h-4 w-4" />, count: intel.notes.length },
     { key: "orders", label: "הזמנות", icon: <Package className="h-4 w-4" />, count: orders.length },
     { key: "documents", label: "מסמכים", icon: <FolderOpen className="h-4 w-4" />, count: documents.length },
+    { key: "history", label: "ביקורים ואתרים", icon: <Layers className="h-4 w-4" />, count: visits.length },
   ];
 
   return (
@@ -522,6 +543,85 @@ function CustomerDetailView() {
           </div>
         )}
 
+        {/* ---------- היסטוריית ביקורים ואתרים ---------- */}
+        {tab === "history" && (
+          <div className="space-y-5">
+            {!historyAvailable && (
+              <div role="status" className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900">
+                נתוני הביקורים עדיין לא זמינים דרך החיבור. יש לפרוס את עדכון Apps Script כדי להציג היסטוריה זו.
+              </div>
+            )}
+            {unloadBySite.length > 0 && (
+              <Card title="זמן פריקה ממוצע לפי אתר" icon={<Clock className="h-5 w-5 text-primary" />}>
+                <div className="space-y-2">
+                  {unloadBySite.map((site) => (
+                    <div key={site.address} className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="font-semibold">{site.address}</div>
+                        <div className="text-xs text-muted-foreground">{site.samples} מדידות פריקה ידניות</div>
+                      </div>
+                      <div className="shrink-0 text-lg font-extrabold tabular-nums">{site.average} <span className="text-xs font-semibold text-muted-foreground">דקות בממוצע</span></div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+            {sites.length > 0 && (
+              <Card title="מדדי אתר מהגיליון" icon={<MapPin className="h-5 w-5 text-emerald-500" />}>
+                <div className="space-y-2">
+                  {sites.map((site, index) => (
+                    <div key={s(site.address) || String(index)} className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                      <div className="font-semibold">{s(site.address)}{site.city ? ` · ${s(site.city)}` : ""}</div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        {site.visits ? <span>{s(site.visits)} ביקורים</span> : null}
+                        {site.medianStayMinutes ? <span>שהייה חציונית: {s(site.medianStayMinutes)} דק׳</span> : null}
+                        {site.p80StayMinutes ? <span>P80 שהייה: {s(site.p80StayMinutes)} דק׳</span> : null}
+                        {site.lastVisit ? <span>ביקור אחרון: {fmtShort(site.lastVisit)}</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+            <Card title={`ביקורי איתוראן (${visits.length})`} icon={<Truck className="h-5 w-5 text-blue-500" />}>
+              {visits.length === 0 ? (
+                <p className="text-sm text-muted-foreground">אין ביקורים משויכים למספר לקוח זה.</p>
+              ) : (
+                <div className="space-y-2">
+                  {visits.map((visit, index) => (
+                    <div key={s(visit.id) || String(index)} className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-muted/20 p-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="font-semibold">{s(visit.address) || "כתובת לא צוינה"}</div>
+                        <div className="text-xs text-muted-foreground">{fmtShort(visit.date)}{visit.noteId ? ` · תעודה ${s(visit.noteId)}` : ""}{visit.driver ? ` · נהג ${s(visit.driver)}` : ""}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {visit.stayMinutes ? <span className="rounded-lg bg-blue-500/10 px-2 py-1">שהייה: {s(visit.stayMinutes)} דק׳</span> : null}
+                        {visit.ptoMinutes ? <span className="rounded-lg bg-violet-500/10 px-2 py-1">PTO: {s(visit.ptoMinutes)} דק׳</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+            {visitHistory.length > 0 && (
+              <Card title="סיכום ביקורים ידני" icon={<FileText className="h-5 w-5 text-amber-500" />}>
+                <div className="space-y-2">
+                  {visitHistory.map((row, index) => (
+                    <div key={s(row.id) || String(index)} className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                      <div className="font-semibold">{s(row.address) || "אתר ללא כתובת"}</div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        {row.date ? <span>{fmtShort(row.date)}</span> : null}
+                        {row.unloadMinutes ? <span>פריקה: {s(row.unloadMinutes)} דק׳</span> : null}
+                        {row.waitMinutes ? <span>המתנה: {s(row.waitMinutes)} דק׳</span> : null}
+                        {row.stayMinutes ? <span>שהייה: {s(row.stayMinutes)} דק׳</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
         {/* ---------- תעודות ---------- */}
         {tab === "notes" && (
           <Card title={`תעודות משלוח (${filteredNotes.length}/${intel.notes.length})`} icon={<FileText className="h-5 w-5 text-amber-500" />}>

@@ -351,3 +351,111 @@ function testGetCustomers() {
   Logger.log(JSON.stringify(report, null, 2));
   return report;
 }
+
+// Read-only customer history API. The customer number is the stable join key;
+// delivery addresses then connect the Ituran history to the site summary tabs.
+function handleGetCustomerHistory_(params) {
+  params = params || {};
+  var customerNo = String(params.customerNo || "").trim();
+  if (!/^\d{4,}$/.test(customerNo)) {
+    return { success: false, available: false, error: "מספר לקוח לא תקין" };
+  }
+  var ss = SpreadsheetApp.openById(params.sheetId || MASTER_SHEET_ID);
+  var sourcesAvailable = Boolean(
+    ss.getSheetByName("ביקורים_איתוראן") ||
+    ss.getSheetByName("היסטוריית_ביקורים") ||
+    ss.getSheetByName("אתרי_לקוחות")
+  );
+  var norm = function(value) {
+    return String(value || "").toLowerCase().replace(/["'״׳.,]/g, "").replace(/\s+/g, " ").trim();
+  };
+  var headerIndex = function(headers, aliases) {
+    var normalized = headers.map(norm);
+    for (var i = 0; i < aliases.length; i++) {
+      var index = normalized.indexOf(norm(aliases[i]));
+      if (index >= 0) return index;
+    }
+    return -1;
+  };
+  var readRows = function(tabName) {
+    var sheet = ss.getSheetByName(tabName);
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    var values = sheet.getDataRange().getDisplayValues();
+    var headers = values.shift().map(function(v) { return String(v || "").trim(); });
+    return values.filter(function(row) {
+      return row.some(function(cell) { return String(cell || "").trim(); });
+    }).map(function(row) { return { headers: headers, row: row }; });
+  };
+  var visits = [];
+  var addressSet = Object.create(null);
+  readRows("ביקורים_איתוראן").forEach(function(item) {
+    var h = item.headers, r = item.row;
+    var noCol = headerIndex(h, ["מס׳ לקוח", "מס' לקוח", "מספר לקוח", "customerNo"]);
+    if (noCol < 0 || String(r[noCol] || "").trim() !== customerNo) return;
+    var get = function(names) { var i = headerIndex(h, names); return i < 0 ? "" : String(r[i] || "").trim(); };
+    var address = get(["כתובת", "כתובת אספקה", "address"]);
+    if (address) addressSet[norm(address)] = address;
+    visits.push({
+      id: get(["key", "מפתח ביקור", "מפתח"]),
+      noteId: get(["מס׳ תעודה", "מס' תעודה", "תעודה"]),
+      date: get(["תאריך", "date"]),
+      customer: get(["לקוח", "שם לקוח", "customer"]),
+      customerNo: customerNo,
+      address: address,
+      driver: get(["נהג", "driver"]),
+      truck: get(["משאית", "truck"]),
+      arrival: get(["הגעה איתוראן", "איתוראן: הגעה", "הגעה"]),
+      departure: get(["עזיבה איתוראן", "יציאה איתוראן", "איתוראן: יציאה", "עזיבה"]),
+      stayMinutes: get(["שהייה דק׳", "שהייה דק'", "משך עצירה (דק׳)", "משך עצירה (דק')"]),
+      ptoMinutes: get(["PTO דק׳", "PTO משך (דק׳)", "PTO משך (דק')"])
+    });
+  });
+  var history = [];
+  readRows("היסטוריית_ביקורים").forEach(function(item) {
+    var h = item.headers, r = item.row;
+    var get = function(names) { var i = headerIndex(h, names); return i < 0 ? "" : String(r[i] || "").trim(); };
+    var address = get(["כתובת", "כתובת אתר", "address"]);
+    if (!address || !addressSet[norm(address)]) return;
+    history.push({
+      id: get(["מפתח ביקור", "key", "מפתח"]),
+      date: get(["תאריך", "date"]),
+      address: address,
+      city: get(["עיר", "city"]),
+      customers: get(["לקוחות", "לקוח", "שם לקוח", "customer"]),
+      deliveryNotes: get(["תעודות", "מס׳ תעודה", "מס' תעודה"]),
+      unloadMinutes: get(["פריקה בכתב יד (דק׳)", "פריקה בכתב יד (דק')", "זמן פריקה (דק׳)", "זמן פריקה (דק')"]),
+      waitMinutes: get(["המתנה בכתב יד (דק׳)", "המתנה בכתב יד (דק')"]),
+      stayMinutes: get(["איתוראן: משך עצירה (דק׳)", "איתוראן: משך עצירה (דק')", "שהייה דק׳"]),
+      arrival: get(["איתוראן: הגעה", "הגעה איתוראן"]),
+      departure: get(["איתוראן: יציאה", "עזיבה איתוראן"])
+    });
+  });
+  var sites = [];
+  readRows("אתרי_לקוחות").forEach(function(item) {
+    var h = item.headers, r = item.row;
+    var get = function(names) { var i = headerIndex(h, names); return i < 0 ? "" : String(r[i] || "").trim(); };
+    var address = get(["כתובת", "address"]);
+    if (!address || !addressSet[norm(address)]) return;
+    sites.push({
+      address: address,
+      city: get(["עיר", "city"]),
+      visits: get(["ביקורים", "מספר ביקורים"]),
+      lastVisit: get(["ביקור אחרון"]),
+      measurements: get(["מדידות"]),
+      medianStayMinutes: get(["באתר חציון (דק׳)", "באתר חציון (דק')"]),
+      p80StayMinutes: get(["באתר P80 (דק׳)", "באתר P80 (דק')"]),
+      maxStayMinutes: get(["באתר מקס׳ (דק׳)", "באתר מקס' (דק')"]),
+      medianTravelMinutes: get(["נסיעה חציון (דק׳)", "נסיעה חציון (דק')"]),
+      confidence: get(["ביטחון"])
+    });
+  });
+  return {
+    success: true,
+    available: sourcesAvailable,
+    customerNo: customerNo,
+    visits: visits,
+    history: history,
+    sites: sites,
+    fetchedAt: new Date().toISOString()
+  };
+}
