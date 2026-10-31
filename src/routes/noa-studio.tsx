@@ -112,6 +112,32 @@ type ChatMessage = {
   noteCard?: NoteCardData;
 };
 
+const SOURCE_TABS = {
+  notes: "ארכיון_תעודות_גליה",
+  orders: "הזמנות",
+  ituranVisits: "ביקורים_איתוראן",
+  visits: "היסטוריית_ביקורים",
+  sites: "אתרי_לקוחות",
+  inquiries: "בירור_ראמי",
+  checks: "בקרת_לוגיסטיקה",
+  harelInquiries: "בירור_הראל_מנכל",
+  ptoRaw: "איתוראן_PTO",
+  citySummary: "סיכום_ערים",
+} as const;
+
+const CHAT_PRESENTATION_RULES = `
+הנחיות להצגת תשובות:
+ענה בעברית מלאה, תקינה, טבעית ומקצועית בלבד.
+פתח בכותרת קצרה וברורה ואז הצג מסקנה מרכזית.
+סדר מידע לפי נושאים והשתמש בכותרות ובטבלה כאשר יש כמה רשומות או שדות להשוואה.
+אל תפזר משפטים קצרים בשורות נפרדות ללא צורך.
+אל תשתמש בפסיקים. העדף נקודות ומשפטים קצרים.
+הפרד בין נתון מאומת, נתון חסר והערכה.
+אל תמציא נתונים ואל תטען שקראת טאב שלא סופקו ממנו נתונים בפועל.
+שמות הטאבים שהוגדרו בממשק: ${Object.values(SOURCE_TABS).join(" | ")}.
+רשימת שמות הטאבים אינה הוכחה שהטאבים נטענו. השתמש רק בנתונים שנמסרו בהקשר.
+`;
+
 const PTO_LOOKBACK_MS = 7 * 24 * 3600 * 1000;
 
 function noteLine(n: DeliveryNote): string {
@@ -159,25 +185,103 @@ function ActionIcon({ name }: { name?: QuickAction["icon"] }) {
 }
 
 
-/** הצגת תשובות נועה כפסקאות קריאות, ללא סימוני Markdown גולמיים. */
+/** מציג תשובות נועה בעברית ברורה עם כותרות, רשימות וטבלאות רספונסיביות. */
 function NoaProse({ text, isUser = false }: { text: string; isUser?: boolean }) {
-  const blocks = text
-    .replace(/\r\n?/g, "\n")
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/\*\*(.*?)\*\*/g, "$1")
+  const normalized = (isUser ? text : text.replace(/[,،]/g, " "))
+    .replace(/\\r\\n?/g, "\\n")
+    .replace(/\\*\\*(.*?)\\*\\*/g, "$1")
     .replace(/__(.*?)__/g, "$1")
-    .replace(/\*(.*?)\*/g, "$1")
-    .replace(/_(.*?)_/g, "$1")
-    .replace(/`([^\`]+)`/g, "$1")
-    .split(/\n\s*\n/)
-    .map((block) => block.split("\n").map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "")).join("\n").trim())
-    .filter(Boolean);
+    .replace(/\\*([^*]+)\\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/`([^`]+)`/g, "$1");
+  const lines = normalized.split("\\n");
+  const blocks: Array<
+    | { type: "heading"; value: string }
+    | { type: "paragraph"; value: string }
+    | { type: "list"; value: string[]; ordered: boolean }
+    | { type: "table"; rows: string[][] }
+  > = [];
+  const isTableRule = (line: string) =>
+    /^\\s*\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)+\\|?\\s*$/.test(line);
+  const cells = (line: string) =>
+    line.trim().replace(/^\\|/, "").replace(/\\|$/, "").split("|").map((cell) => cell.trim());
 
+  for (let i = 0; i < lines.length;) {
+    const line = lines[i].trim();
+    if (!line) { i += 1; continue; }
+    const heading = line.match(/^#{1,3}\\s+(.+)$/);
+    if (heading) {
+      blocks.push({ type: "heading", value: heading[1].replace(/\\*\\*/g, "") });
+      i += 1;
+      continue;
+    }
+    if (line.includes("|") && i + 1 < lines.length && isTableRule(lines[i + 1])) {
+      const rows: string[][] = [cells(lines[i])];
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        rows.push(cells(lines[i]));
+        i += 1;
+      }
+      blocks.push({ type: "table", rows });
+      continue;
+    }
+    const listMatch = line.match(/^\\s*(?:[-*•]|\\d+[.)])\\s+(.+)$/);
+    if (listMatch) {
+      const ordered = /^\\s*\\d+[.)]/.test(line);
+      const items: string[] = [];
+      while (i < lines.length) {
+        const match = lines[i].match(/^\\s*(?:[-*•]|\\d+[.)])\\s+(.+)$/);
+        if (!match) break;
+        items.push(match[1].trim());
+        i += 1;
+      }
+      blocks.push({ type: "list", value: items, ordered });
+      continue;
+    }
+    const paragraph: string[] = [line.replace(/^#{1,6}\\s+/, "")];
+    i += 1;
+    while (i < lines.length && lines[i].trim() && !/^\\s*#{1,3}\\s+/.test(lines[i]) &&
+      !(lines[i].includes("|") && i + 1 < lines.length && isTableRule(lines[i + 1])) &&
+      !/^\\s*(?:[-*•]|\\d+[.)])\\s+/.test(lines[i])) {
+      paragraph.push(lines[i].trim());
+      i += 1;
+    }
+    blocks.push({ type: "paragraph", value: paragraph.join(" ") });
+  }
+
+  const ink = isUser ? "text-white" : "text-slate-100";
   return (
-    <div className={`space-y-3 text-base leading-7 ${isUser ? "text-white" : "text-slate-100"}`}>
-      {blocks.map((block, index) => (
-        <p key={index} className="whitespace-pre-line break-words">{block}</p>
-      ))}
+    <div dir="rtl" className={`space-y-4 text-base leading-8 ${ink} [overflow-wrap:anywhere]`}>
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          return <h3 key={index} className="border-r-4 border-emerald-400 pr-3 text-lg font-extrabold leading-8 text-cyan-200 sm:text-xl">{block.value}</h3>;
+        }
+        if (block.type === "table") {
+          return (
+            <div key={index} className="my-3 max-w-full overflow-x-auto rounded-2xl border border-sky-300/20 bg-slate-950/45 shadow-lg shadow-black/10" dir="rtl">
+              <table className="w-full min-w-[520px] border-collapse text-right text-sm sm:text-base">
+                <thead className="bg-gradient-to-l from-sky-500/20 to-emerald-500/15 text-cyan-100">
+                  <tr>{block.rows[0].map((cell, cellIndex) => <th key={cellIndex} className="border-b border-white/10 px-4 py-3 font-extrabold">{cell}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {block.rows.slice(1).map((row, rowIndex) => (
+                    <tr key={rowIndex} className={rowIndex % 2 ? "bg-white/[0.025]" : "bg-transparent"}>
+                      {block.rows[0].map((_, cellIndex) => <td key={cellIndex} className="border-b border-white/[0.06] px-4 py-3 align-top text-slate-200">{row[cellIndex] || "—"}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        if (block.type === "list") {
+          const Tag = block.ordered ? "ol" : "ul";
+          return <Tag key={index} className={`space-y-2 pr-6 marker:text-emerald-300 ${block.ordered ? "list-decimal" : "list-disc"}`}>
+            {block.value.map((item, itemIndex) => <li key={itemIndex} className="ps-1">{item}</li>)}
+          </Tag>;
+        }
+        return <p key={index} className="whitespace-pre-line break-words">{block.value}</p>;
+      })}
     </div>
   );
 }
@@ -975,6 +1079,7 @@ function NoaStudioScreen() {
             `PTO ${s.date} ${israelTime(s.openIso)}–${s.closeIso ? israelTime(s.closeIso) : "?"} truck=${s.truck} addr=${s.address || ""} note=${s.matchedNoteId || "none"}`,
         ),
       ].join("\n");
+      const groundedContext = `${context}\n\n${CHAT_PRESENTATION_RULES}`;
 
       const history = [...messages, userMsg]
         .filter((m) => m.id !== "m0")
@@ -987,7 +1092,7 @@ function NoaStudioScreen() {
       const res = await askNoa({
         data: {
           messages: history,
-          context,
+          context: groundedContext,
           customerNo: detectedCustomerNo,
         },
       });
@@ -1114,7 +1219,7 @@ function NoaStudioScreen() {
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-sm font-bold text-white sm:text-base">נועה AI — חמ״ל לוגיסטי</h1>
+              <h1 className="bg-gradient-to-l from-emerald-300 via-cyan-200 to-violet-300 bg-clip-text text-xl font-extrabold tracking-tight text-transparent sm:text-2xl">נועה AI — חמ״ל לוגיסטי</h1>
               <span
                 className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
                   notesError
@@ -1147,7 +1252,7 @@ function NoaStudioScreen() {
           <button
             type="button"
             onClick={() => setHistoryOpen(true)}
-            className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-2.5 text-slate-300 hover:bg-white/[0.08]"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] p-2.5 text-slate-300 hover:bg-white/[0.08]"
             title="היסטוריית שיחות"
           >
             <History className="h-4 w-4" />
@@ -1155,7 +1260,7 @@ function NoaStudioScreen() {
           <button
             type="button"
             onClick={() => setSidePanel((p) => (p === "context" ? "inspector" : "context"))}
-            className={`rounded-xl border p-2.5 ${
+            className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border p-2.5 ${
               sidePanel === "context"
                 ? "border-sky-500/30 bg-sky-500/15 text-sky-300"
                 : "border-white/[0.08] bg-white/[0.04] text-slate-300"
@@ -1187,7 +1292,7 @@ function NoaStudioScreen() {
           <button
             type="button"
             onClick={() => setIsInspectorOpen((p) => !p)}
-            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+            className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold ${
               isInspectorOpen
                 ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
                 : "border-[#223246] bg-[#172230] text-slate-300"
@@ -1208,7 +1313,7 @@ function NoaStudioScreen() {
             isInspectorOpen ? "lg:col-span-7 xl:col-span-8" : "lg:col-span-12"
           }`}
         >
-          <div className="flex-1 space-y-5 overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.045),transparent_55%)] px-4 py-5 sm:px-6">
+          <div className="flex-1 space-y-5 overflow-y-auto overscroll-contain bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.07),transparent_55%)] px-3 py-4 sm:px-6 sm:py-6">
             {messages.map((m) => {
               const isUser = m.sender === "user";
               return (
@@ -1217,7 +1322,7 @@ function NoaStudioScreen() {
                   className={`flex w-full flex-col ${isUser ? "items-start" : "items-end"}`}
                 >
                   <div
-                    className={`relative w-full max-w-[640px] rounded-2xl p-5 text-base leading-7 shadow-[0_12px_32px_rgba(0,0,0,0.16)] ${
+                    className={`relative w-full max-w-[860px] rounded-2xl p-4 text-base leading-8 shadow-[0_12px_32px_rgba(0,0,0,0.16)] ${
                       isUser
                         ? "rounded-tr-md border border-emerald-300/15 bg-gradient-to-br from-emerald-700 to-emerald-800 text-white"
                         : "rounded-tl-md border border-white/[0.08] bg-[#111d29] text-slate-200"
@@ -1313,7 +1418,7 @@ function NoaStudioScreen() {
                 type="button"
                 disabled={isThinking}
                 onClick={() => void handleSend(qa.query, activeCustomerNo)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 font-medium text-slate-200 transition hover:border-emerald-500/35 hover:bg-emerald-500/10 hover:text-emerald-100 disabled:opacity-40"
+                className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-emerald-500/35 hover:bg-emerald-500/10 hover:text-emerald-100 disabled:opacity-40"
               >
                 <ActionIcon name={qa.icon} />
                 {qa.label}
@@ -1326,7 +1431,7 @@ function NoaStudioScreen() {
               e.preventDefault();
               void handleSend();
             }}
-            className="flex items-center gap-2 border-t border-white/[0.08] bg-[#0c1722] p-3 sm:px-5 sm:py-4"
+            className="flex items-center gap-2 border-t border-white/[0.08] bg-[#0c1722] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4"
           >
             <input
               value={input}
