@@ -9,11 +9,12 @@ const ITEMS = [
   { to: "/", label: "דשבורד", icon: LayoutDashboard },
   { to: "/inquiry", label: "בירור ראמי", icon: ClipboardList },
   { to: "/harel", label: "דשבורד הראל", icon: Crown },
+  { to: "/noa-brain", label: "נועה Brain", icon: MessageSquare },
   { to: "/chat", label: "צ׳אט נועה", icon: MessageSquare },
   { to: "/notes", label: "תעודות", icon: FileText },
 ] as const;
 
-export function WorkroomNav({ active }: { active?: "inquiry" | "harel" | "chat" | "notes" | "home" }) {
+export function WorkroomNav({ active }: { active?: "inquiry" | "harel" | "chat" | "notes" | "home" | "brain" }) {
   return (
     <nav
       className="flex flex-wrap gap-1.5 rounded-2xl border border-border/60 bg-card/80 p-1.5 shadow-sm"
@@ -26,6 +27,7 @@ export function WorkroomNav({ active }: { active?: "inquiry" | "harel" | "chat" 
           (active === "inquiry" && to === "/inquiry") ||
           (active === "harel" && to === "/harel") ||
           (active === "chat" && to === "/chat") ||
+          (active === "brain" && to === "/noa-brain") ||
           (active === "notes" && to === "/notes");
         return (
           <Link
