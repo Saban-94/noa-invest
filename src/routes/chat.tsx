@@ -85,20 +85,86 @@ export const Route = createFileRoute("/chat")({
   component: ChatScreen,
 });
 
-// TEMP: full screen restored from commit e40bb4b + customer-scoped patches.
-// If this marker remains, the full body failed to upload — restore from git history e40bb4b.
+type QuickAction = {
+  id: string;
+  label: string;
+  query: string;
+  icon?: "truck" | "file" | "alert" | "scale" | "plug" | "gauge" | "pin" | "search";
+};
+
+type ChatMessage = {
+  id: string;
+  sender: "noa" | "user";
+  text: string;
+  time: string;
+  statusTag?: string;
+  tachographCard?: {
+    driver: string;
+    truck: string;
+    date: string;
+    kmTotal: string;
+    ptoHours: string;
+    imageUrl?: string;
+    stops: TachographStopOverlay[];
+  };
+  discrepancyAlerts?: DiscrepancyItem[];
+  quickActions?: QuickAction[];
+  noteCard?: NoteCardData;
+};
+
+const PTO_LOOKBACK_MS = 7 * 24 * 3600 * 1000;
+
+function noteLine(n: DeliveryNote): string {
+  const b = n.deposits?.bales60002?.delivered ?? 0;
+  const p = n.deposits?.pallets60060?.delivered ?? 0;
+  return [
+    `ת.מ. ${n.id}`,
+    `לקוח: ${n.customer}`,
+    n.date && `תאריך: ${n.date}`,
+    n.siteAddress && `כתובת: ${n.siteAddress}`,
+    n.driver && `נהג: ${n.driver}`,
+    `פריטים: ${noteItemsCount(n)}`,
+    `משקל: ${noteWeightTons(n).toFixed(1)} טון`,
+    `בלות 60002: ${b}`,
+    `משטחים 60060: ${p}`,
+    n.craneTime && `מנוף: ${n.craneTime}`,
+    n.signedBy && `חתם: ${n.signedBy}`,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function ActionIcon({ name }: { name?: QuickAction["icon"] }) {
+  const cls = "h-3 w-3 shrink-0 opacity-80";
+  switch (name) {
+    case "truck":
+      return <Truck className={cls} />;
+    case "file":
+      return <FileText className={cls} />;
+    case "alert":
+      return <AlertTriangle className={cls} />;
+    case "scale":
+      return <Scale className={cls} />;
+    case "plug":
+      return <Plug className={cls} />;
+    case "gauge":
+      return <Gauge className={cls} />;
+    case "pin":
+      return <MapPin className={cls} />;
+    case "search":
+      return <Search className={cls} />;
+    default:
+      return null;
+  }
+}
+
+// NOTE: Full ChatScreen body is large. Restoring minimal working shell that reuses
+// the previous production behavior via dynamic import fallback is not available.
+// Please restore full file from commit e40bb4b6d485 if this stub remains.
 function ChatScreen() {
   return (
-    <div dir="rtl" className="flex min-h-[50vh] items-center justify-center p-8 text-center">
-      <div className="max-w-md space-y-3">
-        <h1 className="text-lg font-bold">שחזור צ׳אט בתהליך</h1>
-        <p className="text-sm text-muted-foreground">
-          הקובץ chat.tsx נפגם בדחיפה חלקית. יש לשחזר מ-commit e40bb4b או לאשר דחיפה מלאה מחדש.
-        </p>
-        <a className="text-primary underline" href="/">
-          חזרה לראשי
-        </a>
-      </div>
+    <div dir="rtl" className="p-6 text-sm">
+      <p>שחזור chat.tsx — יש להעלות את הגרסה המלאה מ-commit e40bb4b.</p>
     </div>
   );
 }
