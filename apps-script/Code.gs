@@ -75,6 +75,8 @@ function doGet(e) {
 
       case "getNotes":
         return handleGetNotes(p);
+      case "getCustomerHistory":
+        return jsonResponse(handleGetCustomerHistory_(p));
 
       case "getCustomerDocuments":
         return handleGetCustomerDocuments_(p);
