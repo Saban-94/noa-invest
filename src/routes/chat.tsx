@@ -155,7 +155,7 @@ function ActionIcon({ name }: { name?: QuickAction["icon"] }) {
 }
 
 function ChatScreen() {
-  const { customerNo: customerNoFromSearch, review: reviewCustomer } = Route.useSearch();
+  const { customerNo: customerNoFromSearch } = Route.useSearch();
   const [input, setInput] = useState("");
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
@@ -924,13 +924,15 @@ function ChatScreen() {
   };
 
   useEffect(() => {
-    if (!reviewCustomer || !customerNoFromSearch) return;
+    // Treat a customer deep link as a review request even when an older link
+    // only has ?customerNo=... and does not include review=true.
+    if (!customerNoFromSearch) return;
     const reviewKey = `${customerNoFromSearch}:review`;
     if (customerReviewStarted.current === reviewKey) return;
     customerReviewStarted.current = reviewKey;
     const prompt = `הכיני סקירת לקוח מקצועית ומקיפה ללקוח ${customerNoFromSearch}, על סמך הנתונים העדכניים בתיק שלו בלבד. הציגי בקצרה היקף פעילות ותק, חמשת המוצרים שסופקו ביותר עם כמויות ומספרי תעודות, כתובות אספקה ותדירות, ההזמנות והתעודות האחרונות, ביקורים וזמני אתר אם קיימים, ופניות פתוחות. הבדילי בין הזמנה, תעודת משלוח וביקור, צייני מספרי מסמכים ותאריכים, וצייני במפורש נתונים חסרים או לא זמינים.`;
     void handleSend(prompt, customerNoFromSearch);
-  }, [reviewCustomer, customerNoFromSearch, handleSend]);
+  }, [customerNoFromSearch, handleSend]);
 
   const refreshAll = () => {
     void refetchNotes();
