@@ -67,6 +67,7 @@ export const Route = createFileRoute("/chat")({
     customerNo: typeof search.customerNo === "string" && /^\d{3,10}$/.test(search.customerNo)
       ? search.customerNo
       : undefined,
+    review: search.review === true || search.review === "1",
   }),
   head: () => ({
     meta: [
@@ -154,7 +155,7 @@ function ActionIcon({ name }: { name?: QuickAction["icon"] }) {
 }
 
 function ChatScreen() {
-  const { customerNo: customerNoFromSearch } = Route.useSearch();
+  const { customerNo: customerNoFromSearch, review: reviewCustomer } = Route.useSearch();
   const [input, setInput] = useState("");
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
@@ -225,6 +226,7 @@ function ChatScreen() {
   const truckSummaries = useMemo(() => buildTruckSummaries(sessions), [sessions]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const customerReviewStarted = useRef<string | null>(null);
   const now = () =>
     new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
 
@@ -583,7 +585,7 @@ function ChatScreen() {
     return true;
   };
 
-  const handleSend = async (textToSend?: string) => {
+  const handleSend = async (textToSend?: string, customerNoOverride?: string) => {
     const text = (textToSend ?? input).trim();
     if (!text || isThinking) return;
 
@@ -604,7 +606,7 @@ function ChatScreen() {
     const foundNote = idMatch
       ? notes.find((n) => n.id === idMatch[0] || n.comaxOrder === idMatch[0])
       : undefined;
-    if (foundNote) {
+    if (foundNote && !customerNoOverride && !activeCustomerNo) {
       const b = foundNote.deposits?.bales60002?.delivered ?? 0;
       const p = foundNote.deposits?.pallets60060?.delivered ?? 0;
       const pto = sessions.find((s) => s.matchedNoteId === foundNote.id);
@@ -669,12 +671,12 @@ function ChatScreen() {
     }
 
     // 2. ביקורים / PTO לפי אתר או לקוח
-    if (answerSiteOrCustomerVisits(text)) return;
+    if (!customerNoOverride && !activeCustomerNo && answerSiteOrCustomerVisits(text)) return;
 
     // 3. נהג / משאית
     const wantsHikmat = t.includes("חכמת") || t.includes("615") || t.includes("מנוף");
     const wantsAli = t.includes("עלי") || t.includes("651") || t.includes("פלטה");
-    if ((wantsHikmat || wantsAli) && !t.includes("כמה פעמים") && !t.includes("פתיחות")) {
+    if (!customerNoOverride && !activeCustomerNo && (wantsHikmat || wantsAli) && !t.includes("כמה פעמים") && !t.includes("פתיחות")) {
       const plate = wantsAli && !wantsHikmat ? "651-51-701" : "615-41-002";
       const driverKey = plate === "651-51-701" ? "עלי" : "חכמת";
       setActiveTruck(plate);
@@ -739,7 +741,7 @@ function ChatScreen() {
     }
 
     // 4. חריגות
-    if (t.includes("חריג") || t.includes("הצלבה") || t.includes("פענוח")) {
+    if (!customerNoOverride && !activeCustomerNo && (t.includes("חריג") || t.includes("הצלבה") || t.includes("פענוח"))) {
       setIsInspectorOpen(true);
       pushNoa({
         text:
@@ -773,7 +775,7 @@ function ChatScreen() {
     }
 
     // 5. מקורות
-    if (asksSourceStatus(text)) {
+    if (!customerNoOverride && !activeCustomerNo && asksSourceStatus(text)) {
       pushNoa({
         text: describeSources(brainMeta, fetchedAtLabel),
         statusTag: evidenceLabel,
@@ -795,13 +797,13 @@ function ChatScreen() {
       return;
     }
 
-    if (asksCurrentGps(text)) {
+    if (!customerNoOverride && !activeCustomerNo && asksCurrentGps(text)) {
       pushNoa({ text: gpsUnavailableMessage(), statusTag: "אין GPS חי" });
       return;
     }
 
     // 6. סיכום תעודות
-    if (t.includes("סיכום") && (t.includes("תעוד") || t.includes("גיליון") || t.includes("אחרונ"))) {
+    if (!customerNoOverride && !activeCustomerNo && t.includes("סיכום") && (t.includes("תעוד") || t.includes("גיליון") || t.includes("אחרונ"))) {
       pushNoa({
         text: formatNotesSummary(
           notes as unknown as Record<string, unknown>[],
@@ -820,7 +822,7 @@ function ChatScreen() {
     }
 
     // 7. פקדונות
-    if (t.includes("פקדון") || t.includes("פקדונות") || t.includes("בלות") || t.includes("משטח")) {
+    if (!customerNoOverride && !activeCustomerNo && (t.includes("פקדון") || t.includes("פקדונות") || t.includes("בלות") || t.includes("משטח"))) {
       if (!notes.length) {
         pushNoa({ text: "אין תעודות חיות למאזן פקדונות.", statusTag: evidenceLabel });
         return;
@@ -886,11 +888,11 @@ function ChatScreen() {
           content: m.text,
         }));
 
-      const res = await askNoa({ data: { messages: history, context, customerNo: activeCustomerNo } });
+      const res = await askNoa({ data: { messages: history, context, customerNo: customerNoOverride ?? activeCustomerNo } });
       pushNoa({
         text: res.text,
-        statusTag: `מוח · ${evidenceLabel}`,
-        quickActions: [
+        statusTag: `${customerNoOverride ?? activeCustomerNo ? `תיק לקוח · ${customerNoOverride ?? activeCustomerNo}` : "מוח"} · ${evidenceLabel}`,
+        quickActions: customerNoOverride || activeCustomerNo ? res.suggestedQuestions : [
           {
             id: "f1",
             label: "פתיחות מנוף",
@@ -921,6 +923,15 @@ function ChatScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!reviewCustomer || !customerNoFromSearch) return;
+    const reviewKey = `${customerNoFromSearch}:review`;
+    if (customerReviewStarted.current === reviewKey) return;
+    customerReviewStarted.current = reviewKey;
+    const prompt = `הכיני סקירת לקוח מקצועית ומקיפה ללקוח ${customerNoFromSearch}, על סמך הנתונים העדכניים בתיק שלו בלבד. הציגי בקצרה היקף פעילות ותק, חמשת המוצרים שסופקו ביותר עם כמויות ומספרי תעודות, כתובות אספקה ותדירות, ההזמנות והתעודות האחרונות, ביקורים וזמני אתר אם קיימים, ופניות פתוחות. הבדילי בין הזמנה, תעודת משלוח וביקור, צייני מספרי מסמכים ותאריכים, וצייני במפורש נתונים חסרים או לא זמינים.`;
+    void handleSend(prompt, customerNoFromSearch);
+  }, [reviewCustomer, customerNoFromSearch, handleSend]);
+
   const refreshAll = () => {
     void refetchNotes();
     void refetchPto();
@@ -937,7 +948,7 @@ function ChatScreen() {
             type="button"
             disabled={isThinking}
             onClick={() => void handleSend(qa.query)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 transition hover:border-emerald-400/40 hover:bg-emerald-500/15 hover:text-emerald-100 disabled:opacity-40"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-slate-200 transition hover:border-emerald-400/40 hover:bg-emerald-500/15 hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ActionIcon name={qa.icon} />
             {qa.label}
@@ -1290,3 +1301,4 @@ function ChatScreen() {
     </div>
   );
 }
+
