@@ -354,14 +354,17 @@ export async function loadSiteAtlas() {
   const customerCounts = new Map<string, { name: string; count: number }>();
   for (const site of sites) {
     if (site.city) cityCounts.set(site.city, (cityCounts.get(site.city) || 0) + site.visits);
-    if (site.customerNo) {
-      const existing = customerCounts.get(site.customerNo) || { name: site.customerName || `לקוח ${site.customerNo}`, count: 0 };
-      existing.count += site.visits;
-      customerCounts.set(site.customerNo, existing);
+  }
+  for (const row of raw.visits) {
+    for (const customer of customerTokens(g(row, "לקוחות"))) {
+      const existing = customerCounts.get(customer.no) || { name: customer.name || `לקוח ${customer.no}`, count: 0 };
+      existing.count++;
+      customerCounts.set(customer.no, existing);
     }
   }
   return {
     sites: sites.sort((a, b) => b.visits - a.visits),
+    cityCount: cityCounts.size,
     cities: [...cityCounts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8),
     customers: [...customerCounts].map(([customerNo, v]) => ({ customerNo, ...v })).sort((a, b) => b.count - a.count).slice(0, 8),
     generatedAt: new Date().toISOString(),

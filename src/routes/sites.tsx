@@ -30,7 +30,7 @@ function SitesPage() {
     const term = search.trim().toLowerCase();
     return (data?.sites || []).filter((site) => !term || [site.address, site.city, site.customerName, site.customerNo].some((v) => v.toLowerCase().includes(term)));
   }, [data, search]);
-  const selected = list.find((s) => s.siteKey === selectedKey) || list[0];
+  const selected = list.find((s) => (s.siteKey || `${s.city}|${s.address}`) === selectedKey) || list[0];
   const mappedCount = (data?.sites || []).filter((s) => s.latitude != null && s.longitude != null).length;
 
   return <>
@@ -43,7 +43,7 @@ function SitesPage() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Metric icon={MapPin} label="אתרים" value={data?.sites.length ?? "—"} />
             <Metric icon={Truck} label="ביקורים" value={data?.sites.reduce((n, s) => n + s.visits, 0) ?? "—"} />
-            <Metric icon={Building2} label="ערים" value={data?.cities.length ?? "—"} />
+            <Metric icon={Building2} label="ערים" value={data?.cityCount ?? "—"} />
             <Metric icon={MapPin} label="נקודות מפה" value={mappedCount} />
           </div>
         </div>
@@ -61,7 +61,7 @@ function SitesPage() {
           </section>
           <aside className="space-y-4">
             <RankPanel title="ערים מובילות לפי ביקורים" icon={MapPin} rows={data.cities.map((x) => ({ label: x.name, count: x.count }))} />
-            <RankPanel title="לקוחות מובילים לפי ביקורים" icon={Users} rows={data.customers.map((x) => ({ label: x.name, count: x.count, to: `/customers/${x.customerNo}` }))} />
+            <RankPanel title="לקוחות מובילים לפי ביקורים" icon={Users} rows={data.customers.map((x) => ({ label: x.name, count: x.count, customerNo: x.customerNo }))} />
           </aside>
         </div>
 
@@ -71,9 +71,10 @@ function SitesPage() {
             {list.map((site, i) => {
               const key = site.siteKey || `${site.city}|${site.address}`;
               const expanded = expandedKey === key;
-              return <article key={`${key}-${i}`} className={cn("overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md", selected?.siteKey === site.siteKey && "border-primary/40")}>
+              const isSelected = (selected?.siteKey || `${selected?.city}|${selected?.address}`) === key;
+              return <article key={`${key}-${i}`} className={cn("overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md", isSelected && "border-primary/40")}>
                 <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                  <button type="button" onClick={() => setSelectedKey(site.siteKey || key)} aria-pressed={selected?.siteKey === site.siteKey} className="flex min-h-12 min-w-0 flex-1 items-start gap-3 rounded-xl text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                  <button type="button" onClick={() => setSelectedKey(key)} aria-pressed={isSelected} className="flex min-h-12 min-w-0 flex-1 items-start gap-3 rounded-xl text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><MapPin className="h-5 w-5"/></span><span className="min-w-0"><span className="block truncate font-bold">{site.address}</span><span className="mt-0.5 block text-xs text-muted-foreground">{[site.city, site.customerName, site.customerNo && `#${site.customerNo}`].filter(Boolean).join(" · ") || "לקוח לא מקושר"}</span></span>
                   </button>
                   <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><SmallStat icon={Truck} label="ביקורים" value={site.visits}/><SmallStat icon={Timer} label="חציון פריקה" value={site.medianMin != null ? `${site.medianMin} דק׳` : "—"}/><SmallStat icon={CalendarDays} label="ביקור אחרון" value={site.lastIso ? fmtShort(site.lastIso) : "—"}/><SmallStat icon={Users} label="ביטחון" value={site.confidence || "—"}/></div>
@@ -102,7 +103,7 @@ function SmallStat({ icon: Icon, label, value }: { icon: typeof MapPin; label: s
   return <span className="flex items-center gap-1.5 rounded-lg bg-muted/70 px-2 py-2"><Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/><span className="text-muted-foreground">{label}:</span><strong className="truncate">{value}</strong></span>;
 }
 
-function RankPanel({ title, icon: Icon, rows }: { title: string; icon: typeof MapPin; rows: Array<{ label: string; count: number; to?: string }> }) {
-  return <section className="rounded-3xl border border-border/70 bg-card p-4 shadow-card"><h2 className="flex items-center gap-2 font-display text-sm font-bold"><Icon className="h-4 w-4 text-primary"/>{title}</h2>{rows.length ? <ol className="mt-3 space-y-2">{rows.slice(0, 5).map((row, i) => <li key={`${row.label}-${i}`} className="flex items-center gap-2 text-sm"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-bold text-muted-foreground">{i + 1}</span>{row.to ? <Link to="/customers/$id" params={{ id: row.to.split("/").pop()! }} className="min-w-0 flex-1 truncate font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{row.label}</Link> : <span className="min-w-0 flex-1 truncate font-semibold">{row.label}</span>}<span className="shrink-0 text-xs tabular-nums text-muted-foreground">{row.count} ביק׳</span></li>)}</ol> : <p className="mt-3 text-xs text-muted-foreground">אין נתונים מסוכמים עדיין.</p>}</section>;
+function RankPanel({ title, icon: Icon, rows }: { title: string; icon: typeof MapPin; rows: Array<{ label: string; count: number; customerNo?: string }> }) {
+  return <section className="rounded-3xl border border-border/70 bg-card p-4 shadow-card"><h2 className="flex items-center gap-2 font-display text-sm font-bold"><Icon className="h-4 w-4 text-primary"/>{title}</h2>{rows.length ? <ol className="mt-3 space-y-2">{rows.slice(0, 5).map((row, i) => <li key={`${row.label}-${i}`} className="flex items-center gap-2 text-sm"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-bold text-muted-foreground">{i + 1}</span>{row.customerNo ? <Link to="/customers/$id" params={{ id: row.customerNo }} className="min-w-0 flex-1 truncate font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{row.label}</Link> : <span className="min-w-0 flex-1 truncate font-semibold">{row.label}</span>}<span className="shrink-0 text-xs tabular-nums text-muted-foreground">{row.count} ביק׳</span></li>)}</ol> : <p className="mt-3 text-xs text-muted-foreground">אין נתונים מסוכמים עדיין.</p>}</section>;
 }
 
