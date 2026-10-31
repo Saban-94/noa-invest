@@ -329,8 +329,8 @@ function getGoogleCredentials(): { email: string; privateKey: string } | null {
   return null;
 }
 
-async function readGoogleSheetBatch(sheetId: string, range: string): Promise<unknown[][] | null> {
-  // קריאה באמצעות Google Sheets API
+/** קריאת טווח מגיליון — מיוצא לשימוש ב-customer-history.server */
+export async function readGoogleSheetBatch(sheetId: string, range: string): Promise<unknown[][] | null> {
   const token = await getGoogleAccessToken();
   if (!token) return null;
 
@@ -395,7 +395,6 @@ async function getGoogleAccessToken(): Promise<string | null> {
     return cachedAccessToken.token;
   }
 
-  // חתימת JWT עם Service Account
   try {
     const now = Math.floor(Date.now() / 1000);
     const claim = {
@@ -407,7 +406,6 @@ async function getGoogleAccessToken(): Promise<string | null> {
       iat: now,
     };
 
-    // במקרה שאין ספריית crypto ייעודית, נשתמש ב-CryptoSubtle הסטנדרטי
     const token = await signServiceAccountJwt(creds.email, creds.privateKey, claim);
     if (!token) return null;
 
@@ -435,9 +433,6 @@ async function getGoogleAccessToken(): Promise<string | null> {
   return null;
 }
 
-/**
- * חתימת JWT RS256 עבור Service Account באמצעות Web Crypto
- */
 async function signServiceAccountJwt(
   email: string,
   pemKey: string,
@@ -449,7 +444,6 @@ async function signServiceAccountJwt(
     const b64Payload = base64UrlEncode(JSON.stringify(payload));
     const dataToSign = `${b64Header}.${b64Payload}`;
 
-    // ניקוי מפתח ה-PEM
     const cleanPem = pemKey
       .replace(/-----BEGIN[A-Z\s]+-----/g, "")
       .replace(/-----END[A-Z\s]+-----/g, "")
