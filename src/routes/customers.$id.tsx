@@ -431,7 +431,7 @@ function CustomerDetailView() {
               <div className="mb-4 flex justify-start">
                 <Link
                   to="/chat"
-                  search={{ customerNo: id }}
+                  search={{ customerNo: id, review: true }}
                   className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 text-xs font-bold text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
@@ -1085,3 +1085,4 @@ function CustomerDocumentUpload({
     </div>
   );
 }
+
