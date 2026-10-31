@@ -7,6 +7,7 @@ export type {
   HNote,
   HOrder,
   HVisit,
+  HIturanVisit,
   HSite,
   HInquiry,
   HCheck,
@@ -30,4 +31,3 @@ export const getCustomerHistoryFn = createServerFn({ method: "POST" })
 
 /** Read-only address and visit atlas from the existing site and visit tabs. */
 export const getSiteAtlasFn = createServerFn({ method: "GET" }).handler(async () => loadSiteAtlas());
-

@@ -9,6 +9,7 @@ import { toIso } from "./he-date";
 const TABS = {
   notes: "ארכיון_תעודות_גליה",
   orders: "הזמנות",
+  ituranVisits: "ביקורים_איתוראן",
   visits: "היסטוריית_ביקורים",
   sites: "אתרי_לקוחות",
   inquiries: "בירור_ראמי",
@@ -34,6 +35,10 @@ export type HVisit = {
   orderIds: string[]; craneRaw: string; unloadMin: number | null; waitMin: number | null; ituranMin: number | null;
   ptoMin: number | null; driveMin: number | null; siteMin: number | null; source: string; flags: string; siteKey: string;
 };
+export type HIturanVisit = {
+  id: string; noteId: string; dateIso: string; address: string; driver: string; truck: string;
+  arrival: string; departure: string; stayMin: number | null; ptoMin: number | null;
+};
 export type HSite = {
   siteKey: string; address: string; visits: number; lastIso: string; samples: number;
   medianMin: number | null; p80Min: number | null; maxMin: number | null; confidence: string;
@@ -52,7 +57,7 @@ export type CustomerSummary = {
 };
 
 export type CustomerHistory = {
-  customer: CustomerSummary; notes: HNote[]; orders: HOrder[]; visits: HVisit[];
+  customer: CustomerSummary; notes: HNote[]; orders: HOrder[]; ituranVisits: HIturanVisit[]; visits: HVisit[];
   sites: HSite[]; inquiries: HInquiry[]; checks: HCheck[]; generatedAt: string;
 };
 
@@ -152,6 +157,15 @@ function mapVisit(r: Row): HVisit {
     ituranMin: num(g(r, "איתוראן: משך עצירה (דק׳)")), ptoMin: num(g(r, "PTO משך (דק׳)")),
     driveMin: num(g(r, "נסיעה מהעצירה הקודמת (דק׳)")), siteMin: num(g(r, "משך באתר לסידור (דק׳)")),
     source: g(r, "מקור המדידה"), flags: g(r, "דגלי איכות"), siteKey: g(r, "מפתח אתר"),
+  };
+}
+
+function mapIturanVisit(r: Row): HIturanVisit {
+  return {
+    id: g(r, "מפתח ביקור") || g(r, "key"), noteId: g(r, "מס' תעודה"), dateIso: toIso(g(r, "תאריך")),
+    address: g(r, "כתובת") || g(r, "כתובת אספקה"), driver: g(r, "נהג"), truck: g(r, "משאית"),
+    arrival: g(r, "הגעה איתוראן") || g(r, "הגעה"), departure: g(r, "עזיבה איתוראן") || g(r, "עזיבה"),
+    stayMin: num(g(r, "שהייה דק׳") || g(r, "משך עצירה (דק׳)")), ptoMin: num(g(r, "PTO דק׳") || g(r, "PTO משך (דק׳)")),
   };
 }
 
@@ -261,6 +275,11 @@ export async function loadCustomerHistory(customerNo: string): Promise<CustomerH
     .sort((a, b) => b.dateIso.localeCompare(a.dateIso));
   const noteIds = new Set(notes.map((n) => n.id));
 
+  const ituranVisits = raw.ituranVisits
+    .filter((r) => g(r, "מס' לקוח") === customerNo)
+    .map(mapIturanVisit)
+    .sort((a, b) => b.dateIso.localeCompare(a.dateIso));
+
   const orders = raw.orders
     .filter((r) => g(r, "מס' לקוח") === customerNo)
     .map(mapOrder)
@@ -298,7 +317,7 @@ export async function loadCustomerHistory(customerNo: string): Promise<CustomerH
     }))
     .sort((a, b) => b.dateIso.localeCompare(a.dateIso));
 
-  return { customer: summary ?? empty, notes, orders, visits, sites, inquiries, checks, generatedAt: new Date().toISOString() };
+  return { customer: summary ?? empty, notes, orders, ituranVisits, visits, sites, inquiries, checks, generatedAt: new Date().toISOString() };
 }
 
 /** Read-only address history for the delivery-sites map. Coordinates are used only when already present in the sheet. */
@@ -370,4 +389,3 @@ export async function loadSiteAtlas() {
     generatedAt: new Date().toISOString(),
   };
 }
-

@@ -63,6 +63,11 @@ import {
 } from "@/lib/chat-grounding";
 
 export const Route = createFileRoute("/chat")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    customerNo: typeof search.customerNo === "string" && /^\d{3,10}$/.test(search.customerNo)
+      ? search.customerNo
+      : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "נועה AI — חמ״ל לוגיסטי | ח. סבן" },
@@ -149,6 +154,7 @@ function ActionIcon({ name }: { name?: QuickAction["icon"] }) {
 }
 
 function ChatScreen() {
+  const { customerNo: customerNoFromSearch } = Route.useSearch();
   const [input, setInput] = useState("");
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
@@ -156,6 +162,7 @@ function ChatScreen() {
   const [isThinking, setIsThinking] = useState(false);
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
   const [lastCustomerFocus, setLastCustomerFocus] = useState<string | null>(null);
+  const [activeCustomerNo, setActiveCustomerNo] = useState<string | undefined>(customerNoFromSearch);
   const [lastAddressFocus, setLastAddressFocus] = useState<string | null>(null);
 
   const [contextSelection, setContextSelection] = useState<ContextPanelSelection | null>(null);
@@ -177,6 +184,20 @@ function ChatScreen() {
     retry: 1,
   });
   const notes = useMemo(() => liveNotes ?? [], [liveNotes]);
+
+  useEffect(() => {
+    setActiveCustomerNo(customerNoFromSearch);
+    if (!customerNoFromSearch) return;
+    const matched = notes.find((note) => String(note.customerNo || "").trim() === customerNoFromSearch);
+    if (matched) {
+      setLastCustomerFocus(matched.customer || `לקוח ${customerNoFromSearch}`);
+      setContextSelection({ customer: matched.customer });
+      setSidePanel("context");
+    } else {
+      setLastCustomerFocus(`לקוח ${customerNoFromSearch}`);
+      setContextSelection({ customer: `לקוח ${customerNoFromSearch}` });
+    }
+  }, [customerNoFromSearch, notes]);
 
   const {
     data: ptoData,
@@ -865,7 +886,7 @@ function ChatScreen() {
           content: m.text,
         }));
 
-      const res = await askNoa({ data: { messages: history, context } });
+      const res = await askNoa({ data: { messages: history, context, customerNo: activeCustomerNo } });
       pushNoa({
         text: res.text,
         statusTag: `מוח · ${evidenceLabel}`,
