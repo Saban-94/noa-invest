@@ -188,13 +188,13 @@ function ActionIcon({ name }: { name?: QuickAction["icon"] }) {
 /** מציג תשובות נועה בעברית ברורה עם כותרות, רשימות וטבלאות רספונסיביות. */
 function NoaProse({ text, isUser = false }: { text: string; isUser?: boolean }) {
   const normalized = (isUser ? text : text.replace(/[,،]/g, " "))
-    .replace(/\\r\\n?/g, "\\n")
-    .replace(/\\*\\*(.*?)\\*\\*/g, "$1")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/__(.*?)__/g, "$1")
-    .replace(/\\*([^*]+)\\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
     .replace(/_([^_]+)_/g, "$1")
-    .replace(/`([^`]+)`/g, "$1");
-  const lines = normalized.split("\\n");
+    .replace(/\x60([^\x60]+)\x60/g, "$1");
+  const lines = normalized.split("\n");
   const blocks: Array<
     | { type: "heading"; value: string }
     | { type: "paragraph"; value: string }
@@ -202,48 +202,49 @@ function NoaProse({ text, isUser = false }: { text: string; isUser?: boolean }) 
     | { type: "table"; rows: string[][] }
   > = [];
   const isTableRule = (line: string) =>
-    /^\\s*\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)+\\|?\\s*$/.test(line);
+    /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
   const cells = (line: string) =>
-    line.trim().replace(/^\\|/, "").replace(/\\|$/, "").split("|").map((cell) => cell.trim());
+    line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
 
   for (let i = 0; i < lines.length;) {
     const line = lines[i].trim();
     if (!line) { i += 1; continue; }
-    const heading = line.match(/^#{1,3}\\s+(.+)$/);
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
     if (heading) {
-      blocks.push({ type: "heading", value: heading[1].replace(/\\*\\*/g, "") });
+      blocks.push({ type: "heading", value: heading[1] ?? "" });
       i += 1;
       continue;
     }
-    if (line.includes("|") && i + 1 < lines.length && isTableRule(lines[i + 1])) {
-      const rows: string[][] = [cells(lines[i])];
+    if (line.includes("|") && i + 1 < lines.length && isTableRule(lines[i + 1] ?? "")) {
+      const rows: string[][] = [cells(line)];
       i += 2;
-      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
-        rows.push(cells(lines[i]));
+      while (i < lines.length && (lines[i] ?? "").includes("|") && (lines[i] ?? "").trim()) {
+        rows.push(cells(lines[i] ?? ""));
         i += 1;
       }
       blocks.push({ type: "table", rows });
       continue;
     }
-    const listMatch = line.match(/^\\s*(?:[-*•]|\\d+[.)])\\s+(.+)$/);
+    const listMatch = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.+)$/);
     if (listMatch) {
-      const ordered = /^\\s*\\d+[.)]/.test(line);
+      const ordered = /^\s*\d+[.)]/.test(line);
       const items: string[] = [];
       while (i < lines.length) {
-        const match = lines[i].match(/^\\s*(?:[-*•]|\\d+[.)])\\s+(.+)$/);
+        const match = (lines[i] ?? "").match(/^\s*(?:[-*•]|\d+[.)])\s+(.+)$/);
         if (!match) break;
-        items.push(match[1].trim());
+        items.push(match[1] ?? "");
         i += 1;
       }
       blocks.push({ type: "list", value: items, ordered });
       continue;
     }
-    const paragraph: string[] = [line.replace(/^#{1,6}\\s+/, "")];
+    const paragraph: string[] = [line.replace(/^#{1,6}\s+/, "")];
     i += 1;
-    while (i < lines.length && lines[i].trim() && !/^\\s*#{1,3}\\s+/.test(lines[i]) &&
-      !(lines[i].includes("|") && i + 1 < lines.length && isTableRule(lines[i + 1])) &&
-      !/^\\s*(?:[-*•]|\\d+[.)])\\s+/.test(lines[i])) {
-      paragraph.push(lines[i].trim());
+    while (i < lines.length && (lines[i] ?? "").trim() &&
+      !/^\s*#{1,3}\s+/.test(lines[i] ?? "") &&
+      !((lines[i] ?? "").includes("|") && i + 1 < lines.length && isTableRule(lines[i + 1] ?? "")) &&
+      !/^\s*(?:[-*•]|\d+[.)])\s+/.test(lines[i] ?? "")) {
+      paragraph.push((lines[i] ?? "").trim());
       i += 1;
     }
     blocks.push({ type: "paragraph", value: paragraph.join(" ") });
@@ -251,22 +252,24 @@ function NoaProse({ text, isUser = false }: { text: string; isUser?: boolean }) 
 
   const ink = isUser ? "text-white" : "text-slate-100";
   return (
-    <div dir="rtl" className={`space-y-4 text-base leading-8 ${ink} [overflow-wrap:anywhere]`}>
+    <div dir="rtl" className={"space-y-4 text-base leading-8 " + ink + " [overflow-wrap:anywhere]"}>
       {blocks.map((block, index) => {
         if (block.type === "heading") {
           return <h3 key={index} className="border-r-4 border-emerald-400 pr-3 text-lg font-extrabold leading-8 text-cyan-200 sm:text-xl">{block.value}</h3>;
         }
         if (block.type === "table") {
+          const header = block.rows[0] ?? [];
+          const bodyRows = block.rows.slice(1);
           return (
             <div key={index} className="my-3 max-w-full overflow-x-auto rounded-2xl border border-sky-300/20 bg-slate-950/45 shadow-lg shadow-black/10" dir="rtl">
               <table className="w-full min-w-[520px] border-collapse text-right text-sm sm:text-base">
                 <thead className="bg-gradient-to-l from-sky-500/20 to-emerald-500/15 text-cyan-100">
-                  <tr>{block.rows[0].map((cell, cellIndex) => <th key={cellIndex} className="border-b border-white/10 px-4 py-3 font-extrabold">{cell}</th>)}</tr>
+                  <tr>{header.map((cell, cellIndex) => <th key={cellIndex} className="border-b border-white/10 px-4 py-3 font-extrabold">{cell}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {block.rows.slice(1).map((row, rowIndex) => (
+                  {bodyRows.map((row, rowIndex) => (
                     <tr key={rowIndex} className={rowIndex % 2 ? "bg-white/[0.025]" : "bg-transparent"}>
-                      {block.rows[0].map((_, cellIndex) => <td key={cellIndex} className="border-b border-white/[0.06] px-4 py-3 align-top text-slate-200">{row[cellIndex] || "—"}</td>)}
+                      {header.map((_, cellIndex) => <td key={cellIndex} className="border-b border-white/[0.06] px-4 py-3 align-top text-slate-200">{row[cellIndex] || "—"}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -276,7 +279,7 @@ function NoaProse({ text, isUser = false }: { text: string; isUser?: boolean }) 
         }
         if (block.type === "list") {
           const Tag = block.ordered ? "ol" : "ul";
-          return <Tag key={index} className={`space-y-2 pr-6 marker:text-emerald-300 ${block.ordered ? "list-decimal" : "list-disc"}`}>
+          return <Tag key={index} className={"space-y-2 pr-6 marker:text-emerald-300 " + (block.ordered ? "list-decimal" : "list-disc")}>
             {block.value.map((item, itemIndex) => <li key={itemIndex} className="ps-1">{item}</li>)}
           </Tag>;
         }
