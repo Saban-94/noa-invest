@@ -207,7 +207,7 @@ function NoaProse({ text, isUser = false }: { text: string; isUser?: boolean }) 
     line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
 
   for (let i = 0; i < lines.length;) {
-    const line = lines[i].trim();
+    const line = (lines[i] ?? "").trim();
     if (!line) { i += 1; continue; }
     const heading = line.match(/^#{1,3}\s+(.+)$/);
     if (heading) {
