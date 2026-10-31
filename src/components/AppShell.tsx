@@ -10,6 +10,7 @@ import {
   Moon,
   Search,
   LayoutGrid,
+  MapPin,
 } from "lucide-react";
 import { type ReactNode, useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "@tanstack/react-router";
@@ -34,6 +35,7 @@ const DESKTOP_NAV = [
   { to: "/notes", label: "תעודות משלוח", icon: FileText },
   { to: "/canvas", label: "עריכת תעודה (קנבס)", icon: Edit3 },
   { to: "/customers", label: "תיקי לקוחות", icon: Users },
+  { to: "/sites", label: "אתרי אספקה", icon: MapPin },
   { to: "/ituran", label: " נתוני-איתורן", icon: Satellite },
   { to: "/chat", label: "צ'אט נועה AI", icon: MessageCircle },
   { to: "/inquiry", label: "בירור תעודות", icon: Search },
@@ -320,3 +322,4 @@ export function StatusPill({ s }: { s: "ok" | "warn" | "fail" }) {
     </span>
   );
 }
+
