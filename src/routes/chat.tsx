@@ -638,6 +638,29 @@ function ChatScreen() {
     const text = (textToSend ?? input).trim();
     if (!text || isThinking) return;
 
+    // זיהוי לקוח מהשאלה (שם / מספר) — כדי שכפתורים ו-AI יהיו בהקשר השיחה
+    const named = notes.find(
+      (n) => n.customer && n.customer.length > 2 && text.includes(String(n.customer)),
+    );
+    const noFromText = text.match(/\b(\d{5,7})\b/)?.[1];
+    const detectedCustomerNo =
+      customerNoOverride ||
+      activeCustomerNo ||
+      (named?.customerNo ? String(named.customerNo).trim() : undefined) ||
+      (noFromText && notes.some((n) => String(n.customerNo || "").trim() === noFromText)
+        ? noFromText
+        : undefined);
+
+    if (detectedCustomerNo) {
+      setActiveCustomerNo(detectedCustomerNo);
+      const label =
+        named?.customer ||
+        notes.find((n) => String(n.customerNo || "").trim() === detectedCustomerNo)?.customer ||
+        `לקוח ${detectedCustomerNo}`;
+      setLastCustomerFocus(label);
+      setContextSelection({ customer: label });
+    }
+
     if (isSoundEnabled) void playDispatchChime(0.7);
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -937,25 +960,64 @@ function ChatScreen() {
           content: m.text,
         }));
 
-      const res = await askNoa({ data: { messages: history, context, customerNo: customerNoOverride ?? activeCustomerNo } });
+      const res = await askNoa({
+        data: {
+          messages: history,
+          context,
+          customerNo: detectedCustomerNo,
+        },
+      });
       pushNoa({
         text: res.text,
-        statusTag: `${customerNoOverride ?? activeCustomerNo ? `תיק לקוח · ${customerNoOverride ?? activeCustomerNo}` : "מוח"} · ${evidenceLabel}`,
+        statusTag: `${detectedCustomerNo ? `תיק לקוח · ${detectedCustomerNo}` : "מוח"} · ${evidenceLabel}`,
         quickActions: (() => {
-          const cust = customerNoOverride ?? activeCustomerNo;
+          // תמיד עדיפות לשאלות דינמיות מהמענה הנוכחי
+          const fromAi = Array.isArray(res.suggestedQuestions) ? res.suggestedQuestions : [];
+          if (fromAi.length) return fromAi;
+
+          const cust = detectedCustomerNo;
           if (cust) {
-            const fromAi = Array.isArray(res.suggestedQuestions) ? res.suggestedQuestions : [];
-            if (fromAi.length) return fromAi;
             return [
-              { id: `c-${cust}-notes`, label: "תעודות הלקוח", query: `הציגי את תעודות המשלוח של לקוח ${cust} בלבד.`, icon: "file" as const },
-              { id: `c-${cust}-pto`, label: "PTO ללקוח", query: `האם יש פתיחות מנוף / PTO הקשורות ללקוח ${cust} לפי כתובת או משאית מהתעודות שלו?`, icon: "gauge" as const },
-              { id: `c-${cust}-orders`, label: "הזמנות הלקוח", query: `מהן ההזמנות האחרונות של לקוח ${cust}?`, icon: "search" as const },
+              {
+                id: `c-${cust}-notes`,
+                label: "תעודות הלקוח",
+                query: `הציגי את תעודות המשלוח של לקוח ${cust} בלבד.`,
+                icon: "file" as const,
+              },
+              {
+                id: `c-${cust}-orders`,
+                label: "הזמנות",
+                query: `מהן ההזמנות האחרונות של לקוח ${cust}?`,
+                icon: "search" as const,
+              },
+              {
+                id: `c-${cust}-pto`,
+                label: "PTO / מנוף",
+                query: `PTO וכתובות אספקה ללקוח ${cust} בלבד.`,
+                icon: "gauge" as const,
+              },
             ];
           }
+
           return [
-            { id: "f1", label: "פתיחות מנוף", query: "כמה פעמים נפתח מנוף לפי טאב איתוראן PTO?", icon: "gauge" as const },
-            { id: "f2", label: "סיכום תעודות", query: "תני סיכום של התעודות האחרונות בגיליון", icon: "file" as const },
-            { id: "f3", label: "מקורות", query: "אילו מקורות נתונים מחוברים כרגע?", icon: "plug" as const },
+            {
+              id: "f1",
+              label: "פתיחות מנוף",
+              query: "כמה פעמים נפתח מנוף לפי טאב איתוראן PTO?",
+              icon: "gauge" as const,
+            },
+            {
+              id: "f2",
+              label: "סיכום תעודות",
+              query: "תני סיכום של התעודות האחרונות בגיליון",
+              icon: "file" as const,
+            },
+            {
+              id: "f3",
+              label: "מקורות",
+              query: "אילו מקורות נתונים מחוברים כרגע?",
+              icon: "plug" as const,
+            },
           ];
         })(),
       });
