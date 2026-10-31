@@ -1,0 +1,28 @@
+import { createServerFn } from "@tanstack/react-start";
+import { loadCustomerHistory, loadCustomerIndex } from "./customer-history.server";
+
+export type {
+  CustomerSummary,
+  CustomerHistory,
+  HNote,
+  HOrder,
+  HVisit,
+  HSite,
+  HInquiry,
+  HCheck,
+  Line,
+} from "./customer-history.server";
+
+/** רשימת כל הלקוחות עם סיכומים (מכל הטאבים) */
+export const listCustomerIndexFn = createServerFn({ method: "GET" }).handler(async () => {
+  return loadCustomerIndex();
+});
+
+/** היסטוריה מלאה של לקוח אחד מכל הטאבים */
+export const getCustomerHistoryFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { customerNo: string }) => {
+    const customerNo = String(d?.customerNo || "").trim();
+    if (!/^\d{3,10}$/.test(customerNo)) throw new Error("מספר לקוח לא תקין");
+    return { customerNo };
+  })
+  .handler(async ({ data }) => loadCustomerHistory(data.customerNo));
