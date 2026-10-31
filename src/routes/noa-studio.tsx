@@ -1235,9 +1235,7 @@ function NoaStudioScreen() {
                       </div>
                     )}
 
-                    <div className="whitespace-pre-line text-[13px] leading-6 sm:text-sm sm:leading-7">
-                      {m.text}
-                    </div>
+                    <NoaProse text={m.text} isUser={isUser} />
 
                     {m.noteCard && <NotePreviewCard card={m.noteCard} />}
 
