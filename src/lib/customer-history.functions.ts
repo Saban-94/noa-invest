@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { loadCustomerHistory, loadCustomerIndex } from "./customer-history.server";
+import { loadCustomerHistory, loadCustomerIndex, loadSiteAtlas } from "./customer-history.server";
 
 export type {
   CustomerSummary,
@@ -11,6 +11,7 @@ export type {
   HInquiry,
   HCheck,
   Line,
+  AtlasSite,
 } from "./customer-history.server";
 
 /** רשימת כל הלקוחות עם סיכומים (מכל הטאבים) */
@@ -26,3 +27,7 @@ export const getCustomerHistoryFn = createServerFn({ method: "POST" })
     return { customerNo };
   })
   .handler(async ({ data }) => loadCustomerHistory(data.customerNo));
+
+/** Read-only address and visit atlas from the existing site and visit tabs. */
+export const getSiteAtlasFn = createServerFn({ method: "GET" }).handler(async () => loadSiteAtlas());
+
