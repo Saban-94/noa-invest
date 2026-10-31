@@ -37,6 +37,7 @@ const DESKTOP_NAV = [
   { to: "/customers", label: "תיקי לקוחות", icon: Users },
   { to: "/sites", label: "אתרי אספקה", icon: MapPin },
   { to: "/ituran", label: " נתוני-איתורן", icon: Satellite },
+  { to: "/noa-brain", label: "נועה Brain", icon: MessageCircle },
   { to: "/chat", label: "צ'אט נועה AI", icon: MessageCircle },
   { to: "/inquiry", label: "בירור תעודות", icon: Search },
 ] as const;
@@ -91,7 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         דלג לתוכן
       </a>
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between border-l border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 whys flex-col justify-between border-l border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
           <div className="flex items-center gap-3 border-b border-sidebar-border/40 px-5 py-5">
             <div className="relative">
@@ -322,4 +323,3 @@ export function StatusPill({ s }: { s: "ok" | "warn" | "fail" }) {
     </span>
   );
 }
-
