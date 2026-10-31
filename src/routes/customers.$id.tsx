@@ -428,6 +428,16 @@ function CustomerDetailView() {
         {tab === "overview" && (
           <div className="grid gap-5 lg:grid-cols-3">
             <Card className="lg:col-span-2" title="היכרות עם הלקוח" icon={<Sparkles className="h-5 w-5 text-primary" />}>
+              <div className="mb-4 flex justify-start">
+                <Link
+                  to="/chat"
+                  search={{ customerNo: id }}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 text-xs font-bold text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  שאלי את נועה על הלקוח
+                </Link>
+              </div>
               <ul className="space-y-2.5 text-sm">
                 <Insight>
                   {isReturning ? (
