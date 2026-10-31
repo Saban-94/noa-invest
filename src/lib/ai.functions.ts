@@ -147,8 +147,15 @@ async function getCustomerContext(customerNo: string): Promise<Record<string, un
       .map((p) => ({ sku: p.sku, name: p.name, unit: p.unit, deliveredQty: p.qty, deliveryNotes: p.docs.size, noteIds: [...p.docs].slice(0, 12) }))
       .sort((a, b) => b.deliveryNotes - a.deliveryNotes || b.deliveredQty - a.deliveredQty)
       .slice(0, 5);
+    const suggestedQuestions = [
+      ...(topDeliveredProducts.length ? [{ id: "customer-products", label: "5 המוצרים שסופקו", query: `אילו מוצרים סופקו בעיקר ללקוח ${customerNo}? הציגי כמויות מצטברות, יחידות ומספרי תעודות.`, icon: "file" as const }] : []),
+      ...(history.notes[0]?.id ? [{ id: `customer-note-${history.notes[0].id}`, label: `תעודה #${history.notes[0].id}`, query: `הציגי את פרטי תעודת המשלוח ${history.notes[0].id} ללקוח ${customerNo}, כולל תאריך, כתובת ופריטים.`, icon: "file" as const }] : []),
+      ...history.orders.slice(0, 2).map((order) => ({ id: `customer-order-${order.id}`, label: `הזמנה #${order.id}`, query: `שלפי את פרטי הזמנה ${order.id} של לקוח ${customerNo}, כולל סטטוס, תאריך, פריטים, כתובת ותעודת משלוח מקושרת אם קיימת.`, icon: "search" as const })),
+      ...(addressMap.size ? [{ id: "customer-addresses", label: "כתובות אספקה", query: `אילו כתובות אספקה שימשו את לקוח ${customerNo}, כמה תעודות או הזמנות יש לכל כתובת ומה הכתובת האחרונה?`, icon: "pin" as const }] : []),
+    ].slice(0, 5);
     return {
       available: true,
+      suggestedQuestions,
       generatedAt: history.generatedAt,
       sourceTabs: ["ארכיון_תעודות_גליה", "הזמנות", "ביקורים_איתוראן", "היסטוריית_ביקורים", "אתרי_לקוחות", "בירור_ראמי", "בקרת_לוגיסטיקה"],
       customer: {
@@ -226,7 +233,7 @@ export const askNoa = createServerFn({ method: "POST" })
     const { messages, customerNo } = data;
     const question = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
     if (asksCurrentGps(question)) {
-      return { text: "אין לי כרגע מיקום GPS חי ומאומת. אני יכולה לבדוק עצירות GPS שנקלטו בעבר, אך הן אינן מציגות מיקום בזמן אמת." };
+      return { text: "אין לי כרגע מיקום GPS חי ומאומת. אני יכולה לבדוק עצירות GPS שנקלטו בעבר, אך הן אינן מציגות מיקום בזמן אמת.", suggestedQuestions: [] };
     }
 
     const [systemContext, customerContext] = await Promise.all([
@@ -247,5 +254,9 @@ export const askNoa = createServerFn({ method: "POST" })
 המקורות כוללים תעודות, הזמנות, אירועי PTO, קטלוג, עצירות GPS היסטוריות, לקוחות, דשבורד ופניות בירור. כשמצורף customerProfile, זהו הקשר ללקוח המסוים שנבחר; התייחסי רק לרשומות ולמדדים שבו, צייני את שמות הטאבים כשזה מועיל, והפני למספר תעודה/הזמנה כדי שאפשר יהיה לאתר אותה. topDeliveredProducts מחושב מתעודות משלוח בלבד (אספקה בפועל), ללא פקדונות ושורות הובלה. הבחיני בין הזמנה, תעודת משלוח וביקור איתוראן. מקור שמסומן available=false אינו זמין. אם לא נמצאו רשומות מתאימות, אמרי זאת ולא תנחשי.
 GPS כאן הוא היסטוריית עצירות בלבד, לא מיקום חי. PTO הוא מאגר אירועים, לא GPS. צייני את זמן השליפה כשזה חשוב.
 אל תציגי מספרי טלפון, מספרי ח.פ, קישורי Drive או מידע מזהה פרטי. אל תטעני שבוצעה פעולה כתיבה או עדכון.`;
-    return { text: await callGemini(instructions, withContext) };
+    const suggestions = Array.isArray(customerContext?.suggestedQuestions)
+      ? customerContext.suggestedQuestions as { id: string; label: string; query: string; icon?: "truck" | "file" | "alert" | "scale" | "plug" | "gauge" | "pin" | "search" }[]
+      : [];
+    return { text: await callGemini(instructions, withContext), suggestedQuestions: suggestions };
   });
+
